@@ -1,0 +1,8 @@
+Иконки заклинаний — game-icons.net (https://game-icons.net)
+Лицензия: Creative Commons Attribution 3.0 (CC BY 3.0) — https://creativecommons.org/licenses/by/3.0/
+
+Авторы:
+  Lorc        — https://lorcblog.blogspot.com
+  Delapouite  — https://delapouite.com
+
+Изменения: удалён чёрный фон, иконки перекрашиваются в цвет школы магии в игре.

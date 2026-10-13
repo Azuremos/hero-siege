@@ -1,0 +1,12 @@
+Звуки игры (все бесплатны для использования):
+
+CC0 (без обязательного указания авторов):
+  - 80 CC0 RPG SFX — rubberduck — https://opengameart.org/content/80-cc0-rpg-sfx
+  - Ice spells — bart — https://opengameart.org/content/ice-spells
+  - Ice breaking/shattering — IgnasD — https://opengameart.org/content/ice-breakingshattering
+  - Kenney: Impact Sounds, Interface Sounds, RPG Audio, Music Jingles — https://kenney.nl
+
+CC BY 3.0 (нужно указать автора — https://creativecommons.org/licenses/by/3.0/):
+  - «3 Heal Spells» — DoKashiteru — https://opengameart.org/content/3-heal-spells  (heal_1..3; переведены из AIFF в WAV)
+  - «Magic Smite» — spookymodem — https://opengameart.org/content/magic-smite  (holy_smite.wav)
+  - «Magic Shield» — spookymodem — https://opengameart.org/content/magic-shield  (holy_shield.wav)
