@@ -54,17 +54,23 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for i in POOL_2D:
 		var p := AudioStreamPlayer.new()
+		p.bus = "SFX"
 		add_child(p)
 		_p2d.append(p)
+	for i in 2:
+		var mp := AudioStreamPlayer.new()
+		mp.bus = "Music"
+		add_child(mp)
+		_music.append(mp)
 	for i in POOL_3D:
 		var p := AudioStreamPlayer3D.new()
 		p.unit_size = 10.0
 		p.max_distance = 80.0
 		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 		p.panning_strength = 0.8
+		p.bus = "SFX"
 		add_child(p)
 		_p3d.append(p)
-	set_volume(load_volume())
 
 func _stream(file: String) -> AudioStream:
 	if not _streams.has(file):
@@ -121,20 +127,43 @@ func play_at(name: String, pos: Vector3, vol: float = 0.0) -> void:
 	p.global_position = pos
 	p.play()
 
-# ---------------------------------------------------------------- громкость
+# ---------------------------------------------------------------- громкость (через Settings)
 
 func set_volume(v: float) -> void:
-	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.0001)))
-	AudioServer.set_bus_mute(0, v <= 0.001)
+	Settings.master = v
+	Settings.apply()
 
 func load_volume() -> float:
-	var cfg := ConfigFile.new()
-	if cfg.load("user://settings.cfg") == OK:
-		return float(cfg.get_value("audio", "volume", 0.8))
-	return 0.8
+	return Settings.master
 
-func save_volume(v: float) -> void:
-	var cfg := ConfigFile.new()
-	cfg.load("user://settings.cfg")
-	cfg.set_value("audio", "volume", v)
-	cfg.save("user://settings.cfg")
+func save_volume(_v: float) -> void:
+	Settings.save()
+
+# ---------------------------------------------------------------- музыка (плавная смена треков)
+
+var _music: Array = []
+var _music_name := ""
+var _music_idx := 0
+
+## Трек из assets/music: menu, battle, rest. Пустое имя — тишина.
+func play_music(track: String) -> void:
+	if track == _music_name:
+		return
+	_music_name = track
+	var from: AudioStreamPlayer = _music[_music_idx]
+	_music_idx = 1 - _music_idx
+	var to: AudioStreamPlayer = _music[_music_idx]
+	if from.playing:
+		var tw := create_tween()
+		tw.tween_property(from, "volume_db", -40.0, 1.5)
+		tw.tween_callback(from.stop)
+	if track == "":
+		return
+	var st := load("res://assets/music/%s.mp3" % track) as AudioStreamMP3
+	if st == null:
+		return
+	st.loop = true
+	to.stream = st
+	to.volume_db = -40.0
+	to.play()
+	create_tween().tween_property(to, "volume_db", -6.0, 1.5)

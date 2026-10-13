@@ -139,6 +139,7 @@ func spawn(type: String, lane: int, wave: int, players: int, hp_scale: float = 1
 	u.max_hp = float(def["hp"]) * GameData.mob_hp_mult(wave, players) * hp_scale
 	u.hp = u.max_hp
 	u.power = GameData.mob_dmg_mult(wave)
+	u.phys_power = u.power
 	u.armor = def["armor"]
 	u.radius = def["radius"]
 	u.level = wave
@@ -166,6 +167,7 @@ func kill(u: Unit, killer: Unit) -> void:
 	world.units.erase(u.id)
 	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)))
 	world.award_kill(u.pos, xp, int(m.def["gold"]))
+	world.economy.roll_loot(u.pos, u.level, m.def.get("boss", false))
 	_pending_deaths.append(u.id)
 	_begin_dying(m)
 

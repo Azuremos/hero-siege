@@ -17,7 +17,15 @@ static func role_of(sid: String) -> String:
 		return "shield"
 	return "dmg"
 
+## Иконка предмета: фон в цвете качества (обычный/необычный/редкий/эпический/легендарный).
+static func make_item(id: String, size: float) -> Control:
+	var it := GameData.item(id)
+	var col := GameData.item_color(id)
+	return make_icon("res://assets/icons/items/%s.svg" % it.get("icon", ""), str(it.get("name", "?")).substr(0, 2), col, "item_q%d" % int(it.get("q", 0)), size)
+
 static func make(sid: String, size: float) -> Control:
+	if sid.begins_with("item:"):
+		return make_item(sid.trim_prefix("item:"), size)
 	var sp: Dictionary = GameData.SPELLS[sid]
 	var school: String = sp["school"]
 	var col: Color = GameData.SCHOOLS[school]["color"]
@@ -93,8 +101,11 @@ static func make_icon(path: String, fallback: String, col: Color, bg_key: String
 
 ## Подсказка; если передан герой (Unit) — с учётом его талантов.
 static func tooltip(sid: String, u: Unit = null) -> String:
+	if sid.begins_with("item:"):
+		return GameData.item_tooltip(sid.trim_prefix("item:"))
 	var sp: Dictionary = GameData.SPELLS[sid]
 	var mana := float(sp["mana"]) if u == null else GameData.eff_mana(u, sid)
+	var res_name := "Ярость" if (u != null and u.resource == "rage") or _is_warrior_spell(sid) else "Мана"
 	var cast := float(sp["cast"]) if u == null else GameData.eff_cast(u, sid)
 	var cd := float(sp["cd"]) if u == null else GameData.eff_cd(u, sid)
 	var rng := float(sp["range"]) if u == null else GameData.eff_range(u, sid)
@@ -103,7 +114,7 @@ static func tooltip(sid: String, u: Unit = null) -> String:
 		lines[1] += "  •  заклинание таланта"
 	else:
 		lines.append("Открывается на %d уровне" % GameData.spell_level(sid))
-	lines.append("Мана: %d" % int(round(mana)))
+	lines.append("%s: %d" % [res_name, int(round(mana))])
 	lines.append("Мгновенное" if cast <= 0.0 else "Произнесение: %.1f сек." % cast)
 	if cd > 0.0:
 		lines.append("Восстановление: %s сек." % GameData._fmt(cd))
@@ -112,3 +123,9 @@ static func tooltip(sid: String, u: Unit = null) -> String:
 	lines.append("")
 	lines.append(sp["desc"])
 	return "\n".join(lines)
+
+static func _is_warrior_spell(sid: String) -> bool:
+	for s in GameData.CLASSES["warrior"]["spells"]:
+		if s == sid:
+			return true
+	return sid in ["mortal_strike", "rampage", "shockwave", "challenging_shout"]

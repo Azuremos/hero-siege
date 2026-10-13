@@ -7,6 +7,7 @@ const MobManagerScript := preload("res://scripts/world/mob_manager.gd")
 const SpellSystemScript := preload("res://scripts/world/spell_system.gd")
 const WaveManagerScript := preload("res://scripts/world/wave_manager.gd")
 const HudScript := preload("res://scripts/ui/hud.gd")
+const EconomyScript := preload("res://scripts/world/economy.gd")
 
 const CASTLE_ID := 100
 
@@ -16,6 +17,7 @@ var vfx_root: Node3D
 var mobs: Node            # MobManager
 var spells: Node          # SpellSystem
 var waves: Node           # WaveManager
+var economy: Node         # Economy: торговцы, предметы, добыча
 var hud: CanvasLayer
 
 var units: Dictionary = {}        # id -> Unit
@@ -64,8 +66,11 @@ func _ready() -> void:
 	waves = WaveManagerScript.new()
 	waves.name = "Waves"
 	add_child(waves)
+	economy = EconomyScript.new()
+	economy.name = "Economy"
+	add_child(economy)
 
-	wave_count = clampi(int(Net.settings.get("waves", GameData.WAVE_COUNT)), 1, GameData.WAVE_COUNT)
+	wave_count = clampi(int(Net.settings.get("waves", GameData.WAVE_COUNT)), 0, GameData.MAX_WAVES)   # 0 — бесконечная осада
 	active_lanes = LANE_ORDER.slice(0, clampi(int(Net.settings.get("lanes", 4)), 1, 4))
 	_read_map()
 	castle = Unit.new()
@@ -103,6 +108,9 @@ func _read_map() -> void:
 	var core := map.get_node("CastleCore") as Node3D
 	castle_radius = float(core.get_meta("radius", 6.5))
 	mobs.build_static_obstacles(map.get_node("Colliders"))
+	economy.spawn_vendors()
+	_apply_cobblestone()
+	Settings.apply_shadows(map.get_node_or_null("Sun") as DirectionalLight3D)
 
 func _spawn_heroes() -> void:
 	var peers := Net.players.keys()
@@ -145,6 +153,7 @@ func _physics_process(delta: float) -> void:
 	spells.server_tick(delta, t)
 	mobs.server_tick(delta, t)
 	waves.server_tick(delta, t)
+	economy.server_tick(delta, t)
 
 	_snap_accum += delta
 	if _snap_accum >= 0.1:
@@ -259,6 +268,8 @@ func ev_talents(hero_id: int, ranks: Dictionary) -> void:
 	if h == null:
 		return
 	h.set_talents(ranks)
+	if is_server():
+		economy.check_offhand(h)
 	if h == local_hero:
 		hud.on_talents_changed()
 
@@ -331,6 +342,7 @@ var _test_cam: Camera3D = null
 var _start_ms := 0
 
 func _process(delta: float) -> void:
+	_update_music(delta)
 	if Net.cli.is_empty():
 		return
 	if _start_ms == 0:
@@ -395,6 +407,20 @@ func _process(delta: float) -> void:
 		for m in mobs.mobs.values():
 			per[m.lane] = per.get(m.lane, 0) + 1
 		print("LANES active=", active_lanes, " mobs_per_lane=", per)
+	if Net.cli.has("gold") and is_server() and _test_t >= 1.0 and _test_t - delta < 1.0:
+		for h in heroes.values():
+			h.gold = int(Net.cli["gold"])
+			h.bag_add("potion_heal_2", 5)
+			h.bag_add("sword_3")
+			h.bag_add("axe_4")
+			h.bag_add("plate_3")
+			economy._sync(h)
+	if Net.cli.has("equip") and is_server() and _test_t >= float(Net.cli["equip"]) and _test_t - delta < float(Net.cli["equip"]):
+		for h in heroes.values():
+			for i in h.bag.size():
+				if h.bag[i] != null and GameData.item(h.bag[i]["id"])["kind"] == "gear":
+					economy._equip(h, i)
+			print("EQUIP ", h.equip, " dual=", h.unit.flag("dual_wield"), " ap=", h.attack_power, " phys=", h.unit.phys_power, " procs=", h.unit.mods.get("procs", []), " talents=", h.talents)
 	if Net.cli.has("givebuff") and is_server() and _test_t >= 2.0 and _test_t - delta < 2.0:
 		var bsp: Dictionary = GameData.SPELLS[Net.cli["givebuff"]]
 		spells.apply_effects(local_hero.unit, local_hero.unit, bsp["effects"], Net.cli["givebuff"], "holy")
@@ -420,7 +446,12 @@ func _process(delta: float) -> void:
 		for id in spells.zones:
 			print("DRAWN ZONE len=%.2f" % (spells.zones[id]["a"] as Vector3).distance_to(spells.zones[id]["b"]))
 	if Net.cli.has("open") and _test_t >= 9.0 and _test_t - delta < 9.0:
-		if Net.cli["open"] == "edit":
+		if Net.cli["open"] == "char":
+			hud.toggle_character()
+		elif Net.cli["open"] == "shop":
+			local_hero.global_position = economy.vendor_pos["smith"] + Vector3(2, 0, 2)
+			hud.open_shop("smith")
+		elif Net.cli["open"] == "edit":
 			hud.set_edit_mode(true)
 		elif Net.cli["open"] == "keys":
 			hud.toggle_keybinds()
@@ -428,6 +459,9 @@ func _process(delta: float) -> void:
 			hud.toggle_talents()
 		else:
 			hud.toggle_spellbook()
+	if Net.cli.has("autotest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
+		var fwd := -local_hero.global_transform.basis.z
+		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())
 	if Net.cli.has("vfxtest") and _test_t >= 2.0 and _test_t - delta < 2.0:
 		_vfx_showcase()
 	if Net.cli.has("startwave") and is_server() and wave == 0 and _test_t > 1.0:
@@ -463,3 +497,23 @@ func _vfx_showcase() -> void:
 	if local_hero:
 		Vfx.spawn(self, "heal_burst", local_hero.global_position, Vector3.ZERO, 0.0, local_hero.hero_id)
 		local_hero.net_absorb = 50.0
+
+## Дороги и площадь у замка — серая брусчатка.
+func _apply_cobblestone() -> void:
+	var roads := map.get_node_or_null("Roads") as MeshInstance3D
+	if roads == null:
+		return
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/cobblestone.gdshader")
+	roads.material_override = mat
+## Музыка по ходу осады: бой во время волн, спокойная — на подготовке и передышке.
+var _music_t := 0.0
+func _update_music(delta: float) -> void:
+	_music_t -= delta
+	if _music_t > 0.0:
+		return
+	_music_t = 0.5
+	var track := "rest"
+	if game_state == "running" or game_state == "clearing":
+		track = "battle"
+	Sfx.play_music(track)

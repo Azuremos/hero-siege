@@ -157,6 +157,14 @@ func _mouse_button(mb: InputEventMouseButton) -> void:
 			_dragged = false
 
 func _click(pos: Vector2, is_left: bool) -> void:
+	if not is_left:
+		var vid: String = world.economy.pick_vendor(camera, pos)
+		if vid != "":
+			if _dist_to_point(world.economy.vendor_pos[vid]) <= world.economy.VENDOR_RANGE:
+				world.hud.open_shop(vid)
+			else:
+				world.hud.error("Подойдите ближе к торговцу")
+			return
 	var id := pick_unit(pos)
 	if id == 0:
 		return
@@ -173,6 +181,8 @@ func _key(k: InputEventKey) -> void:
 		try_cast_slot(int(parts[0]) - 1, int(parts[1]))
 	elif action == "talents":
 		world.hud.toggle_talents()
+	elif action == "character":
+		world.hud.toggle_character()
 	elif action == "spellbook":
 		world.hud.toggle_spellbook()
 	elif code >= KEY_F1 and code <= KEY_F6:
@@ -341,7 +351,7 @@ func load_bar() -> void:
 		var arr: Array = bars[b] if b < bars.size() else []
 		arr.resize(BAR_SIZE)
 		for i in BAR_SIZE:
-			if arr[i] == null or not GameData.SPELLS.has(str(arr[i])):
+			if arr[i] == null or not (GameData.SPELLS.has(str(arr[i])) or (str(arr[i]).begins_with("item:") and not GameData.item(str(arr[i]).trim_prefix("item:")).is_empty())):
 				arr[i] = ""
 		if b < bars.size():
 			bars[b] = arr
@@ -370,7 +380,7 @@ func sync_bar() -> void:
 	var known := spell_ids()
 	for b in BAR_COUNT:
 		for i in BAR_SIZE:
-			if bars[b][i] != "" and not known.has(bars[b][i]):
+			if bars[b][i] != "" and not str(bars[b][i]).begins_with("item:") and not known.has(bars[b][i]):
 				bars[b][i] = ""
 	for sid in known:
 		if _seen.has(sid):
@@ -401,9 +411,23 @@ func place_spell(sid: String, b: int, slot: int) -> void:
 func clear_slot(b: int, slot: int) -> void:
 	bars[b][slot] = ""
 	save_bar()
+var potion_until := 0.0
+
 func try_cast(sid: String) -> void:
-	var sp: Dictionary = GameData.SPELLS[sid]
 	var hud = world.hud
+	if sid.begins_with("item:"):
+		# предмет на панели: выпить зелье (первая стопка в сумке)
+		if not hero.unit.alive:
+			return
+		if now() < potion_until:
+			hud.error("Зелья ещё не готовы")
+			return
+		if hero.bag_count(sid.trim_prefix("item:")) <= 0:
+			hud.error("Нет в сумке")
+			return
+		world.economy.send("request_use_id", [sid.trim_prefix("item:")])
+		return
+	var sp: Dictionary = GameData.SPELLS[sid]
 	if not hero.unit.alive:
 		return
 	if hero.unit.level < GameData.spell_level(sid):
@@ -618,8 +642,15 @@ func bot_tick(delta: float) -> void:
 		var f: PackedFloat64Array = Net.cli["post"].split_floats(",")
 		post = Vector3(f[0], 0, f[1])
 	var to := post - hero.global_position
+	var stop := 2.5
+	# бойцы ближнего боя подходят к цели (недалеко от поста)
+	var melee_range := float(GameData.CLASSES[hero.class_id]["auto"]["range"])
+	var mt: Unit = world.get_unit(target_id)
+	if melee_range <= 5.0 and mt and mt.alive and Vector2(mt.pos.x - post.x, mt.pos.z - post.z).length() < 22.0:
+		to = mt.pos - hero.global_position
+		stop = melee_range - 0.8 + mt.radius
 	to.y = 0
-	if to.length() > 2.5 and cast_spell == "":
+	if to.length() > stop and cast_spell == "":
 		hero.rotation.y = atan2(-to.x, -to.z)
 		cam_yaw = hero.rotation.y
 		move_forward = 1.0

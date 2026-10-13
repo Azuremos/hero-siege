@@ -63,12 +63,13 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 		return _feedback(peer, sid, "Сейчас нельзя")
 	if not st["cast"].is_empty():
 		return _feedback(peer, sid, "Вы уже произносите заклинание")
-	if t < float(st["cds"].get(sid, 0.0)):
+	var proc := GameData.active_proc(u, sid)
+	if t < float(st["cds"].get(sid, 0.0)) and not (not proc.is_empty() and proc["data"].get("reset_cd", false)):
 		return _feedback(peer, sid, "Заклинание ещё не готово")
 	if t < st["gcd"] - 0.15:
 		return
 	if u.mana < GameData.eff_mana(u, sid):
-		return _feedback(peer, sid, "Недостаточно маны")
+		return _feedback(peer, sid, "Недостаточно ярости" if u.resource == "rage" else "Недостаточно маны")
 	var max_range := GameData.eff_range(u, sid)
 	# проверка цели
 	match sp["target"]:
@@ -78,6 +79,10 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 				return _feedback(peer, sid, "Неверная цель")
 			if _dist(u, tu) > max_range + tu.radius + 1.5:
 				return _feedback(peer, sid, "Цель слишком далеко")
+			if sp.has("min_range") and _dist(u, tu) < float(sp["min_range"]):
+				return _feedback(peer, sid, "Цель слишком близко")
+			if sp.has("execute") and tu.hp_frac() > float(sp["execute"]) and not (not proc.is_empty() and proc["data"].get("allow_execute", false)):
+				return _feedback(peer, sid, "Казнь — только по врагам с запасом здоровья ниже 25%")
 		"ally":
 			var tu: Unit = world.get_unit(target_id)
 			if tu == null or not tu.alive or tu.team != u.team or tu.kind != "hero":
@@ -203,9 +208,16 @@ func server_tick(delta: float, t: float) -> void:
 		var rest := 8.0 if world.game_state == "break" else 1.0   # передышка — быстрый отдых
 		for hero in world.heroes.values():
 			var u: Unit = hero.unit
-			if u.alive:
-				u.mana = minf(u.max_mana, u.mana + u.max_mana * 0.009 * (1.0 + u.mod("regen")) * rest)
-				u.hp = minf(u.max_hp, u.hp + u.max_hp * 0.0025 * rest)
+			if not u.alive:
+				continue
+			if u.resource == "rage":
+				# ярость не восполняется сама и угасает вне боя
+				if t > u.combat_until:
+					u.mana = maxf(0.0, u.mana - 1.5)
+			else:
+				u.mana = minf(u.max_mana, u.mana + (u.max_mana * 0.004 + u.spirit * 0.25) * (1.0 + u.mod("regen")) * rest)
+			u.hp = minf(u.max_hp, u.hp + (u.max_hp * 0.0025 + u.spirit * 0.05) * rest)
+	_update_bursts(t)
 
 func _auto_attack(hero, st: Dictionary, t: float) -> void:
 	var tid: int = st["auto_target"]
@@ -227,6 +239,9 @@ func _auto_attack(hero, st: Dictionary, t: float) -> void:
 	else:
 		apply_effects(u, tu, fx, "auto", auto["school"])
 		ev_action.rpc(u.id, "melee2")
+		if u.resource == "rage":
+			gain_rage(u, 10.0 * (1.0 + u.flag("rage_gen")), t)
+	_trigger_procs(u, tu, "auto", "", auto["school"], false, t)
 
 @rpc("authority", "call_local", "unreliable")
 func ev_action(unit_id: int, key: String) -> void:
@@ -269,7 +284,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 		ev_cast_end.rpc(u.id, "", false)
 		return
 	var mana_cost := GameData.eff_mana(u, sid)
-	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0:
+	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0 and u.resource != "rage":
 		u.remove_buff("clearcasting")
 	u.mana -= mana_cost
 	var cd := GameData.eff_cd(u, sid)
@@ -278,6 +293,18 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 	_feedback(hero.peer_id, sid, "", cd, maxf(0.0, st["gcd"] - t))
 	ev_cast_end.rpc(u.id, sid, true)
 	var school: String = sp["school"]
+	if Net.cli.has("proclog"):
+		print("CAST ", sid)
+	# прок, действующий на это заклинание: расходуем, усиливаем эффекты
+	var proc := GameData.active_proc(u, sid)
+	if not proc.is_empty():
+		u.remove_buff(proc["key"])
+		var amp := float(proc["data"].get("amp", 0.0))
+		if amp > 0.0:
+			sp = _amplified(sp, 1.0 + amp)
+	if sp.has("rage_gain"):
+		gain_rage(u, float(sp["rage_gain"]), t)
+	_trigger_procs(u, tu, "cast", sid, school, false, t)
 	# Ясность мысли: следующее заклинание бесплатно
 	if float(sp["mana"]) > 0.0 and u.flag("clearcasting") > 0.0 and randf() < u.flag("clearcasting"):
 		u.add_buff("clearcasting", t + 15.0, {})
@@ -312,6 +339,16 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 					if h.unit.alive and _dist(h.unit, u) <= radius:
 						apply_effects(u, h.unit, sp["ally_fx"], sid, school)
 			fx_at(sp["vfx"], u.pos, u.pos, radius, u.id)
+		"charge":
+			# рывок: сервер оглушает цель, а свой герой сам перемещается к ней
+			apply_effects(u, tu, sp["effects"], sid, school)
+			st["auto_target"] = tu.id
+			fx_at(sp["vfx"], tu.pos, u.pos, 0.0, tu.id)
+			var dest: Vector3 = tu.pos + (u.pos - tu.pos).normalized() * (tu.radius + 1.2)
+			if hero.peer_id == multiplayer.get_unique_id():
+				hero.ev_dash(dest)
+			else:
+				hero.ev_dash.rpc_id(hero.peer_id, dest)
 		"party":
 			# все союзники рядом с заклинателем
 			for h in world.heroes.values():
@@ -475,9 +512,11 @@ func _m(u: Unit, key: String, sid: String = "", school: String = "") -> float:
 
 func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, school: String) -> void:
 	var t: float = world.now()
-	var pw := caster.power if caster else 1.0
+	var pw := 1.0
+	if caster:
+		pw = caster.phys_power if school == "physical" else caster.power
 	var amp := _m(caster, "amount", sid, school)
-	var crit_chance := 0.08 + _m(caster, "crit", sid, school)
+	var crit_chance := (caster.crit_base if caster else 0.05) + _m(caster, "crit", sid, school)
 	if caster and target.is_rooted(t):
 		crit_chance += caster.flag("shatter")
 	for e: Dictionary in effects:
@@ -497,6 +536,8 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				deal_damage(caster, target, amount, school, crit)
 				if caster and caster.kind == "hero":
 					_on_damage_dealt(caster, target, amount, school, crit, t)
+					if sid != "auto":
+						_trigger_procs(caster, target, "spell_hit", sid, school, crit, t)
 			"heal":
 				var amount := randf_range(e["min"], e["max"]) * pw * (caster.heal_mult if caster else 1.0) * (1.0 + amp + _m(caster, "heal"))
 				var crit := randf() < crit_chance
@@ -505,6 +546,11 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				heal(caster, target, amount, crit)
 				if crit and caster:
 					_on_heal_crit(caster, target, sid, t)
+				if caster:
+					_trigger_procs(caster, target, "heal", sid, school, crit, t)
+			"heal_self_pct":
+				if caster:
+					heal(caster, caster, caster.max_hp * float(e["pct"]), false)
 			"heal_pct":
 				heal(caster, target, target.max_hp * float(e["pct"]), false)
 			"slow":
@@ -595,6 +641,14 @@ func _on_damage_dealt(caster: Unit, target: Unit, amount: float, school: String,
 			"next": t + 2.0, "until": t + 4.0, "school": "fire", "source": caster.id})
 	if school == "frost" and target.alive and caster.flag("frostbite") > 0.0 and randf() < caster.flag("frostbite"):
 		_freeze(target, 2.0, t)
+	if crit and school == "physical" and caster.flag("deep_wounds") > 0.0 and target.alive:
+		var bleed := amount * caster.flag("deep_wounds")
+		for a in target.auras:
+			if a["key"] == "deep_wounds":
+				target.auras.erase(a)
+				break
+		target.auras.append({"key": "deep_wounds", "kind": "dot", "per_tick": bleed / 4.0, "tick": 1.0,
+			"next": t + 1.0, "until": t + 4.0, "school": "physical", "source": caster.id})
 	if caster.flag("mana_leech") > 0.0:
 		caster.mana = minf(caster.max_mana, caster.mana + amount * caster.flag("mana_leech"))
 
@@ -619,6 +673,81 @@ func _freeze(target: Unit, dur: float, t: float) -> void:
 func _refresh_stats(u: Unit) -> void:
 	if u.kind == "hero" and u.node and u.node.has_method("apply_level_stats"):
 		u.node.apply_level_stats(false)
+
+# ---------------------------------------------------------------- ярость, проки, автозаклинания
+
+func gain_rage(u: Unit, amount: float, t: float) -> void:
+	if u.resource != "rage":
+		return
+	u.mana = minf(u.max_mana, u.mana + amount)
+	u.combat_until = t + 6.0
+
+var _proc_cd: Dictionary = {}
+
+## Проверка проков талантов: on = spell_hit | heal | auto | cast | hit_taken.
+func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: String, crit: bool, t: float) -> void:
+	if u == null or u.kind != "hero" or u.mods.is_empty() or GameData.AUTO_SPELLS.has(sid):
+		return
+	for p in u.mods.get("procs", []):
+		if p["on"] != on:
+			continue
+		if p.has("school") and p["school"] != school:
+			continue
+		if p.has("spells") and not p["spells"].has(sid):
+			continue
+		if p.get("crit", false) and not crit:
+			continue
+		var key := "%d:%s" % [u.id, p["id"]]
+		if t < float(_proc_cd.get(key, 0.0)) or (randf() >= float(p["chance"]) and not Net.cli.has("procall")):
+			continue
+		_proc_cd[key] = t + 1.0
+		if Net.cli.has("proclog"):
+			print("PROC ", p["id"], " t=%.1f" % t)
+		if p.has("buff"):
+			u.add_buff(p["buff"], t + 15.0, {})
+			fx_at("proc", u.pos, u.pos, 0.0, u.id)
+		elif p.has("spell") and target:
+			cast_auto_spell(u, p["spell"], target.pos, t)
+
+var _bursts: Array = []
+
+## Автозаклинание (Огненная глыба, Звезда Света…): эффект в точке с задержкой.
+func cast_auto_spell(u: Unit, aid: String, pos: Vector3, t: float) -> void:
+	var a: Dictionary = GameData.AUTO_SPELLS[aid]
+	var center: Vector3 = u.pos if a.get("around_caster", false) else pos
+	center.y = 0.0
+	ev_fx.rpc(a["vfx"], center, u.pos, float(a["radius"]), u.id)
+	_bursts.append({"at": t + float(a["delay"]), "caster": u.id, "pos": center, "aid": aid})
+
+func _update_bursts(t: float) -> void:
+	var i := 0
+	while i < _bursts.size():
+		var b: Dictionary = _bursts[i]
+		if t < b["at"]:
+			i += 1
+			continue
+		_bursts.remove_at(i)
+		var caster: Unit = world.get_unit(b["caster"])
+		if caster == null:
+			continue
+		var a: Dictionary = GameData.AUTO_SPELLS[b["aid"]]
+		var c: Vector3 = b["pos"]
+		for m in world.mobs.query_radius(Vector2(c.x, c.z), float(a["radius"])):
+			apply_effects(caster, m, a.get("enemy_fx", []), b["aid"], a["school"])
+		if a.has("ally_fx"):
+			for h in world.heroes.values():
+				if h.unit.alive and Vector2(h.unit.pos.x - c.x, h.unit.pos.z - c.z).length() <= float(a["radius"]):
+					apply_effects(caster, h.unit, a["ally_fx"], b["aid"], a["school"])
+
+## Копия заклинания с усиленными эффектами (для проков с усилением).
+func _amplified(sp: Dictionary, mult: float) -> Dictionary:
+	var c := sp.duplicate(true)
+	for key in ["effects", "enemy_fx", "ally_fx", "impact_fx"]:
+		for e in c.get(key, []):
+			for f in ["min", "max", "total", "amount"]:
+				if e.has(f):
+					e[f] = float(e[f]) * mult
+	return c
 
 func _is_boss(u: Unit) -> bool:
 	return GameData.MOBS.get(u.type_id, {}).get("boss", false)
@@ -655,6 +784,12 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 	dst.hp -= amount
 	if src:
 		dst.last_attacker = src.id
+		src.combat_until = t + 6.0
+	dst.combat_until = t + 6.0
+	if dst.kind == "hero":
+		if dst.resource == "rage":
+			gain_rage(dst, amount / maxf(dst.max_hp, 1.0) * 60.0, t)
+		_trigger_procs(dst, src, "hit_taken", "", school, false, t)
 	world.fx_number(dst.id, amount, "dmg", school, src_id, crit)
 	if dst.kind == "mob":
 		world.mobs.on_damaged(dst, src)

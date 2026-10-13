@@ -19,7 +19,7 @@ func _ready() -> void:
 			var a := "bar%d_%d" % [b + 1, i]
 			actions.append(a)
 			names[a] = "Панель %d, ячейка %d" % [b + 1, i + 1]
-	for a in [["talents", "Окно талантов"], ["spellbook", "Книга заклинаний"]]:
+	for a in [["talents", "Окно талантов"], ["spellbook", "Книга заклинаний"], ["character", "Персонаж и сумка"]]:
 		actions.append(a[0])
 		names[a[0]] = a[1]
 	reset_defaults(false)
@@ -32,6 +32,7 @@ func reset_defaults(save_now: bool = true) -> void:
 		binds["bar2_%d" % i] = {"key": BAR_KEYS[i], "shift": true, "ctrl": false, "alt": false}
 	binds["talents"] = {"key": KEY_N, "shift": false, "ctrl": false, "alt": false}
 	binds["spellbook"] = {"key": KEY_P, "shift": false, "ctrl": false, "alt": false}
+	binds["character"] = {"key": KEY_C, "shift": false, "ctrl": false, "alt": false}
 	if save_now:
 		save()
 		changed.emit()
@@ -40,11 +41,24 @@ func _load() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(PATH) != OK:
 		return
+	var fresh: Array = []
 	for a in actions:
 		if cfg.has_section_key("keys", a):
 			var v = cfg.get_value("keys", a)
 			if v is Dictionary:
 				binds[a] = v
+		else:
+			fresh.append(a)
+	# новые действия (из обновления игры) не отбирают клавиши, уже назначенные игроком
+	for a in fresh:
+		var nb: Dictionary = binds.get(a, {})
+		for o in actions:
+			if o == a or fresh.has(o):
+				continue
+			var b: Dictionary = binds.get(o, {})
+			if not nb.is_empty() and not b.is_empty() and int(b["key"]) == int(nb["key"]) and b["shift"] == nb["shift"] and b["ctrl"] == nb["ctrl"] and b["alt"] == nb["alt"]:
+				binds[a] = {}
+				break
 
 func save() -> void:
 	var cfg := ConfigFile.new()

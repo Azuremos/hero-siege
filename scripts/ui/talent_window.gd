@@ -122,13 +122,21 @@ func _build_trees() -> void:
 		_tree_labels.append(name_l)
 		var grid := Control.new()
 		grid.custom_minimum_size = Vector2(COLS * CELL + (COLS - 1) * GAP, ROWS * CELL + (ROWS - 1) * GAP + 6)
+		grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		v.add_child(grid)
+		# сдвиг, чтобы занятые колонки стояли по центру ветки
+		var min_c := COLS
+		var max_c := 0
+		for tt in tree["talents"]:
+			min_c = mini(min_c, int(tt["col"]))
+			max_c = maxi(max_c, int(tt["col"]))
+		var shift := (float(COLS - 1) - float(min_c + max_c)) * 0.5 * (CELL + GAP)
 		# стрелки требований (рисуем до ячеек, чтобы были под ними)
 		for t in tree["talents"]:
 			if t.has("req"):
 				var req := GameData.find_talent(cls, t["req"])
 				var rt: Dictionary = req["t"]
-				var x: float = rt["col"] * (CELL + GAP) + CELL * 0.5 - 2
+				var x: float = rt["col"] * (CELL + GAP) + CELL * 0.5 - 2 + shift
 				var y0: float = rt["row"] * (CELL + GAP) + CELL
 				var y1: float = t["row"] * (CELL + GAP)
 				var line := ColorRect.new()
@@ -139,7 +147,7 @@ func _build_trees() -> void:
 				grid.add_child(line)
 		for t in tree["talents"]:
 			var cell := Panel.new()
-			cell.position = Vector2(t["col"] * (CELL + GAP), t["row"] * (CELL + GAP))
+			cell.position = Vector2(t["col"] * (CELL + GAP) + shift, t["row"] * (CELL + GAP))
 			cell.size = Vector2(CELL, CELL)
 			var cs := StyleBoxFlat.new()
 			cs.bg_color = Color(0, 0, 0, 0.7)

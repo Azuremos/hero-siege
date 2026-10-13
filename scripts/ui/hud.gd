@@ -36,6 +36,8 @@ var _buff_row: HBoxContainer
 var _skip_btn: Button
 var _buff_t := 0.0
 var _talent_btn: Button
+var _book_btn: Button
+var _char_btn: Button
 var _talent_window: Control
 var _spellbook: Control
 var _keybinds: Control
@@ -54,6 +56,11 @@ var _death_label: Label
 var _menu: PanelContainer
 var _help: PanelContainer
 var _target_ring: MeshInstance3D
+var _target_arrow: MeshInstance3D
+var _hover_ring: MeshInstance3D
+var _vendor_hint: Label
+var _char_window: Control
+var _shop: Control
 var _numbers: Array = []               # {pos, text, color, age, size, drift}
 var _drag_from := Vector2i(-1, -1)     # (панель, ячейка), откуда тащат заклинание
 
@@ -95,6 +102,29 @@ func setup(w: Node3D) -> void:
 	_target_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_target_ring.visible = false
 	world.vfx_root.add_child(_target_ring)
+	_target_arrow = MeshInstance3D.new()
+	var prism := PrismMesh.new()
+	prism.size = Vector3(0.5, 0.6, 0.12)
+	_target_arrow.mesh = prism
+	_target_arrow.top_level = true
+	_target_arrow.rotation_degrees.z = 180.0
+	_target_arrow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_target_arrow.visible = false
+	world.vfx_root.add_child(_target_arrow)
+	_hover_ring = MeshInstance3D.new()
+	var hpm := PlaneMesh.new()
+	hpm.size = Vector2(2, 2)
+	_hover_ring.mesh = hpm
+	_hover_ring.top_level = true
+	_hover_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_hover_ring.material_override = Vfx.ring_material(Color(1, 1, 0.8, 0.6), 0.0, false, 1.0)
+	_hover_ring.visible = false
+	world.vfx_root.add_child(_hover_ring)
+	_vendor_hint = _label("ПКМ по торговцу — открыть лавку", 18, GOLD)
+	_vendor_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_vendor_hint.position = Vector2(-150, -300)
+	_vendor_hint.visible = false
+	_root.add_child(_vendor_hint)
 	rebuild_party()
 	Keys.changed.connect(rebuild_action_bar)
 	get_viewport().size_changed.connect(_apply_layout)
@@ -369,6 +399,19 @@ func party_order() -> Array:
 
 # ---------------------------------------------------------------- панели заклинаний
 
+func _side_btn(parent: Control, text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(150, 18)
+	b.add_theme_font_size_override("font_size", 12)
+	b.pressed.connect(cb)
+	parent.add_child(b)
+	return b
+
+func _with_key(text: String, action: String) -> String:
+	var k := Keys.label(action)
+	return text if k == "—" else "%s (%s)" % [text, k]
+
 func _build_bars() -> void:
 	# Панель 1: ячейки + кнопки талантов/книги + полоса опыта
 	var root1 := VBoxContainer.new()
@@ -383,16 +426,10 @@ func _build_bars() -> void:
 	var side := VBoxContainer.new()
 	side.add_theme_constant_override("separation", 4)
 	row.add_child(side)
-	_talent_btn = Button.new()
-	_talent_btn.text = "Таланты"
-	_talent_btn.custom_minimum_size = Vector2(150, 27)
-	_talent_btn.pressed.connect(toggle_talents)
-	side.add_child(_talent_btn)
-	var book_btn := Button.new()
-	book_btn.text = "Книга"
-	book_btn.custom_minimum_size = Vector2(150, 27)
-	book_btn.pressed.connect(toggle_spellbook)
-	side.add_child(book_btn)
+	side.add_theme_constant_override("separation", 2)
+	_talent_btn = _side_btn(side, "Таланты", toggle_talents)
+	_book_btn = _side_btn(side, "Книга", toggle_spellbook)
+	_char_btn = _side_btn(side, "Персонаж", toggle_character)
 	_xp_bar = _bar(Color(0.5, 0.25, 0.8), 16)
 	_xp_bar.custom_minimum_size = Vector2(BAR_SLOTS * (SLOT + SLOT_GAP) - SLOT_GAP, 16)
 	_xp_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -463,6 +500,23 @@ func _make_slot(box: BoxContainer, b: int, i: int) -> void:
 	if sid == "":
 		st.bg_color = Color(0, 0, 0, 0.45)
 		st.border_color = Color(0.3, 0.3, 0.3, 0.8)
+	elif sid.begins_with("item:"):
+		var iid := sid.trim_prefix("item:")
+		st.bg_color = Color(0.1, 0.1, 0.1, 0.8)
+		st.border_color = GameData.item_color(iid)
+		var icon := SpellIcon.make_item(iid, SLOT - 4)
+		icon.position = Vector2(2, 2)
+		slot.add_child(icon)
+		var cd := ColorRect.new()
+		cd.color = Color(0, 0, 0, 0.65)
+		cd.position = Vector2(2, 2)
+		cd.size = Vector2(SLOT - 4, 0)
+		cd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(cd)
+		var cnt := _label("", 13, Color.WHITE)
+		cnt.position = Vector2(SLOT - 24, SLOT - 20)
+		slot.add_child(cnt)
+		entry.merge({"cd": cd, "icon": icon, "count": cnt, "item": iid})
 	else:
 		var sp: Dictionary = GameData.SPELLS[sid]
 		var col: Color = GameData.SCHOOLS[sp["school"]]["color"]
@@ -535,7 +589,10 @@ func on_level_changed() -> void:
 		return
 	for s in _slots:
 		if s["sid"] == "":
-			s["slot"].tooltip_text = "Пустая ячейка — перетащите сюда заклинание из книги"
+			s["slot"].tooltip_text = "Пустая ячейка — перетащите сюда заклинание из книги или зелье из сумки"
+			continue
+		if s.has("item"):
+			s["slot"].tooltip_text = GameData.item_tooltip(s["item"])
 			continue
 		var open: bool = lh.unit.level >= GameData.spell_level(s["sid"])
 		s["lock"].visible = not open
@@ -666,20 +723,12 @@ func _build_menu() -> void:
 	b2.text = "Управление"
 	b2.pressed.connect(func(): toggle_menu(); toggle_help())
 	v.add_child(b2)
-	var vol_row := HBoxContainer.new()
-	v.add_child(vol_row)
-	vol_row.add_child(_label("Громкость", 15))
-	var vol := HSlider.new()
-	vol.min_value = 0.0
-	vol.max_value = 1.0
-	vol.step = 0.05
-	vol.value = Sfx.load_volume()
-	vol.custom_minimum_size = Vector2(180, 24)
-	vol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vol.value_changed.connect(func(x: float):
-		Sfx.set_volume(x)
-		Sfx.save_volume(x))
-	vol_row.add_child(vol)
+	var b_set := Button.new()
+	b_set.text = "Настройки (звук, графика, интерфейс)"
+	b_set.pressed.connect(func():
+		toggle_menu()
+		toggle_settings())
+	v.add_child(b_set)
 	var b3 := Button.new()
 	b3.text = "Выйти в главное меню"
 	b3.pressed.connect(func(): Net.back_to_menu())
@@ -896,6 +945,28 @@ func toggle_talents() -> void:
 	if _talent_window.visible:
 		_talent_window.refresh()
 
+var _settings_win: Control
+func toggle_settings() -> void:
+	if _settings_win == null:
+		_settings_win = preload("res://scripts/ui/settings_window.gd").new()
+		_settings_win.on_ui_changed = reload_layout
+		_settings_win.on_keys = func():
+			_settings_win.visible = false
+			toggle_keybinds()
+		_root.add_child(_settings_win)
+		_settings_win.visible = false
+	_settings_win.visible = not _settings_win.visible
+
+## Перечитать раскладку (после изменений в окне настроек).
+func reload_layout() -> void:
+	_layout_pos.clear()
+	_load_layout()
+	var party_h: bool = _opts["party_horizontal"]
+	var bar2_v: bool = _opts["bar2_vertical"]
+	_set_party_horizontal(party_h)
+	_set_bar2_vertical(bar2_v)
+	_apply_layout()
+
 func toggle_keybinds() -> void:
 	if _keybinds == null:
 		_keybinds = preload("res://scripts/ui/keybind_window.gd").new()
@@ -903,6 +974,42 @@ func toggle_keybinds() -> void:
 		_keybinds.visible = false
 	_keybinds.visible = not _keybinds.visible
 	Sfx.play("ui_open" if _keybinds.visible else "ui_close")
+
+func toggle_character() -> void:
+	if _char_window == null:
+		_char_window = preload("res://scripts/ui/character_window.gd").new()
+		_char_window.setup(world)
+		_root.add_child(_char_window)
+		_char_window.visible = false
+	_char_window.visible = not _char_window.visible
+	Sfx.play("ui_open" if _char_window.visible else "ui_close")
+	if _char_window.visible:
+		_char_window.refresh()
+		_char_window.reset_size()
+		var vp := get_viewport().get_visible_rect().size
+		_char_window.position = Vector2(vp.x - _char_window.size.x - 30, (vp.y - _char_window.size.y) * 0.5 - 40)
+
+func open_shop(vid: String) -> void:
+	if _shop == null:
+		_shop = preload("res://scripts/ui/shop_window.gd").new()
+		_shop.setup(world)
+		_root.add_child(_shop)
+	_shop.open(vid)
+	_shop.reset_size()
+	var vp := get_viewport().get_visible_rect().size
+	_shop.position = Vector2(40, (vp.y - _shop.size.y) * 0.5 - 40)
+	Sfx.play("ui_open")
+	if _char_window == null or not _char_window.visible:
+		toggle_character()
+
+func shop_open() -> bool:
+	return _shop != null and _shop.visible
+
+func on_inventory_changed() -> void:
+	if _char_window and _char_window.visible:
+		_char_window.refresh()
+	if _shop and _shop.visible:
+		_shop.refresh()
 
 func talents_open() -> bool:
 	return _talent_window != null and _talent_window.visible
@@ -913,7 +1020,7 @@ func close_windows() -> bool:
 	if _edit_layer:
 		set_edit_mode(false)
 		closed = true
-	for w in [_talent_window, _spellbook, _keybinds, _menu, _help]:
+	for w in [_talent_window, _spellbook, _keybinds, _char_window, _shop, _settings_win, _menu, _help]:
 		if w and w.visible:
 			w.visible = false
 			closed = true
@@ -1033,11 +1140,33 @@ func _process(delta: float) -> void:
 		if tu.node and is_instance_valid(tu.node):
 			p = tu.node.global_position
 		_target_ring.global_position = p + Vector3(0, 0.05, 0)
-		var r := tu.radius * 1.8 + 0.4
+		var r := (tu.radius * 1.8 + 0.6) * (1.0 + 0.06 * sin(t * 6.0))
 		_target_ring.scale = Vector3(r, 1, r)
 		_target_ring.material_override = _ring_mat(tu.team == Unit.Team.ENEMIES)
+		_target_arrow.visible = tu.alive
+		var head := 2.9 * (tu.radius / 0.6 if tu.kind == "mob" else 1.15)
+		_target_arrow.global_position = p + Vector3(0, head + 0.25 * sin(t * 4.0), 0)
+		_target_arrow.rotation.y = t * 2.0
+		_target_arrow.material_override = _arrow_mat(tu.team == Unit.Team.ENEMIES)
 	else:
 		_target_ring.visible = false
+		_target_arrow.visible = false
+	# подсветка существа под курсором
+	var hov: int = c.pick_unit(get_viewport().get_mouse_position()) if not c._dragged else 0
+	var hu: Unit = world.get_unit(hov)
+	_hover_ring.visible = hu != null and hov != c.target_id and hu.alive
+	if _hover_ring.visible:
+		var hp3 := hu.pos
+		if hu.node and is_instance_valid(hu.node):
+			hp3 = hu.node.global_position
+		_hover_ring.global_position = hp3 + Vector3(0, 0.04, 0)
+		var hr := hu.radius * 1.6 + 0.4
+		_hover_ring.scale = Vector3(hr, 1, hr)
+	# подсказка у торговца
+	var near_v: String = world.economy.nearest_vendor(lh.global_position)
+	_vendor_hint.visible = near_v != "" and not shop_open()
+	if _shop and _shop.visible and near_v != _shop.vendor:
+		_shop.visible = false
 
 	# группа
 	for hid in _party_frames:
@@ -1050,6 +1179,7 @@ func _process(delta: float) -> void:
 		f["hp"].value = u.hp if h.alive_visual else 0.0
 		f["mp"].max_value = maxf(1.0, u.max_mana)
 		f["mp"].value = u.mana
+		_bar_color(f["mp"], Color(0.85, 0.15, 0.12) if u.resource == "rage" else Color(0.2, 0.4, 0.95))
 		if not h.alive_visual:
 			f["info"].text = "Мёртв %d" % int(ceil(h.net_respawn_left))
 		elif u.hp < u.max_hp - 0.5:
@@ -1062,9 +1192,23 @@ func _process(delta: float) -> void:
 		_update_buff_icons(f["buffs"], h.net_buffs)
 
 	# панели заклинаний
+	var procs: Array = []
+	for b in lh.net_buffs:
+		if GameData.PROC_BUFFS.has(b[0]):
+			procs.append_array(GameData.PROC_BUFFS[b[0]]["spells"])
+	var pulse := 0.5 + 0.5 * sin(t * 8.0)
 	for s in _slots:
 		var sid: String = s["sid"]
 		if sid == "":
+			continue
+		if s.has("item"):
+			var pleft: float = c.potion_until - t
+			var pfrac := clampf(pleft / GameData.POTION_CD, 0.0, 1.0)
+			s["cd"].size = Vector2(SLOT - 4, (SLOT - 4) * pfrac)
+			s["cd"].position = Vector2(2, 2 + (SLOT - 4) * (1.0 - pfrac))
+			var n: int = lh.bag_count(s["item"])
+			s["count"].text = str(n)
+			s["slot"].modulate = Color(0.5, 0.5, 0.5) if n <= 0 else Color.WHITE
 			continue
 		var until := maxf(float(c.cd_until.get(sid, 0.0)), c.gcd_until)
 		var total := GameData.eff_cd(lh.unit, sid) if t < float(c.cd_until.get(sid, 0.0)) else GameData.GCD
@@ -1079,7 +1223,11 @@ func _process(delta: float) -> void:
 			s["cd"].size = Vector2(inner, 0)
 			s["cd_l"].text = ""
 		var no_mana: bool = lh.unit.mana < GameData.eff_mana(lh.unit, sid)
-		s["slot"].modulate = Color(0.55, 0.6, 1.0) if no_mana else (Color(1.25, 1.25, 1.0) if c.aim_spell == sid else Color.WHITE)
+		if procs.has(sid):
+			# прок: заклинание светится, как в WoW
+			s["slot"].modulate = Color(1.0 + 0.6 * pulse, 1.0 + 0.45 * pulse, 0.6)
+		else:
+			s["slot"].modulate = Color(0.55, 0.6, 1.0) if no_mana else (Color(1.25, 1.25, 1.0) if c.aim_spell == sid else Color.WHITE)
 
 	_buff_t -= delta
 	if _buff_t <= 0.0:
@@ -1089,6 +1237,8 @@ func _process(delta: float) -> void:
 	var tk := Keys.label("talents")
 	_talent_btn.text = "Таланты (%s)" % tk if free_pts <= 0 else "Таланты (%s)  +%d" % [tk, free_pts]
 	_talent_btn.modulate = Color(1.3, 1.15, 0.6) if free_pts > 0 else Color.WHITE
+	_book_btn.text = _with_key("Книга", "spellbook")
+	_char_btn.text = _with_key("Персонаж", "character")
 
 	# полоса произнесения
 	if c.cast_spell != "":
@@ -1106,16 +1256,19 @@ func _process(delta: float) -> void:
 	_xp_bar.value = lh.xp
 	_xp_label.text = "Уровень %d   —   опыт %d / %d" % [lh.unit.level, lh.xp, lh.xp_next] if lh.unit.level < GameData.MAX_LEVEL else "Максимальный уровень"
 	_gold_label.text = "Золото: %d" % lh.gold
+	if lh.gold != _last_gold:
+		on_inventory_changed()
 	if lh.gold > _last_gold:
 		Sfx.play("coins")
 	_last_gold = lh.gold
-	var wave_text := "Подготовка" if world.wave == 0 else "Волна %d / %d" % [world.wave, world.wave_count]
+	var total := "∞" if world.wave_count == 0 else str(world.wave_count)
+	var wave_text := "Подготовка" if world.wave == 0 else "Волна %d / %s" % [world.wave, total]
 	if world.game_state == "clearing":
-		wave_text += "   •   добейте врагов — затем передышка"
+		wave_text += "\nдобейте врагов — затем передышка"
 	elif world.game_state == "break":
-		wave_text = "Передышка   •   волна %d через %d сек." % [world.wave + 1, int(ceil(world.next_wave_in))]
+		wave_text = "Передышка\nволна %d через %d сек." % [world.wave + 1, int(ceil(world.next_wave_in))]
 	elif world.next_wave_in > 0.0:
-		wave_text += "   •   следующая через %d сек." % int(ceil(world.next_wave_in))
+		wave_text += "\nследующая через %d сек." % int(ceil(world.next_wave_in))
 	_skip_btn.visible = Net.is_server() and (world.game_state == "break" or world.game_state == "prep")
 	_wave_label.text = wave_text
 	_castle_bar.max_value = world.castle.max_hp
@@ -1143,8 +1296,21 @@ func _process(delta: float) -> void:
 var _ring_mats: Dictionary = {}
 func _ring_mat(enemy: bool) -> ShaderMaterial:
 	if not _ring_mats.has(enemy):
-		_ring_mats[enemy] = Vfx.ring_material(Color(1, 0.25, 0.15) if enemy else Color(0.3, 1, 0.4), 0.0, false, 1.5)
+		var m := Vfx.ring_material(Color(1, 0.25, 0.15) if enemy else Color(0.3, 1, 0.4), 0.12, true, 2.2)
+		_ring_mats[enemy] = m
 	return _ring_mats[enemy]
+
+var _arrow_mats: Dictionary = {}
+func _arrow_mat(enemy: bool) -> StandardMaterial3D:
+	if not _arrow_mats.has(enemy):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(1, 0.3, 0.2) if enemy else Color(0.35, 1, 0.45)
+		m.emission_enabled = true
+		m.emission = m.albedo_color
+		m.emission_energy_multiplier = 2.0
+		_arrow_mats[enemy] = m
+	return _arrow_mats[enemy]
 
 func _fill_frame(f: Dictionary, u: Unit, title: String, absorb: float) -> void:
 	f["name"].text = title
@@ -1158,6 +1324,7 @@ func _fill_frame(f: Dictionary, u: Unit, title: String, absorb: float) -> void:
 	f["mp"].max_value = maxf(1.0, u.max_mana)
 	f["mp"].value = u.mana
 	f["mp_l"].text = "%d / %d" % [int(u.mana), int(u.max_mana)]
+	_bar_color(f["mp"], Color(0.85, 0.15, 0.12) if u.resource == "rage" else Color(0.2, 0.4, 0.95))
 
 func _update_buff_icons(box: HBoxContainer, buffs: Array) -> void:
 	var want: Array = []

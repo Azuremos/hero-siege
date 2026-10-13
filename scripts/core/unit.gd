@@ -20,7 +20,12 @@ var mana: float = 0.0
 var max_mana: float = 0.0
 var level: int = 1
 var armor: float = 0.0          # доля снижения физического урона
-var power: float = 1.0          # множитель урона/лечения
+var power: float = 1.0          # множитель заклинаний (уровень × сила заклинаний)
+var phys_power: float = 1.0     # множитель физического урона (уровень × сила атаки)
+var crit_base: float = 0.05     # базовый шанс крита (ловкость, интеллект)
+var spirit: float = 0.0         # дух — восполнение маны и здоровья
+var resource: String = "mana"  # mana | rage
+var combat_until: float = 0.0   # в бою до этого момента (ярость не угасает)
 var heal_mult: float = 1.0
 
 # Состояния (время — серверное, сек)

@@ -1,0 +1,4 @@
+Музыка (CC0 — общественное достояние, указание авторов необязательно):
+  - battle.mp3 — «Battle Theme A», cynicmusic — https://opengameart.org/content/battle-theme-a
+  - rest.mp3   — «Town Theme RPG», cynicmusic (cynicmusic.com, pixelsphere.org) — https://opengameart.org/content/town-theme-rpg
+  - menu.mp3   — «Medieval: The Old Tower Inn», RandomMind — https://opengameart.org/content/medieval-the-old-tower-inn

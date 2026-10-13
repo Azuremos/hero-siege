@@ -327,6 +327,8 @@ const SPAWN_SOUNDS := {
 	"rooted": "ice_shatter", "ice_block": "frost_big", "aura_arcane": "arcane", "aura_holy": "shield",
 	"explosion_fire": "fire_big", "chain_arcane": "arcane", "chain_holy": "holy",
 	"frozen": "ice_shatter", "nova_arcane": "arcane", "blink": "arcane",
+	"hit_phys": "sword", "hit_blood": "sword", "nova_phys": "bones_fall", "whirl": "sword", "taunt": "horde",
+	"taunt_aoe": "horde", "aura_war": "bell", "meteor": "fire", "holy_star": "holy", "proc": "ui_learn",
 }
 
 static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, param: float, unit_id: int) -> void:
@@ -339,6 +341,72 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 			burst(world, pos + Vector3(0, 1.2, 0), COL_HOLY)
 		"hit_fire":
 			burst(world, pos + Vector3(0, 1.2, 0), COL_FIRE, "fire")
+		"hit_phys":
+			burst(world, pos + Vector3(0, 1.2, 0), Color(1.0, 0.95, 0.8))
+		"hit_blood":
+			burst(world, pos + Vector3(0, 1.2, 0), Color(0.85, 0.08, 0.05))
+		"proc":
+			var n := _timed(world, pos, 0.9)
+			n.follow_id = unit_id
+			particles(n, Color(1.0, 0.9, 0.4), 30, 0.7, {"shape": "ring", "radius": 0.8, "vmin": 2.0, "vmax": 4.0,
+				"spread": 10.0, "one_shot": true, "explosive": 0.8, "smin": 0.4, "smax": 0.8, "size": 0.4})
+		"nova_phys", "taunt_aoe":
+			var c := Color(0.75, 0.6, 0.4) if kind == "nova_phys" else Color(1.0, 0.35, 0.25)
+			var n := _timed(world, pos, 1.0)
+			var ring := _ring(n, 0.5, c, 0.4, false, 1.6, n)
+			ring.create_tween().tween_property(ring, "scale", Vector3(param, 1, param), 0.3).set_ease(Tween.EASE_OUT)
+			particles(n, c, 60, 0.7, {"shape": "ring", "radius": 1.0, "vmin": param * 1.4, "vmax": param * 2.2,
+				"dir": Vector3(1, 0.2, 0), "spread": 180.0, "damping": param, "one_shot": true, "explosive": 1.0,
+				"smin": 0.8, "smax": 1.6, "size": 0.7, "additive": false, "aabb": param + 2.0})
+		"whirl":
+			var n := _timed(world, pos, 0.6)
+			n.follow_id = unit_id
+			var ring := _ring(n, param, Color(0.95, 0.95, 1.0), 0.15, true, 1.4, n)
+			ring.create_tween().tween_property(ring, "rotation:y", TAU * 2.0, 0.6)
+			particles(n, Color(1, 1, 1), 40, 0.5, {"shape": "ring", "radius": param * 0.7, "vmin": 3.0, "vmax": 6.0,
+				"dir": Vector3(0, 0.3, 1), "spread": 40.0, "smin": 0.3, "smax": 0.6, "size": 0.35, "aabb": param + 2.0})
+		"taunt":
+			var n := _timed(world, pos, 1.2)
+			n.follow_id = unit_id
+			n.follow_h = 3.0
+			particles(n, Color(1.0, 0.25, 0.15), 20, 0.8, {"radius": 0.3, "vmin": 1.0, "vmax": 2.0, "smin": 0.6, "smax": 1.0,
+				"one_shot": true, "explosive": 0.9})
+		"aura_war":
+			var n := _timed(world, pos, 1.0)
+			n.follow_id = unit_id
+			n.follow_h = 0.0
+			var ring := _ring(n, 0.6, Color(1.0, 0.45, 0.25), 0.3, false, 1.8, n)
+			ring.create_tween().tween_property(ring, "scale", Vector3(5, 1, 5), 0.5).set_ease(Tween.EASE_OUT)
+		"charge_trail":
+			var n := _timed(world, pos, 0.5)
+			particles(n, Color(0.85, 0.75, 0.6), 30, 0.5, {"shape": "box", "extents": Vector3(0.5, 0.2, 0.5), "vmin": 0.5, "vmax": 1.5,
+				"one_shot": true, "explosive": 0.5, "smin": 1.0, "smax": 2.0, "size": 0.7, "additive": false})
+		"meteor", "holy_star":
+			# глыба падает с неба, через 0.7 сек. — взрыв
+			var fire := kind == "meteor"
+			var c := COL_FIRE if fire else COL_HOLY
+			var n := _timed(world, pos, 2.0)
+			n.fade_out = 0.3
+			var rock := MeshInstance3D.new()
+			var sm := SphereMesh.new()
+			sm.radius = 0.9 if fire else 0.6
+			sm.height = sm.radius * 2.0
+			rock.mesh = sm
+			var mat := StandardMaterial3D.new()
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.albedo_color = c.lightened(0.3)
+			mat.emission_enabled = true
+			mat.emission = c
+			mat.emission_energy_multiplier = 5.0
+			rock.material_override = mat
+			rock.position = Vector3(7, 26, 5)
+			n.add_child(rock)
+			particles(rock, c, 40, 0.5, {"radius": 0.5, "vmin": 0.2, "vmax": 1.0, "spread": 180.0, "smin": 1.0, "smax": 1.8, "size": 0.7})
+			var tw := rock.create_tween()
+			tw.tween_property(rock, "position", Vector3(0, 0.5, 0), 0.7).set_ease(Tween.EASE_IN)
+			tw.tween_callback(func():
+				rock.visible = false
+				spawn(world, "explosion_fire" if fire else "nova_holy", n.global_position, n.global_position, param, 0))
 		"frozen":
 			burst(world, pos + Vector3(0, 1.2, 0), COL_FROST, "frost")
 		"blink":

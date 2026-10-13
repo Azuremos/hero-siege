@@ -15,7 +15,7 @@ enum A { IDLE, RUN, BACK, STRAFE_L, STRAFE_R, JUMP }
 const ACTION_ANIMS := {
 	"cast": "Spellcast_Shoot", "shoot": "Spellcast_Shoot", "raise": "Spellcast_Raise",
 	"melee": "1H_Melee_Attack_Slice_Diagonal", "melee2": "1H_Melee_Attack_Chop",
-	"wand": "Spellcast_Shoot", "hit": "Hit_A",
+	"wand": "Spellcast_Shoot", "hit": "Hit_A", "spin": "2H_Melee_Attack_Spinning",
 }
 
 var world: Node3D
@@ -70,8 +70,45 @@ func setup(w: Node3D, hid: int, pid: int, info: Dictionary) -> void:
 	unit.display_name = player_name
 	unit.radius = 0.7
 	unit.node = self
+	bag.resize(BAG_SIZE)
+	bag.fill(null)
 	apply_level_stats(true)
 	xp_next = GameData.xp_to_next(1)
+
+## Атрибуты (итог: класс + рост за уровни + снаряжение) и производные характеристики.
+var attrs: Dictionary = {}
+var spell_power := 0.0
+var attack_power := 0.0
+
+## Снаряжение: ячейка -> id предмета. Сумка: 20 ячеек {id, n} или null.
+var equip: Dictionary = {}
+var bag: Array = []
+const BAG_SIZE := 20
+var potion_ready_at := 0.0        # сервер: общее восстановление зелий
+
+func gear_stats() -> Dictionary:
+	var s := {}
+	for slot in equip:
+		var it := GameData.item(equip[slot])
+		var w: float = GameData.ItemData.OFFHAND_RATIO if slot == "offhand" else 1.0
+		for k in it.get("stats", {}):
+			s[k] = float(s.get(k, 0.0)) + float(it["stats"][k]) * w
+	return s
+
+## Внешний вид: воин с оружием в левой руке держит второй топор вместо щита.
+func update_weapon_visual(dual: bool) -> void:
+	if class_id != "warrior" or model == null:
+		return
+	var skel := model.find_child("Skeleton3D", true, false)
+	if skel == null:
+		return
+	for att in skel.get_children():
+		if att is BoneAttachment3D and att.bone_name == "handslot.l":
+			for m in att.get_children():
+				if m.name == "1H_Axe_Offhand":
+					(m as Node3D).visible = dual
+				elif m.name == "Barbarian_Round_Shield":
+					(m as Node3D).visible = not dual
 
 func apply_level_stats(full_restore: bool) -> void:
 	var cls: Dictionary = GameData.CLASSES[class_id]
@@ -79,18 +116,62 @@ func apply_level_stats(full_restore: bool) -> void:
 	var l := float(unit.level - 1)
 	var hp_frac := unit.hp / unit.max_hp if unit.max_hp > 0.0 else 1.0
 	var mana_frac := unit.mana / unit.max_mana if unit.max_mana > 0.0 else 1.0
-	unit.max_hp = (cls["hp"] + cls["hp_lvl"] * l) * float(race.get("hp_mult", 1.0)) * (1.0 + unit.mod("hp_pct"))
-	unit.max_mana = (cls["mana"] + cls["mana_lvl"] * l) * float(race.get("mana_mult", 1.0)) * (1.0 + unit.mod("mana_pct"))
-	unit.armor = minf(0.6, cls["armor"] + unit.mod("armor"))
-	unit.power = GameData.level_power(unit.level) * float(race.get("power_mult", 1.0))
+	var gear := gear_stats()
+	attrs = {}
+	for k in cls["attrs"]:
+		attrs[k] = float(cls["attrs"][k]) + float(cls["grow"][k]) * l + float(gear.get(k, 0.0))
+	spell_power = attrs["int"] + float(gear.get("sp", 0.0))
+	attack_power = attrs["str"] + float(gear.get("ap", 0.0))
+	unit.resource = cls.get("resource", "mana")
+	unit.max_hp = (float(cls["base_hp"]) + attrs["sta"] * 10.0) * float(race.get("hp_mult", 1.0)) * (1.0 + unit.mod("hp_pct"))
+	if unit.resource == "rage":
+		unit.max_mana = 100.0
+	else:
+		unit.max_mana = (float(cls["base_mana"]) + attrs["int"] * 15.0) * float(race.get("mana_mult", 1.0)) * (1.0 + unit.mod("mana_pct"))
+	unit.armor = minf(0.75, float(cls["armor"]) + attrs["agi"] * 0.0015 + float(gear.get("armor", 0.0)) + unit.mod("armor"))
+	var lvl: float = GameData.level_power(unit.level)
+	var dm := float(cls.get("dmg_mult", 1.0))
+	unit.power = lvl * (1.0 + spell_power / 100.0) * float(race.get("power_mult", 1.0)) * dm
+	unit.phys_power = lvl * (1.0 + attack_power / 100.0) * dm
+	unit.crit_base = 0.05 + attrs["agi"] * 0.001 + attrs["int"] * 0.0005
+	unit.spirit = attrs["spi"]
 	unit.heal_mult = float(race.get("heal_mult", 1.0))
 	if full_restore:
 		unit.hp = unit.max_hp
-		unit.mana = unit.max_mana
+		unit.mana = 0.0 if unit.resource == "rage" else unit.max_mana
 	else:
 		unit.hp = unit.max_hp * hp_frac
 		unit.mana = unit.max_mana * mana_frac
 
+## Сумка: первая ячейка с предметом id (или -1).
+func bag_find(id: String) -> int:
+	for i in bag.size():
+		if bag[i] != null and bag[i]["id"] == id:
+			return i
+	return -1
+
+func bag_count(id: String) -> int:
+	var n := 0
+	for s in bag:
+		if s != null and s["id"] == id:
+			n += int(s["n"])
+	return n
+
+## Сервер: положить предмет в сумку (расходники складываются в стопки). false — нет места.
+func bag_add(id: String, n: int = 1) -> bool:
+	var it := GameData.item(id)
+	if it.is_empty():
+		return false
+	if it["kind"] == "consumable":
+		for s in bag:
+			if s != null and s["id"] == id and int(s["n"]) + n <= GameData.ItemData.STACK:
+				s["n"] = int(s["n"]) + n
+				return true
+	var free := bag.find(null)
+	if free < 0:
+		return false
+	bag[free] = {"id": id, "n": n}
+	return true
 # ---------------------------------------------------------------- таланты
 
 ## Изученные таланты: id -> ранг. Сервер — истина, клиенты получают копию.
@@ -99,8 +180,7 @@ var talents: Dictionary = {}
 func set_talents(ranks: Dictionary) -> void:
 	talents = ranks.duplicate()
 	unit.mods = GameData.compute_mods(class_id, talents)
-	if Net.is_server():
-		apply_level_stats(false)
+	apply_level_stats(false)
 
 func spell_list() -> Array:
 	return GameData.hero_spells(class_id, talents)
@@ -228,6 +308,20 @@ func net_move(p: Vector3, yaw: float, st: int) -> void:
 		_net_initialized = true
 		global_position = p
 
+## Рывок воина: свой герой стремительно переносится к цели.
+@rpc("authority", "reliable")
+func ev_dash(dest: Vector3) -> void:
+	if not is_local:
+		return
+	var to := dest - global_position
+	to.y = 0.0
+	if to.length() > 0.1:
+		rotation.y = atan2(-to.x, -to.z)
+	velocity = Vector3.ZERO
+	var tw := create_tween()
+	tw.tween_property(self, "global_position", Vector3(dest.x, global_position.y, dest.z), 0.22)
+	Vfx.spawn(world, "charge_trail", global_position, dest, 0.0, hero_id)
+
 ## Скачок: сервер разрешил — свой герой переносится вперёд (стены и здания останавливают).
 @rpc("authority", "reliable")
 func ev_blink(dist: float) -> void:
@@ -261,7 +355,7 @@ func _server_tick() -> void:
 	if not unit.alive and world.now() >= respawn_at and respawn_at > 0.0:
 		unit.alive = true
 		unit.hp = unit.max_hp
-		unit.mana = unit.max_mana
+		unit.mana = 0.0 if unit.resource == "rage" else unit.max_mana
 		respawn_at = 0.0
 		ev_respawn.rpc(world.hero_spawn + Vector3(randf_range(-2, 2), 0, randf_range(-1, 1)))
 

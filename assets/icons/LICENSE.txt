@@ -1,8 +1,11 @@
-Иконки заклинаний — game-icons.net (https://game-icons.net)
+Иконки заклинаний, талантов и предметов — game-icons.net (https://game-icons.net)
 Лицензия: Creative Commons Attribution 3.0 (CC BY 3.0) — https://creativecommons.org/licenses/by/3.0/
 
 Авторы:
-  Lorc        — https://lorcblog.blogspot.com
-  Delapouite  — https://delapouite.com
+  Lorc           — https://lorcblog.blogspot.com
+  Delapouite     — https://delapouite.com
+  Willdabeast    — http://wjbstories.blogspot.com   (кольчуга)
+  Caro Asercion  — https://game-icons.net            (эликсир мудрости)
+  game-icons.net, набор «Badges»                    (талант «Специализация на щите»)
 
-Изменения: удалён чёрный фон, иконки перекрашиваются в цвет школы магии в игре.
+Изменения: удалён чёрный фон, иконки перекрашиваются в цвет школы магии / качества предмета в игре.

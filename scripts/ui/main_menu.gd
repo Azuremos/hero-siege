@@ -1,40 +1,50 @@
 extends Node3D
-## Главное меню: выбор имени, класса и расы, одиночная игра, хост и подключение
-## (по локальной сети или через Radmin VPN), лобби.
+## Главное меню в духе больших игр: Одиночная игра, Сетевая игра, Таланты классов, Настройки, Об игре, Выход.
+## Экран героя (имя, класс, раса) общий для одиночной и сетевой игры. Лобби для игры по сети (Radmin VPN).
 
 const SETTINGS_PATH := "user://settings.cfg"
 const GOLD := Color(0.95, 0.78, 0.35)
+const LANE_NAMES := ["1 — только с юга", "2 — юг и восток", "3 — юг, восток и запад", "4 — со всех сторон"]
+const WAVE_CHOICES := [1, 2, 3, 4, 5, 10, 20, 30, 50, 0]
 
 var _cam: Camera3D
-var _orbit := 0.0
 var _preview: Node3D
 var _preview_anchor := Vector3(0, 0, 16)
 
 var _ui: Control
-var _main_panel: PanelContainer
-var _lobby_panel: PanelContainer
+var _screens: Dictionary = {}          # имя -> Control
+var _mode := "solo"                    # solo | net — какой экран героя открыт
 var _name_edit: LineEdit
 var _class_buttons: Dictionary = {}
 var _class_desc: Label
 var _spell_row: HBoxContainer
-var _talent_view: Control = null
 var _race_option: OptionButton
 var _race_desc: Label
 var _waves_option: OptionButton
 var _lanes_option: OptionButton
-const LANE_NAMES := ["1 — только с юга", "2 — юг и восток", "3 — юг, восток и запад", "4 — со всех сторон"]
-const WAVE_CHOICES := [1, 2, 3, 4, 5, 10, 20]
 var _ip_edit: LineEdit
 var _status: Label
+var _solo_box: Control
+var _net_box: Control
 var _lobby_list: VBoxContainer
 var _lobby_info: Label
 var _start_btn: Button
+var _talent_view: Control = null
+var _talent_class := "mage"
+var _keys_view: Control = null
+var _settings_view: Control = null
 var _cli: Dictionary = {}
 
 func _ready() -> void:
 	_parse_cli()
 	var map := (load("res://scenes/map.tscn") as PackedScene).instantiate()
 	add_child(map)
+	var roads := map.get_node_or_null("Roads") as MeshInstance3D
+	if roads:
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/cobblestone.gdshader")
+		roads.material_override = mat
+	Settings.apply_shadows(map.get_node_or_null("Sun") as DirectionalLight3D)
 	_cam = Camera3D.new()
 	_cam.fov = 55
 	_cam.far = 500
@@ -46,18 +56,20 @@ func _ready() -> void:
 		(b as BaseButton).pressed.connect(func(): Sfx.play("ui_click"))
 	_load_settings()
 	_update_preview()
+	_show("main")
 	Net.players_changed.connect(_refresh_lobby)
 	Net.connection_failed.connect(_on_fail)
 	Net.disconnected.connect(_on_fail)
-	multiplayer.connected_to_server.connect(func(): _show_lobby())
+	multiplayer.connected_to_server.connect(func(): _show("lobby"))
+	Sfx.play_music("menu")
 	_run_cli()
 
-## Камера неподвижно смотрит на героя (он стоит справа от панели, на фоне — замок).
+## Камера неподвижно смотрит на героя (он стоит справа от меню, на фоне — замок).
 func _place_camera() -> void:
 	var side := Vector3(-2.3, 0, 0)
 	_cam.look_at_from_position(_preview_anchor + side + Vector3(0, 2.3, 8.8), _preview_anchor + side + Vector3(0, 1.3, 0))
 
-# ---------------------------------------------------------------- интерфейс
+# ---------------------------------------------------------------- построение
 
 func _style(border: Color = Color(0.55, 0.45, 0.25)) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -76,6 +88,27 @@ func _label(text: String, size: int = 16, col: Color = Color.WHITE) -> Label:
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	return l
 
+func _panel(name_id: String, width: float) -> VBoxContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", _style())
+	p.position = Vector2(40, 140)
+	p.custom_minimum_size = Vector2(width, 0)
+	_ui.add_child(p)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	p.add_child(v)
+	_screens[name_id] = p
+	return v
+
+func _big_button(parent: Control, text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(320, 52)
+	b.add_theme_font_size_override("font_size", 20)
+	b.pressed.connect(cb)
+	parent.add_child(b)
+	return b
+
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
@@ -90,114 +123,118 @@ func _build_ui() -> void:
 	_ui.theme = theme
 	layer.add_child(_ui)
 
-	var title := _label("HERO SIEGE", 54, GOLD)
+	var title := _label("HERO SIEGE", 58, GOLD)
 	title.autowrap_mode = TextServer.AUTOWRAP_OFF
-	title.position = Vector2(40, 24)
+	title.position = Vector2(40, 22)
 	title.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	title.add_theme_constant_override("outline_size", 10)
 	_ui.add_child(title)
 	var sub := _label("Осада замка  •  кооператив до 6 героев", 18, Color(1, 1, 1, 0.85))
 	sub.autowrap_mode = TextServer.AUTOWRAP_OFF
-	sub.position = Vector2(44, 92)
+	sub.position = Vector2(44, 96)
 	sub.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	sub.add_theme_constant_override("outline_size", 6)
 	_ui.add_child(sub)
 
-	_main_panel = PanelContainer.new()
-	_main_panel.add_theme_stylebox_override("panel", _style())
-	_main_panel.position = Vector2(40, 140)
-	_main_panel.custom_minimum_size = Vector2(440, 0)
-	_ui.add_child(_main_panel)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 7)
-	_main_panel.add_child(v)
+	# --- главный экран
+	var m := _panel("main", 360)
+	_big_button(m, "Одиночная игра", func(): _open_hero("solo"))
+	_big_button(m, "Сетевая игра", func(): _open_hero("net"))
+	_big_button(m, "Таланты классов", func(): _show("talents"))
+	_big_button(m, "Настройки", _toggle_settings)
+	_big_button(m, "Об игре", func(): _show("about"))
+	_big_button(m, "Выход", func(): get_tree().quit())
 
-	v.add_child(_label("Имя героя", 14, GOLD))
+	# --- экран героя (общий для одиночной и сетевой игры)
+	var h := _panel("hero", 460)
+	h.add_child(_label("Имя героя", 14, GOLD))
 	_name_edit = LineEdit.new()
 	_name_edit.max_length = 16
 	_name_edit.text = "Герой"
-	v.add_child(_name_edit)
-
-	v.add_child(_label("Класс", 14, GOLD))
+	h.add_child(_name_edit)
+	h.add_child(_label("Класс", 14, GOLD))
 	var classes := HBoxContainer.new()
 	classes.add_theme_constant_override("separation", 6)
-	v.add_child(classes)
+	h.add_child(classes)
 	var group := ButtonGroup.new()
 	for cid in GameData.CLASSES:
 		var b := Button.new()
 		b.text = GameData.CLASSES[cid]["name"]
 		b.toggle_mode = true
 		b.button_group = group
-		b.custom_minimum_size = Vector2(130, 40)
+		b.custom_minimum_size = Vector2(102, 38)
 		b.add_theme_color_override("font_color", GameData.CLASSES[cid]["color"])
 		b.add_theme_color_override("font_pressed_color", GameData.CLASSES[cid]["color"].lightened(0.3))
-		b.pressed.connect(_on_class.bind(cid))
+		b.pressed.connect(func(): _update_preview())
 		classes.add_child(b)
 		_class_buttons[cid] = b
 	_class_desc = _label("", 14, Color(0.9, 0.9, 0.85))
-	_class_desc.custom_minimum_size = Vector2(400, 44)
-	v.add_child(_class_desc)
+	_class_desc.custom_minimum_size = Vector2(420, 40)
+	h.add_child(_class_desc)
 	_spell_row = HBoxContainer.new()
-	_spell_row.add_theme_constant_override("separation", 4)
-	v.add_child(_spell_row)
-	var row1 := HBoxContainer.new()
-	row1.add_theme_constant_override("separation", 6)
-	v.add_child(row1)
-	var tal := Button.new()
-	tal.text = "Таланты класса"
-	tal.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tal.pressed.connect(_toggle_talents)
-	row1.add_child(tal)
-	var keys_btn := Button.new()
-	keys_btn.text = "Горячие клавиши"
-	keys_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	keys_btn.pressed.connect(_toggle_keys)
-	row1.add_child(keys_btn)
-
-	v.add_child(_label("Раса", 14, GOLD))
+	_spell_row.add_theme_constant_override("separation", 3)
+	h.add_child(_spell_row)
+	h.add_child(_label("Раса", 14, GOLD))
 	_race_option = OptionButton.new()
 	for rid in GameData.RACES:
 		_race_option.add_item(GameData.RACES[rid]["name"])
 		_race_option.set_item_metadata(_race_option.item_count - 1, rid)
 	_race_option.item_selected.connect(func(_i): _update_preview())
-	v.add_child(_race_option)
+	h.add_child(_race_option)
 	_race_desc = _label("", 14, Color(0.9, 0.9, 0.85))
-	v.add_child(_race_desc)
-
-	v.add_child(_label("Длительность осады", 14, GOLD))
+	h.add_child(_race_desc)
+	h.add_child(HSeparator.new())
+	# настройки партии (одиночная игра и хост)
+	var opts := GridContainer.new()
+	opts.columns = 2
+	opts.add_theme_constant_override("h_separation", 10)
+	h.add_child(opts)
+	var l_w := _label("Длительность", 14, GOLD)
+	l_w.autowrap_mode = TextServer.AUTOWRAP_OFF
+	opts.add_child(l_w)
 	_waves_option = OptionButton.new()
 	for n in WAVE_CHOICES:
-		var word := "волна" if n == 1 else ("волны" if n < 5 else "волн")
-		var extra := "  — быстрая игра, в конце босс" if n < 5 else ("  — полная осада" if n == 20 else "")
-		_waves_option.add_item("%d %s%s" % [n, word, extra])
+		var text := "Бесконечная осада" if n == 0 else "%d %s" % [n, "волна" if n == 1 else ("волны" if n < 5 else "волн")]
+		if n > 0 and n < 5:
+			text += " — быстрая, в конце босс"
+		elif n == 20:
+			text += " — полная осада"
+		_waves_option.add_item(text)
 		_waves_option.set_item_metadata(_waves_option.item_count - 1, n)
-	_waves_option.select(WAVE_CHOICES.size() - 1)
-	v.add_child(_waves_option)
-	v.add_child(_label("Направления атаки", 14, GOLD))
+	_waves_option.select(WAVE_CHOICES.find(20))
+	_waves_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opts.add_child(_waves_option)
+	var l_l := _label("Направления", 14, GOLD)
+	l_l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	opts.add_child(l_l)
 	_lanes_option = OptionButton.new()
 	for n in LANE_NAMES:
 		_lanes_option.add_item(n)
 	_lanes_option.select(3)
-	v.add_child(_lanes_option)
-
-	v.add_child(HSeparator.new())
-	var row2 := HBoxContainer.new()
-	row2.add_theme_constant_override("separation", 6)
-	v.add_child(row2)
-	var solo := Button.new()
-	solo.text = "Одиночная игра"
-	solo.custom_minimum_size = Vector2(0, 42)
-	solo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	solo.pressed.connect(_on_solo)
-	row2.add_child(solo)
+	_lanes_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opts.add_child(_lanes_option)
+	# действия: одиночная
+	_solo_box = HBoxContainer.new()
+	_solo_box.add_theme_constant_override("separation", 6)
+	h.add_child(_solo_box)
+	var start := Button.new()
+	start.text = "Начать осаду"
+	start.custom_minimum_size = Vector2(0, 44)
+	start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start.pressed.connect(_on_solo)
+	_solo_box.add_child(start)
+	# действия: сетевая
+	var net := VBoxContainer.new()
+	net.add_theme_constant_override("separation", 6)
+	h.add_child(net)
+	_net_box = net
 	var host := Button.new()
 	host.text = "Создать игру (хост)"
 	host.custom_minimum_size = Vector2(0, 42)
-	host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	host.pressed.connect(_on_host)
-	row2.add_child(host)
+	net.add_child(host)
 	var jh := HBoxContainer.new()
-	v.add_child(jh)
+	net.add_child(jh)
 	_ip_edit = LineEdit.new()
 	_ip_edit.placeholder_text = "IP хоста, например 26.12.34.56"
 	_ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -207,24 +244,14 @@ func _build_ui() -> void:
 	join.pressed.connect(_on_join)
 	jh.add_child(join)
 	_status = _label("", 14, Color(1, 0.6, 0.5))
-	v.add_child(_status)
-	var quit := Button.new()
-	quit.text = "  Выход из игры  "
-	quit.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	quit.position = Vector2(-170, 20)
-	quit.pressed.connect(func(): get_tree().quit())
-	_ui.add_child(quit)
+	h.add_child(_status)
+	var back := Button.new()
+	back.text = "Назад"
+	back.pressed.connect(func(): _show("main"))
+	h.add_child(back)
 
-	# лобби
-	_lobby_panel = PanelContainer.new()
-	_lobby_panel.add_theme_stylebox_override("panel", _style(GOLD))
-	_lobby_panel.position = Vector2(40, 140)
-	_lobby_panel.custom_minimum_size = Vector2(440, 0)
-	_lobby_panel.visible = false
-	_ui.add_child(_lobby_panel)
-	var lv := VBoxContainer.new()
-	lv.add_theme_constant_override("separation", 10)
-	_lobby_panel.add_child(lv)
+	# --- лобби
+	var lv := _panel("lobby", 460)
 	lv.add_child(_label("Лобби", 24, GOLD))
 	_lobby_info = _label("", 14, Color(0.85, 0.95, 1.0))
 	lv.add_child(_lobby_info)
@@ -241,8 +268,54 @@ func _build_ui() -> void:
 	leave.text = "Покинуть лобби"
 	leave.pressed.connect(func():
 		Net.leave()
-		_show_main())
+		_show("main"))
 	lv.add_child(leave)
+
+	# --- таланты классов
+	var tv := _panel("talents", 360)
+	tv.add_child(_label("Таланты классов", 22, GOLD))
+	tv.add_child(_label("Выберите класс — откроется его дерево талантов. Можно спланировать раскладку на 30 уровне.", 14, Color(0.9, 0.9, 0.85)))
+	for cid in GameData.CLASSES:
+		var b := Button.new()
+		b.text = GameData.CLASSES[cid]["name"]
+		b.custom_minimum_size = Vector2(0, 40)
+		b.add_theme_color_override("font_color", GameData.CLASSES[cid]["color"])
+		var c: String = cid
+		b.pressed.connect(func(): _open_talents(c))
+		tv.add_child(b)
+	var tback := Button.new()
+	tback.text = "Назад"
+	tback.pressed.connect(func():
+		if _talent_view:
+			_talent_view.visible = false
+		_show("main"))
+	tv.add_child(tback)
+
+	# --- об игре
+	var ab := _panel("about", 560)
+	ab.add_child(_label("Об игре", 22, GOLD))
+	ab.add_child(_label("Hero Siege — кооперативная защита замка в духе карт Warcraft 3 с управлением как в World of Warcraft. Движок Godot 4.", 15))
+	ab.add_child(_label("""Модели: KayKit (Kay Lousberg, CC0).
+Иконки: game-icons.net — Lorc, Delapouite и другие (CC BY 3.0).
+Звуки: rubberduck, bart, IgnasD, Kenney (CC0); DoKashiteru, spookymodem (CC BY 3.0).
+Музыка: cynicmusic, RandomMind (CC0).""", 14, Color(0.85, 0.85, 0.85)))
+	var aback := Button.new()
+	aback.text = "Назад"
+	aback.pressed.connect(func(): _show("main"))
+	ab.add_child(aback)
+
+func _show(screen: String) -> void:
+	for s in _screens:
+		_screens[s].visible = s == screen
+	if screen == "lobby":
+		_refresh_lobby()
+
+func _open_hero(mode: String) -> void:
+	_mode = mode
+	_solo_box.visible = mode == "solo"
+	_net_box.visible = mode == "net"
+	_status.text = ""
+	_show("hero")
 
 # ---------------------------------------------------------------- выбор героя
 
@@ -255,9 +328,6 @@ func _selected_class() -> String:
 func _selected_race() -> String:
 	return _race_option.get_item_metadata(_race_option.selected)
 
-func _on_class(_cid: String) -> void:
-	_update_preview()
-
 func _update_preview() -> void:
 	var cid := _selected_class()
 	var rid := _selected_race()
@@ -266,7 +336,7 @@ func _update_preview() -> void:
 		c.queue_free()
 	for sid in GameData.CLASSES[cid]["spells"]:
 		var cell := Panel.new()
-		cell.custom_minimum_size = Vector2(46, 46)
+		cell.custom_minimum_size = Vector2(38, 38)
 		cell.tooltip_text = SpellIcon.tooltip(sid)
 		var st := StyleBoxFlat.new()
 		st.bg_color = Color(0, 0, 0, 0.6)
@@ -274,14 +344,14 @@ func _update_preview() -> void:
 		st.set_border_width_all(2)
 		st.set_corner_radius_all(5)
 		cell.add_theme_stylebox_override("panel", st)
-		var icon := SpellIcon.make(sid, 42)
+		var icon := SpellIcon.make(sid, 34)
 		icon.position = Vector2(2, 2)
 		cell.add_child(icon)
-		var lvl := _label(str(GameData.spell_level(sid)), 12, Color(1, 0.95, 0.7))
+		var lvl := _label(str(GameData.spell_level(sid)), 11, Color(1, 0.95, 0.7))
 		lvl.autowrap_mode = TextServer.AUTOWRAP_OFF
 		lvl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 		lvl.add_theme_constant_override("outline_size", 4)
-		lvl.position = Vector2(30, 26)
+		lvl.position = Vector2(24, 20)
 		cell.add_child(lvl)
 		_spell_row.add_child(cell)
 	_race_desc.text = GameData.RACES[rid]["desc"]
@@ -291,31 +361,34 @@ func _update_preview() -> void:
 	add_child(_preview)
 	_preview.position = _preview_anchor
 	_preview.rotation.y = PI + 0.3
-	if _talent_view:
-		_talent_view.queue_free()
-		_talent_view = null
 	var ap := ModelFactory.find_anim(_preview)
 	if ap:
 		ap.play("Idle")
 
-var _keys_view: Control = null
+func _open_talents(cid: String) -> void:
+	if _talent_view:
+		_talent_view.queue_free()
+	_talent_view = preload("res://scripts/ui/talent_window.gd").new()
+	_talent_view.setup_preview(cid)
+	_ui.add_child(_talent_view)
+	_talent_view.refresh()
+
+func _toggle_settings() -> void:
+	if _settings_view == null:
+		_settings_view = preload("res://scripts/ui/settings_window.gd").new()
+		_settings_view.on_keys = func():
+			_settings_view.visible = false
+			_toggle_keys()
+		_ui.add_child(_settings_view)
+		return
+	_settings_view.visible = not _settings_view.visible
+
 func _toggle_keys() -> void:
 	if _keys_view == null:
 		_keys_view = preload("res://scripts/ui/keybind_window.gd").new()
 		_ui.add_child(_keys_view)
 		return
 	_keys_view.visible = not _keys_view.visible
-
-func _toggle_talents() -> void:
-	if _talent_view == null:
-		_talent_view = preload("res://scripts/ui/talent_window.gd").new()
-		_talent_view.setup_preview(_selected_class())
-		_ui.add_child(_talent_view)
-		_talent_view.refresh()
-		return
-	_talent_view.visible = not _talent_view.visible
-	if _talent_view.visible:
-		_talent_view.refresh()
 
 func _apply_local_info() -> void:
 	var n := _name_edit.text.strip_edges()
@@ -338,7 +411,7 @@ func _on_host() -> void:
 	if err != OK:
 		_status.text = "Не удалось создать игру: порт %d занят." % Net.PORT
 		return
-	_show_lobby()
+	_show("lobby")
 
 func _on_join() -> void:
 	_apply_local_info()
@@ -352,21 +425,12 @@ func _on_join() -> void:
 		_on_fail("Неверный адрес.")
 
 func _on_fail(reason: String) -> void:
-	_show_main()
+	_open_hero("net")
 	_status.text = reason
 	_status.add_theme_color_override("font_color", Color(1, 0.6, 0.5))
 
-func _show_lobby() -> void:
-	_main_panel.visible = false
-	_lobby_panel.visible = true
-	_refresh_lobby()
-
-func _show_main() -> void:
-	_main_panel.visible = true
-	_lobby_panel.visible = false
-
 func _refresh_lobby() -> void:
-	if not _lobby_panel.visible:
+	if not _screens.has("lobby") or not _screens["lobby"].visible:
 		return
 	for c in _lobby_list.get_children():
 		c.queue_free()
@@ -379,7 +443,9 @@ func _refresh_lobby() -> void:
 		_lobby_list.add_child(l)
 	if Net.is_server():
 		var addrs := Net.local_addresses()
-		_lobby_info.text = "Вы хост. Друзья подключаются по одному из адресов:\n%s\n(в Radmin VPN это адрес 26.x.x.x, порт %d)" % [", ".join(addrs), Net.PORT]
+		var w: int = Net.settings.get("waves", 20)
+		_lobby_info.text = "Вы хост. Друзья подключаются по одному из адресов:\n%s\n(в Radmin VPN это адрес 26.x.x.x, порт %d)\nОсада: %s, направлений: %d" % [
+			", ".join(addrs), Net.PORT, "бесконечная" if w == 0 else "%d волн" % w, int(Net.settings.get("lanes", 4))]
 		_start_btn.visible = true
 		_check_autostart()
 	else:
@@ -397,15 +463,14 @@ func _load_settings() -> void:
 		if _class_buttons.has(cid):
 			_class_buttons[cid].button_pressed = true
 		_lanes_option.select(clampi(int(cfg.get_value("game", "lanes", 4)), 1, 4) - 1)
-		var waves: int = cfg.get_value("game", "waves", 20)
-		var wi := WAVE_CHOICES.find(waves)
+		var wi := WAVE_CHOICES.find(int(cfg.get_value("game", "waves", 20)))
 		if wi >= 0:
 			_waves_option.select(wi)
 		var rid: String = cfg.get_value("player", "race", "human")
 		for i in _race_option.item_count:
 			if _race_option.get_item_metadata(i) == rid:
 				_race_option.select(i)
-	if _selected_class() == "mage" and not _class_buttons["mage"].button_pressed:
+	if not _class_buttons[_selected_class()].button_pressed:
 		_class_buttons["mage"].button_pressed = true
 
 func _save_settings() -> void:
@@ -439,7 +504,15 @@ func _run_cli() -> void:
 			if _race_option.get_item_metadata(i) == _cli["race"]:
 				_race_option.select(i)
 	if _cli.has("menutalents"):
-		_toggle_talents.call_deferred()
+		_show("talents")
+		_open_talents.call_deferred(_cli.get("class", "mage"))
+	if _cli.has("menuscreen"):
+		if _cli["menuscreen"] == "hero":
+			_open_hero("solo")
+		elif _cli["menuscreen"] == "settings":
+			_toggle_settings()
+		else:
+			_show(_cli["menuscreen"])
 	if _cli.has("lanes"):
 		_lanes_option.select(clampi(int(_cli["lanes"]), 1, 4) - 1)
 	if _cli.has("waves"):

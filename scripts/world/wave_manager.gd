@@ -18,9 +18,9 @@ func _ready() -> void:
 
 func begin() -> void:
 	_started = true
-	var delay: float = minf(GameData.FIRST_WAVE_DELAY, 12.0 + 3.0 * world.wave_count)
+	var delay: float = GameData.FIRST_WAVE_DELAY if world.wave_count == 0 else minf(GameData.FIRST_WAVE_DELAY, 12.0 + 3.0 * world.wave_count)
 	_next_wave_at = world.now() + delay
-	var mode: String = "" if world.wave_count >= GameData.WAVE_COUNT else "  (волн: %d)" % world.wave_count
+	var mode: String = "  (бесконечная осада)" if world.wave_count == 0 else ("" if world.wave_count == GameData.WAVE_COUNT else "  (волн: %d)" % world.wave_count)
 	world.announce_all("Защитите замок! Первая волна через %d сек.%s" % [int(delay), mode])
 
 func server_tick(_delta: float, t: float) -> void:
@@ -57,7 +57,7 @@ func _start_wave(t: float) -> void:
 	world.game_state = "running"
 	var w: int = world.wave
 	# В короткой партии (меньше 5 волн) последняя волна заканчивается боссом
-	var short_final: bool = world.wave_count < 5 and w == world.wave_count
+	var short_final: bool = world.wave_count > 0 and world.wave_count < 5 and w == world.wave_count
 	var lanes: Array = world.active_lanes
 	var comp: Array = GameData.wave_composition(w, lanes.size(), short_final)
 	var per_lane_time: Dictionary = {}
@@ -75,9 +75,11 @@ func _start_wave(t: float) -> void:
 		boss = " Идёт %s!" % GameData.MOBS["boss_lich" if w % 10 == 0 else "boss_warlord"]["name"]
 	world.sound_all("bell")
 	world.sound_all("horde")
-	var after := "" if w % BREAK_EVERY != 0 or w >= world.wave_count else "  После неё — передышка."
-	world.announce_all("Волна %d из %d.%s%s" % [w, world.wave_count, boss, after], Color(1, 0.6, 0.3) if boss != "" else Color(1, 0.9, 0.6))
-	if w >= world.wave_count:
+	var last: bool = world.wave_count > 0 and w >= world.wave_count
+	var after := "" if w % BREAK_EVERY != 0 or last else "  После неё — передышка."
+	var of_total := "" if world.wave_count == 0 else " из %d" % world.wave_count
+	world.announce_all("Волна %d%s.%s%s" % [w, of_total, boss, after], Color(1, 0.6, 0.3) if boss != "" else Color(1, 0.9, 0.6))
+	if last:
 		_all_spawned = true
 	elif w % BREAK_EVERY == 0:
 		_break_pending = true

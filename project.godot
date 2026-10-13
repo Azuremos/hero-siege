@@ -15,6 +15,7 @@ run/max_fps=144
 
 GameData="*res://scripts/data/game_data.gd"
 Net="*res://scripts/net/network.gd"
+Settings="*res://scripts/core/settings.gd"
 Sfx="*res://scripts/core/sfx.gd"
 Keys="*res://scripts/core/keybinds.gd"
 
