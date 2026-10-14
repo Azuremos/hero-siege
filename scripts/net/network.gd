@@ -10,8 +10,10 @@ signal disconnected(reason: String)
 const PORT := 7777
 const MAX_PLAYERS := 6
 
-## peer_id -> {name, class, race, hero_id}
+## peer_id -> {name, class, race, version, hero_id}
 var players: Dictionary = {}
+## Последнее сообщение для лобби хоста (например, кто зашёл с другой версией).
+var lobby_notice := ""
 var local_info: Dictionary = {"name": "Герой", "class": "mage", "race": "human"}
 var in_game := false
 var solo := false
@@ -33,6 +35,11 @@ func is_server() -> bool:
 func my_id() -> int:
 	return multiplayer.get_unique_id()
 
+## Версия игры — одна на всё: application/config/version в project.godot (совпадает с тегом релиза).
+## Играть вместе можно только на одинаковой версии.
+func game_version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version", "?"))
+
 ## Адреса этого компьютера — подсказка для хоста (Radmin VPN выдаёт 26.x.x.x).
 func local_addresses() -> Array:
 	var out: Array = []
@@ -52,7 +59,9 @@ func host_game(is_solo: bool = false) -> Error:
 	multiplayer.multiplayer_peer = peer
 	solo = is_solo
 	players.clear()
+	lobby_notice = ""
 	players[1] = local_info.duplicate()
+	players[1]["version"] = game_version()
 	players_changed.emit()
 	return OK
 
@@ -87,7 +96,9 @@ func _on_peer_disconnected(id: int) -> void:
 			_sync_players.rpc(players)
 
 func _on_connected_ok() -> void:
-	_register_player.rpc_id(1, local_info)
+	var info := local_info.duplicate()
+	info["version"] = game_version()
+	_register_player.rpc_id(1, info)
 
 func _on_connected_fail() -> void:
 	leave()
@@ -106,13 +117,39 @@ func _register_player(info: Dictionary) -> void:
 		# Поздний вход пока не поддерживается — вежливо отключаем.
 		multiplayer.multiplayer_peer.disconnect_peer(id)
 		return
+	var pname := str(info.get("name", "Герой")).substr(0, 16)
+	# Версии до v0.5 свою версию не присылают.
+	var version := str(info.get("version", "")).substr(0, 24)
+	if version != game_version():
+		var theirs := version if version != "" else "старая (до 0.5)"
+		lobby_notice = "%s пытался подключиться с версией %s — нужна %s." % [pname, theirs, game_version()]
+		players_changed.emit()
+		_version_mismatch.rpc_id(id, game_version())
+		_kick_later(id)
+		return
 	players[id] = {
-		"name": str(info.get("name", "Герой")).substr(0, 16),
+		"name": pname,
 		"class": str(info.get("class", "mage")) if GameData.CLASSES.has(info.get("class", "")) else "mage",
 		"race": str(info.get("race", "human")) if GameData.RACES.has(info.get("race", "")) else "human",
+		"version": version,
 	}
 	players_changed.emit()
 	_sync_players.rpc(players)
+
+## Отключает игрока чуть позже, чтобы до него успело дойти сообщение о причине.
+func _kick_later(id: int) -> void:
+	await get_tree().create_timer(1.0).timeout
+	if is_server() and multiplayer.get_peers().has(id):
+		multiplayer.multiplayer_peer.disconnect_peer(id)
+
+## Хост сообщает клиенту, что версии не совпадают.
+## Имя выбрано так, чтобы по алфавиту стоять после остальных RPC этого узла: если номера RPC
+## зависят от порядка имён, у существующих они не сдвинутся, и старый клиент дойдёт до проверки версии.
+@rpc("authority", "reliable")
+func _version_mismatch(host_version: String) -> void:
+	var reason := "У хоста версия %s, у вас %s.\nСкачайте ту же версию игры, что у хоста." % [host_version, game_version()]
+	leave.call_deferred()
+	connection_failed.emit(reason)
 
 @rpc("authority", "reliable")
 func _sync_players(p: Dictionary) -> void:

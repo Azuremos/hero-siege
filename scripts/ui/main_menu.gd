@@ -137,6 +137,14 @@ func _build_ui() -> void:
 	sub.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	sub.add_theme_constant_override("outline_size", 6)
 	_ui.add_child(sub)
+	var ver := _label("Версия %s" % Net.game_version(), 14, Color(1, 1, 1, 0.6))
+	ver.autowrap_mode = TextServer.AUTOWRAP_OFF
+	ver.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	ver.add_theme_constant_override("outline_size", 4)
+	_ui.add_child(ver)
+	ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 12)
+	ver.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	ver.grow_vertical = Control.GROW_DIRECTION_BEGIN
 
 	# --- главный экран
 	var m := _panel("main", 360)
@@ -452,8 +460,11 @@ func _refresh_lobby() -> void:
 	for pid in ids:
 		var p: Dictionary = Net.players[pid]
 		var cls: Dictionary = GameData.CLASSES[p["class"]]
-		var l := _label("%s%s — %s, %s" % ["★ " if pid == 1 else "", p["name"], GameData.RACES[p["race"]]["name"], cls["name"]], 17, cls["color"])
+		var l := _label("%s%s — %s, %s  ·  v%s" % ["★ " if pid == 1 else "", p["name"], GameData.RACES[p["race"]]["name"], cls["name"],
+			p.get("version", "?")], 17, cls["color"])
 		_lobby_list.add_child(l)
+	if Net.lobby_notice != "":
+		_lobby_list.add_child(_label(Net.lobby_notice, 14, Color(1, 0.6, 0.5)))
 	if Net.is_server():
 		var addrs := Net.local_addresses()
 		var w: int = Net.settings.get("waves", 20)
