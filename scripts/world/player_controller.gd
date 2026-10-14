@@ -183,6 +183,8 @@ func _key(k: InputEventKey) -> void:
 		world.hud.toggle_talents()
 	elif action == "character":
 		world.hud.toggle_character()
+	elif action == "meter":
+		world.hud.toggle_meter()
 	elif action == "spellbook":
 		world.hud.toggle_spellbook()
 	elif code >= KEY_F1 and code <= KEY_F6:

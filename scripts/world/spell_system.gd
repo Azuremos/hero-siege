@@ -507,9 +507,9 @@ func _tick_auras_for(list: Array, t: float) -> void:
 				a["next"] += a["tick"]
 				var src: Unit = world.get_unit(a["source"])
 				if a["kind"] == "dot":
-					deal_damage(src, u, a["per_tick"], a["school"], false)
+					deal_damage(src, u, a["per_tick"], a["school"], false, a["key"])
 				else:
-					heal(src, u, a["per_tick"], false)
+					heal(src, u, a["per_tick"], false, a["key"])
 				if not u.alive:
 					break
 			if t >= a["until"] - 0.01:
@@ -524,7 +524,7 @@ func _explode(a: Dictionary, u: Unit) -> void:
 	var src: Unit = world.get_unit(a["source"])
 	var ex: Dictionary = a["explode"]
 	for m: Unit in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), float(ex["radius"])):
-		deal_damage(src, m, randf_range(ex["min"], ex["max"]), "fire", false)
+		deal_damage(src, m, randf_range(ex["min"], ex["max"]), "fire", false, "living_bomb")
 	fx_at("explosion_fire", u.pos, u.pos, float(ex["radius"]), 0)
 
 # ---------------------------------------------------------------- эффекты
@@ -555,7 +555,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				var crit := randf() < crit_chance
 				if crit:
 					amount *= 1.5
-				deal_damage(caster, target, amount, school, crit)
+				deal_damage(caster, target, amount, school, crit, sid)
 				if caster and caster.kind == "hero":
 					_on_damage_dealt(caster, target, amount, school, crit, t)
 					if sid != "auto":
@@ -565,16 +565,16 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				var crit := randf() < crit_chance
 				if crit:
 					amount *= 1.5
-				heal(caster, target, amount, crit)
+				heal(caster, target, amount, crit, sid)
 				if crit and caster:
 					_on_heal_crit(caster, target, sid, t)
 				if caster:
 					_trigger_procs(caster, target, "heal", sid, school, crit, t)
 			"heal_self_pct":
 				if caster:
-					heal(caster, caster, caster.max_hp * float(e["pct"]), false)
+					heal(caster, caster, caster.max_hp * float(e["pct"]), false, sid)
 			"heal_pct":
-				heal(caster, target, target.max_hp * float(e["pct"]), false)
+				heal(caster, target, target.max_hp * float(e["pct"]), false, sid)
 			"slow":
 				if target.kind != "castle":
 					var pct := minf(0.9, float(e["pct"]) + _m(caster, "slow_add", sid, school))
@@ -655,7 +655,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					hits += 1
 					var dmg_fx: Dictionary = effects[0]
 					var amount := randf_range(dmg_fx["min"], dmg_fx["max"]) * pw * float(e["mult"]) * maxf(0.1, 1.0 + amp + _m(caster, "dmg"))
-					deal_damage(caster, m, amount, school, false)
+					deal_damage(caster, m, amount, school, false, sid)
 					fx_at("chain_" + school, m.pos, target.pos, 0.0, m.id)
 
 ## Особые эффекты талантов при нанесении урона.
@@ -783,7 +783,7 @@ func _is_boss(u: Unit) -> bool:
 	return GameData.MOBS.get(u.type_id, {}).get("boss", false)
 
 ## Урон с учётом неуязвимости, барьеров, талантов, брони и щитов.
-func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool) -> void:
+func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool, sid: String = "") -> void:
 	if dst == null or not dst.alive:
 		return
 	var t: float = world.now()
@@ -811,6 +811,7 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		world.fx_number(dst.id, 0.0, "saved", "holy", src_id, false)
 		fx_at("heal_burst", dst.pos, dst.pos, 0.0, dst.id)
 		return
+	world.meter.on_damage(src, dst, minf(amount, maxf(dst.hp, 0.0)), sid, crit)
 	if src:
 		src.stat_dmg += minf(amount, maxf(dst.hp, 0.0))
 	dst.hp -= amount
@@ -829,13 +830,14 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		dst.hp = 0.0
 		_on_death(dst, src)
 
-func heal(src: Unit, dst: Unit, amount: float, crit: bool) -> void:
+func heal(src: Unit, dst: Unit, amount: float, crit: bool, sid: String = "") -> void:
 	if dst == null or not dst.alive:
 		return
 	amount *= maxf(0.0, 1.0 + dst.mod("heal_taken"))
 	var before := dst.hp
 	dst.hp = minf(dst.max_hp, dst.hp + amount)
 	world.fx_number(dst.id, dst.hp - before, "heal", "holy", src.id if src else 0, crit)
+	world.meter.on_heal(src, dst, dst.hp - before, maxf(0.0, amount - (dst.hp - before)), sid, crit)
 	if src:
 		src.stat_heal += dst.hp - before
 	# Частица Света: отмеченный союзник получает 40% чужого лечения
@@ -846,10 +848,12 @@ func heal(src: Unit, dst: Unit, amount: float, crit: bool) -> void:
 			if b and b.alive and b.has_buff("beacon"):
 				var bb := b.hp
 				b.hp = minf(b.max_hp, b.hp + amount * 0.4)
+				world.meter.on_heal(src, b, b.hp - bb, maxf(0.0, amount * 0.4 - (b.hp - bb)), "beacon_of_light", false)
 				world.fx_number(b.id, b.hp - bb, "heal", "holy", src.id, false)
 
 func _on_death(dst: Unit, src: Unit) -> void:
 	dst.alive = false
+	world.meter.on_death(dst, src)
 	var bombs: Array = dst.auras.filter(func(a): return a.has("explode"))
 	dst.auras.clear()
 	dst.buffs.clear()

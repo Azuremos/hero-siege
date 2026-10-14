@@ -14,6 +14,7 @@ const SLOT_GAP := 6.0
 const PORTRAIT_SHADER := preload("res://shaders/portrait.gdshader")
 const SWEEP_SHADER := preload("res://shaders/cooldown_sweep.gdshader")
 const PROC_SHADER := preload("res://shaders/proc_border.gdshader")
+const MeterWindowScript := preload("res://scripts/ui/meter_window.gd")
 
 var world: Node3D
 var hover_unit_id := 0
@@ -24,7 +25,7 @@ var _root: Control
 var _overlay: Control
 var _frames: Dictionary = {}           # id -> Control (подвижные рамки)
 var _frame_titles := {"player": "Мой герой", "target": "Цель", "party": "Группа", "bar1": "Панель 1",
-	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима", "proc": "Сигнал прока"}
+	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима", "proc": "Сигнал прока", "meter": "Счётчик урона"}
 var _layout_pos: Dictionary = {}       # id -> Vector2 (сохранённое)
 var _opts := {"party_horizontal": false, "bar2_vertical": false, "proc_border": true, "proc_center": true}
 
@@ -40,6 +41,8 @@ var _buff_t := 0.0
 var _talent_btn: Button
 var _book_btn: Button
 var _char_btn: Button
+var _meter_btn: Button
+var _meter_win: Control
 var _talent_window: Control
 var _spellbook: Control
 var _keybinds: Control
@@ -97,6 +100,7 @@ func setup(w: Node3D) -> void:
 	_build_cast_bar()
 	_build_mode_panel()
 	_build_proc_alert()
+	_build_meter()
 	_build_messages()
 	_build_menu()
 	_build_help()
@@ -436,7 +440,7 @@ func _sweep(slot: Control, shade: Color, edge: Color) -> ColorRect:
 func _side_btn(parent: Control, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(150, 18)
+	b.custom_minimum_size = Vector2(112, 27)
 	b.add_theme_font_size_override("font_size", 12)
 	b.pressed.connect(cb)
 	parent.add_child(b)
@@ -457,13 +461,15 @@ func _build_bars() -> void:
 	var box1 := HBoxContainer.new()
 	box1.add_theme_constant_override("separation", int(SLOT_GAP))
 	row.add_child(box1)
-	var side := VBoxContainer.new()
-	side.add_theme_constant_override("separation", 4)
+	var side := GridContainer.new()
+	side.columns = 2
+	side.add_theme_constant_override("h_separation", 3)
+	side.add_theme_constant_override("v_separation", 3)
 	row.add_child(side)
-	side.add_theme_constant_override("separation", 2)
 	_talent_btn = _side_btn(side, "Таланты", toggle_talents)
 	_book_btn = _side_btn(side, "Книга", toggle_spellbook)
 	_char_btn = _side_btn(side, "Персонаж", toggle_character)
+	_meter_btn = _side_btn(side, "Счётчик", toggle_meter)
 	_xp_bar = _bar(Color(0.5, 0.25, 0.8), 16)
 	_xp_bar.custom_minimum_size = Vector2(BAR_SLOTS * (SLOT + SLOT_GAP) - SLOT_GAP, 16)
 	_xp_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -730,6 +736,29 @@ func _update_proc_alert(lh, t: float) -> void:
 		holder.modulate = Color(1.15, 1.05, 0.8, 0.45 + 0.3 * p)
 		holder.scale = Vector2.ONE * (1.0 + 0.06 * p)
 
+## Счётчик урона и лечения — подвижная рамка «meter»; видимость запоминается.
+var _meter_forced := false
+
+func _build_meter() -> void:
+	_meter_win = MeterWindowScript.new()
+	_frame("meter", _meter_win)
+	_meter_win.setup(world, world.meter)
+	_meter_win.visible = bool(Settings.get_ui_opt("meter_visible", true))
+
+func toggle_meter() -> void:
+	_meter_win.visible = not _meter_win.visible
+	Settings.set_ui_opt("meter_visible", _meter_win.visible)
+	Sfx.play("ui_open" if _meter_win.visible else "ui_close")
+
+## В режиме настройки интерфейса счётчик виден, даже если игрок его закрыл.
+func _update_meter_visibility() -> void:
+	if is_editing() and not _meter_win.visible:
+		_meter_win.visible = true
+		_meter_forced = true
+	elif not is_editing() and _meter_forced:
+		_meter_forced = false
+		_meter_win.visible = bool(Settings.get_ui_opt("meter_visible", true))
+
 ## Панель режима: у осады — номер волны, прочность замка, золото и кнопка «Начать волну сейчас».
 func _build_mode_panel() -> void:
 	var p := PanelContainer.new()
@@ -908,6 +937,7 @@ func _default_pos(id: String, size: Vector2, vp: Vector2) -> Vector2:
 			return Vector2((vp.x - BAR_SLOTS * (SLOT + SLOT_GAP)) * 0.5 + 80, bar1_y - size.y - 8)
 		"cast": return Vector2((vp.x - size.x) * 0.5, vp.y - 250)
 		"proc": return Vector2((vp.x - size.x) * 0.5, vp.y * 0.3)
+		"meter": return Vector2(vp.x - size.x - 16, vp.y - size.y - 175)
 	return Vector2.ZERO
 
 func _apply_layout() -> void:
@@ -1171,6 +1201,20 @@ func show_game_over(victory: bool) -> void:
 	var d := _label(world.mode.game_over_details(victory), 17)
 	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(d)
+	# итоги партии — те же данные, что в счётчике за всю партию
+	var total: Dictionary = world.meter.view["total"]
+	for m in [[1, "Урон"], [2, "Лечение"]]:
+		var rows: Array = total["rows"].filter(func(row_): return float(row_[m[0]]) > 0.0)
+		rows.sort_custom(func(a, b): return float(a[m[0]]) > float(b[m[0]]))
+		if rows.is_empty():
+			continue
+		var parts: Array = []
+		for row_ in rows.slice(0, 3):
+			var hh = world.heroes.get(int(row_[0]), null)
+			parts.append("%s %s" % [hh.player_name if hh else "?", MeterWindowScript.fmt(float(row_[m[0]]))])
+		var sl := _label("%s: %s" % [m[1], ",  ".join(parts)], 14, Color(0.9, 0.9, 0.85))
+		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(sl)
 	var b := Button.new()
 	b.text = "В главное меню"
 	b.pressed.connect(func(): Net.back_to_menu())
@@ -1338,6 +1382,7 @@ func _process(delta: float) -> void:
 			s["slot"].modulate = Color(0.55, 0.6, 1.0) if no_mana else (Color(1.25, 1.25, 1.0) if c.aim_spell == sid else Color.WHITE)
 
 	_update_proc_alert(lh, t)
+	_update_meter_visibility()
 	_buff_t -= delta
 	if _buff_t <= 0.0:
 		_buff_t = 0.25
@@ -1348,6 +1393,7 @@ func _process(delta: float) -> void:
 	_talent_btn.modulate = Color(1.3, 1.15, 0.6) if free_pts > 0 else Color.WHITE
 	_book_btn.text = _with_key("Книга", "spellbook")
 	_char_btn.text = _with_key("Персонаж", "character")
+	_meter_btn.text = _with_key("Счётчик", "meter")
 
 	# полоса произнесения
 	if c.cast_spell != "":

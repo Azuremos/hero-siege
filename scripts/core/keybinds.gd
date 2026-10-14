@@ -19,7 +19,7 @@ func _ready() -> void:
 			var a := "bar%d_%d" % [b + 1, i]
 			actions.append(a)
 			names[a] = "Панель %d, ячейка %d" % [b + 1, i + 1]
-	for a in [["talents", "Окно талантов"], ["spellbook", "Книга заклинаний"], ["character", "Персонаж и сумка"]]:
+	for a in [["talents", "Окно талантов"], ["spellbook", "Книга заклинаний"], ["character", "Персонаж и сумка"], ["meter", "Счётчик урона и лечения"]]:
 		actions.append(a[0])
 		names[a[0]] = a[1]
 	reset_defaults(false)
@@ -33,6 +33,7 @@ func reset_defaults(save_now: bool = true) -> void:
 	binds["talents"] = {"key": KEY_N, "shift": false, "ctrl": false, "alt": false}
 	binds["spellbook"] = {"key": KEY_P, "shift": false, "ctrl": false, "alt": false}
 	binds["character"] = {"key": KEY_C, "shift": false, "ctrl": false, "alt": false}
+	binds["meter"] = {"key": KEY_K, "shift": false, "ctrl": false, "alt": false}
 	if save_now:
 		save()
 		changed.emit()

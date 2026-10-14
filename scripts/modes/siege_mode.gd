@@ -102,6 +102,7 @@ func skip() -> void:
 
 func _start_wave(t: float) -> void:
 	wave += 1
+	world.meter.new_segment("Волна %d" % wave)
 	state = "running"
 	var w: int = wave
 	# В короткой партии (меньше 5 волн) последняя волна заканчивается боссом

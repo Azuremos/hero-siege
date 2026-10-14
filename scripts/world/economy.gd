@@ -192,7 +192,7 @@ func request_use(idx: int) -> void:
 	var u: Unit = hero.unit
 	var use: Dictionary = it["use"]
 	if use.has("heal"):
-		world.spells.heal(u, u, float(use["heal"]), false)
+		world.spells.heal(u, u, float(use["heal"]), false, "item:" + str(it["id"]))
 	if use.has("mana"):
 		u.mana = minf(u.max_mana, u.mana + float(use["mana"]))
 	if use.has("buff"):

@@ -7,6 +7,7 @@ const MobManagerScript := preload("res://scripts/world/mob_manager.gd")
 const SpellSystemScript := preload("res://scripts/world/spell_system.gd")
 const HudScript := preload("res://scripts/ui/hud.gd")
 const EconomyScript := preload("res://scripts/world/economy.gd")
+const MeterScript := preload("res://scripts/world/meter.gd")
 
 var map: Node3D
 var heroes_root: Node3D
@@ -15,6 +16,7 @@ var mobs: Node            # MobManager
 var spells: Node          # SpellSystem
 var mode: GameMode        # режим игры (осада, позже подземелья): волны, цели, победа и поражение
 var economy: Node         # Economy: торговцы, предметы, добыча
+var meter: Node           # счётчик урона и лечения
 var hud: CanvasLayer
 
 var units: Dictionary = {}        # id -> Unit
@@ -58,6 +60,9 @@ func _ready() -> void:
 	economy = EconomyScript.new()
 	economy.name = "Economy"
 	add_child(economy)
+	meter = MeterScript.new()
+	meter.name = "Meter"
+	add_child(meter)
 
 	_read_map()
 
@@ -123,6 +128,7 @@ func _physics_process(delta: float) -> void:
 	mobs.server_tick(delta, t)
 	mode.server_tick(delta, t)
 	economy.server_tick(delta, t)
+	meter.server_tick(delta)
 
 	_snap_accum += delta
 	if _snap_accum >= 0.1:
@@ -488,6 +494,10 @@ func _process(delta: float) -> void:
 			_manalog_summary()
 		if Net.cli.has("lootsim"):
 			print(economy.lootsim_report())
+		if Net.cli.has("meterlog"):
+			meter.request_detail("total", local_hero.hero_id, "dmg")
+			print("METER total=", meter.view["total"]["rows"], " current=", meter.view["current"]["name"], " last=", meter.view["last"]["name"])
+			print("METER detail=", meter.detail.get("list", []).map(func(e): return [meter.key_name(e[0]), int(e[1]), e[2], e[3]]))
 		print("TEST END: wave=%d state=%s castle=%d" % [siege.wave if siege else 0, mode.state, int(siege.castle.hp) if siege else 0])
 		Sfx.quit_game()
 
