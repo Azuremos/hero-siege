@@ -446,6 +446,22 @@ func _process(delta: float) -> void:
 		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())
 	if Net.cli.has("giveproc") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		local_hero.unit.add_buff(Net.cli["giveproc"], now() + 30.0, {})
+	if Net.cli.has("targetally") and _test_t >= 8.0 and _test_t - delta < 8.0:
+		for th in heroes.values():
+			if th != local_hero:
+				local_hero.controller.target_id = th.hero_id
+				th.unit.add_buff("weakened_soul", now() + 30.0, {})
+	if Net.cli.has("fxdemo") and is_server() and _test_t >= float(Net.cli["fxdemo"]) and _test_t - delta < float(Net.cli["fxdemo"]):
+		var best: Unit = null
+		for mu in mobs.alive_units():
+			if best == null or mu.pos.distance_to(local_hero.unit.pos) < best.pos.distance_to(local_hero.unit.pos):
+				best = mu
+		if best:
+			local_hero.controller.target_id = best.id
+			var lu: Unit = local_hero.unit
+			spells.apply_effects(lu, best, [{"type": "slow", "pct": 0.4, "dur": 20.0}, {"type": "chill", "stacks": 3, "dur": 3.0}, {"type": "chill", "stacks": 3, "dur": 3.0},
+				{"type": "dot", "total": 6.0, "dur": 20.0, "tick": 2.0, "key": "ignite"}], "frostbolt", "frost")
+			spells.apply_effects(null, best, [{"type": "dot", "total": 6.0, "dur": 20.0, "tick": 2.0, "key": "burn"}], "fire_wall", "fire")
 	if Net.cli.has("godmode") and is_server():
 		for gh in heroes.values():
 			gh.unit.hp = maxf(gh.unit.hp, gh.unit.max_hp * 0.35)   # не погибает, но лекарю есть кого лечить

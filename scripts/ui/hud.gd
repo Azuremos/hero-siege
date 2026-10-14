@@ -330,6 +330,14 @@ func _build_target_frame() -> void:
 	v.add_child(name_l)
 	_target_frame = _hp_mp(v, 22, 12)
 	_target_frame.merge({"name": name_l, "panel": p})
+	var fx_row := HBoxContainer.new()
+	fx_row.add_theme_constant_override("separation", 3)
+	v.add_child(fx_row)
+	_target_frame["fx"] = fx_row
+	_head_fx = HBoxContainer.new()
+	_head_fx.add_theme_constant_override("separation", 2)
+	_head_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_head_fx)
 
 # ---------------------------------------------------------------- группа
 
@@ -1247,8 +1255,11 @@ func _process(delta: float) -> void:
 	else:
 		_target_ring.visible = false
 		_target_arrow.visible = false
+	_update_target_effects(lh, c, tu, t)
 	# подсветка существа под курсором
 	var hov: int = c.pick_unit(get_viewport().get_mouse_position()) if not c._dragged else 0
+	if hover_unit_id != 0:
+		hov = hover_unit_id     # курсор над рамкой группы — кольцо под этим союзником в мире
 	var hu: Unit = world.get_unit(hov)
 	_hover_ring.visible = hu != null and hov != c.target_id and hu.alive
 	if _hover_ring.visible:
@@ -1284,7 +1295,13 @@ func _process(delta: float) -> void:
 			f["info"].text = ""
 		var selected: bool = c.target_id == hid
 		var hovered: bool = hover_unit_id == hid
-		f["style"].border_color = GOLD if selected else (Color(0.8, 0.8, 0.8) if hovered else Color(0.25, 0.25, 0.25))
+		# выбранный союзник — яркая золотая обводка со свечением; под курсором — тоньше и голубая:
+		# видно, кому уйдёт лечение «по наведению»
+		var fst: StyleBoxFlat = f["style"]
+		fst.border_color = GOLD if selected else (Color(0.45, 0.8, 1.0) if hovered else Color(0.25, 0.25, 0.25))
+		fst.set_border_width_all(3 if selected else 2)
+		fst.shadow_color = Color(1.0, 0.8, 0.3, 0.55) if selected else (Color(0.45, 0.8, 1.0, 0.35) if hovered else Color(0, 0, 0, 0))
+		fst.shadow_size = 6 if selected else (4 if hovered else 0)
 		_update_buff_icons(f["buffs"], h.net_buffs)
 
 	# панели заклинаний
@@ -1429,6 +1446,17 @@ func _update_buff_icons(box: HBoxContainer, buffs: Array) -> void:
 		cell.custom_minimum_size = Vector2(16, 16)
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cell.add_child(SpellIcon.make(GameData.BUFF_INFO[k]["icon"], 16))
+		if GameData.BUFF_INFO[k].get("debuff", false):
+			# дебафф на союзнике — красная окантовка
+			var fr := Panel.new()
+			var fs := StyleBoxFlat.new()
+			fs.bg_color = Color(0, 0, 0, 0)
+			fs.border_color = Color(1.0, 0.25, 0.2)
+			fs.set_border_width_all(1)
+			fr.add_theme_stylebox_override("panel", fs)
+			fr.size = Vector2(16, 16)
+			fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			cell.add_child(fr)
 		box.add_child(cell)
 
 ## Баффы своего героя под портретом: иконка + оставшееся время.
@@ -1505,3 +1533,105 @@ func _draw_overlay() -> void:
 		var size := int(n["size"] * (1.0 + maxf(0.0, 0.25 - age) * 1.5))
 		_overlay.draw_string_outline(_font, sp, n["text"], HORIZONTAL_ALIGNMENT_CENTER, -1, size, 5, Color(0, 0, 0, col.a * 0.9))
 		_overlay.draw_string(_font, sp, n["text"], HORIZONTAL_ALIGNMENT_CENTER, -1, size, col)
+
+# ---------------------------------------------------------------- эффекты на цели
+
+## Эффекты на враге присылает сервер по просьбе request_watch (только для своей цели и при изменениях).
+var _head_fx: HBoxContainer
+var _watched_id := -1
+var _tfx: Dictionary = {"uid": 0, "list": [], "t": 0.0}
+
+func set_target_effects(uid: int, list: Array) -> void:
+	if Net.cli.has("fxlog"):
+		print("FX ", uid, " ", list)
+	_tfx = {"uid": uid, "list": list, "t": world.now()}
+
+func _update_target_effects(lh, c, tu: Unit, t: float) -> void:
+	var tid: int = tu.id if tu else 0
+	if tid != _watched_id:
+		_watched_id = tid
+		_tfx = {"uid": 0, "list": [], "t": t}
+		world.spells.send_to_server("request_watch", [tid if tu and tu.kind == "mob" else 0])
+	var list: Array = []
+	if tu and tu.kind == "mob" and int(_tfx["uid"]) == tid:
+		var dt: float = t - float(_tfx["t"])
+		for e in _tfx["list"]:
+			if float(e[1]) - dt > 0.0:
+				list.append([e[0], float(e[1]) - dt, int(e[2]), int(e[3])])
+	elif tu and tu.kind == "hero" and world.heroes.has(tid):
+		for b in world.heroes[tid].net_buffs:
+			list.append([b[0], float(b[1]), 0, 0])
+	var mine: Array = list.filter(func(e): return e[2] == lh.hero_id)
+	var other: Array = list.filter(func(e): return e[2] != lh.hero_id)
+	_fill_fx_row(_target_frame["fx"], mine + other, lh.hero_id, true)
+	# над головой цели — только свои эффекты, компактно
+	var cam := get_viewport().get_camera_3d()
+	_head_fx.visible = tu != null and tu.alive and not mine.is_empty() and cam != null
+	if _head_fx.visible:
+		var p := tu.pos
+		if tu.node and is_instance_valid(tu.node):
+			p = tu.node.global_position
+		var head := 2.9 * (tu.radius / 0.6 if tu.kind == "mob" else 1.15) + 0.9
+		var wp := p + Vector3(0, head, 0)
+		if cam.is_position_behind(wp):
+			_head_fx.visible = false
+		else:
+			_fill_fx_row(_head_fx, mine, lh.hero_id, false)
+			_head_fx.reset_size()
+			_head_fx.position = cam.unproject_position(wp) - Vector2(_head_fx.size.x * 0.5, _head_fx.size.y)
+
+## Ряд иконок эффектов: свои крупнее и ярче, чужие мельче; время под иконкой, стаки сверху.
+func _fill_fx_row(row: HBoxContainer, list: Array, my_id: int, detailed: bool) -> void:
+	var known: Array = list.filter(func(e): return GameData.BUFF_INFO.has(e[0]))
+	var key := ",".join(known.map(func(e): return "%s:%d:%d" % [e[0], 1 if e[2] == my_id else 0, e[3]]))
+	if row.get_meta("keys", "") != key:
+		row.set_meta("keys", key)
+		for ch in row.get_children():
+			ch.queue_free()
+		for e in known:
+			var info: Dictionary = GameData.BUFF_INFO[e[0]]
+			var own: bool = e[2] == my_id
+			var sz := (26.0 if own else 18.0) if detailed else 20.0
+			var cell := Control.new()
+			cell.custom_minimum_size = Vector2(sz, sz + (12.0 if detailed else 0.0))
+			cell.mouse_filter = Control.MOUSE_FILTER_STOP if detailed else Control.MOUSE_FILTER_IGNORE
+			var icon := SpellIcon.make(info["icon"], sz)
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			icon.modulate = Color.WHITE if own else Color(0.8, 0.8, 0.8, 0.8)
+			cell.add_child(icon)
+			if info.get("debuff", false):
+				var frame := Panel.new()
+				var st := StyleBoxFlat.new()
+				st.bg_color = Color(0, 0, 0, 0)
+				st.border_color = Color(1.0, 0.3, 0.2, 0.9) if own else Color(0.7, 0.25, 0.2, 0.7)
+				st.set_border_width_all(2 if own else 1)
+				frame.add_theme_stylebox_override("panel", st)
+				frame.size = Vector2(sz, sz)
+				frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				cell.add_child(frame)
+			var stacks := _label("", 11, Color.WHITE)
+			stacks.add_theme_color_override("font_outline_color", Color.BLACK)
+			stacks.add_theme_constant_override("outline_size", 4)
+			stacks.position = Vector2(sz - 16, -3)
+			if int(e[3]) > 0:
+				stacks.text = "%d/3" % e[3] if e[0] == "chill" else str(e[3])
+			cell.add_child(stacks)
+			if detailed:
+				var tl := _label("", 10, Color(1, 1, 1, 0.9))
+				tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				tl.position = Vector2(0, sz)
+				tl.size = Vector2(sz, 12)
+				cell.add_child(tl)
+				cell.set_meta("time", tl)
+				cell.tooltip_text = "%s\n%s%s" % [info["name"], info.get("desc", ""), "\nВаш эффект" if own else ""]
+			row.add_child(cell)
+	# время обновляется каждый кадр без пересборки ряда
+	if detailed:
+		var i := 0
+		for ch in row.get_children():
+			if ch.is_queued_for_deletion() or i >= known.size():
+				continue
+			if ch.has_meta("time"):
+				var left: float = known[i][1]
+				(ch.get_meta("time") as Label).text = ("%d" % ceil(left)) if left < 600.0 else ""
+			i += 1

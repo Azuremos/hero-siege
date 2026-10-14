@@ -44,6 +44,8 @@ var chill: int = 0                  # накопленный холод (на N-
 var chill_until: float = 0.0
 var slow_pct: float = 0.0
 var slow_until: float = 0.0
+## Кто наложил контроль и ослабления (ключ эффекта -> id) — свои эффекты в рамке цели крупнее
+var fx_src: Dictionary = {}
 var damage_taken_mult: float = 1.0   # пересчитывается каждый тик (барьеры)
 
 ## Периодические эффекты: {key, kind: "dot"/"hot", per_tick, tick, next, until, school, source}

@@ -223,13 +223,14 @@ func server_tick(delta: float, t: float) -> void:
 				if t > u.combat_until:
 					u.mana = maxf(0.0, u.mana - 1.5)
 			else:
-				# в секунду: запас × 3% + Дух × 0,6; после траты маны 5 с — четверть (правило 5 секунд)
+				# в секунду: запас × 3% + Дух × 0,6; после траты маны 5 с — 30% от этого (правило 5 секунд)
 				var per_s := u.max_mana * GameData.MANA_REGEN_POOL + u.spirit * GameData.MANA_REGEN_SPIRIT
 				if t - u.mana_spent_at < GameData.FIVE_SECOND_RULE:
 					per_s *= GameData.CASTING_REGEN
 				u.mana = minf(u.max_mana, u.mana + per_s * 0.5 * (1.0 + u.mod("regen")) * rest)
 			u.hp = minf(u.max_hp, u.hp + (u.max_hp * 0.0025 + u.spirit * 0.05) * rest)
 	_update_bursts(t)
+	_send_watched_effects(delta, t)
 
 ## Списать ману (или ярость). Трата маны запускает правило 5 секунд: восполнение в бою ниже.
 func _spend_mana(u: Unit, cost: float, t: float) -> void:
@@ -579,10 +580,13 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					var pct := minf(0.9, float(e["pct"]) + _m(caster, "slow_add", sid, school))
 					target.slow_pct = maxf(pct, target.slow_pct if t < target.slow_until else 0.0)
 					target.slow_until = maxf(target.slow_until, t + float(e["dur"]))
+					_mark_src(target, "slowed", caster)
 			"root":
 				target.root_until = maxf(target.root_until, t + float(e["dur"]))
+				_mark_src(target, "rooted", caster)
 				fx_at("rooted", target.pos, target.pos, float(e["dur"]), target.id)
 			"freeze":
+				_mark_src(target, "frozen", caster)
 				_freeze(target, float(e["dur"]), t)
 			"taunt":
 				if caster and target.kind == "mob":
@@ -593,12 +597,15 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 						target.chill = 0
 					target.chill += 1
 					target.chill_until = t + 6.0
+					_mark_src(target, "chill", caster)
+					_mark_src(target, "frozen", caster)
 					if target.chill >= int(e["stacks"]):
 						target.chill = 0
 						_freeze(target, float(e["dur"]), t)
 			"stun":
 				var dur := (float(e["dur"]) + _m(caster, "stun_add", sid, school)) * (0.5 if target.kind == "mob" and _is_boss(target) else 1.0)
 				target.stun_until = maxf(target.stun_until, t + dur)
+				_mark_src(target, "stunned", caster)
 				fx_at("stunned", target.pos, target.pos, dur, target.id)
 			"dot", "hot":
 				var ticks := float(e["dur"]) / float(e["tick"])
@@ -628,6 +635,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				target.auras = target.auras.filter(func(a): return a["kind"] != "dot")
 			"buff":
 				target.add_buff(e["key"], t + float(e["dur"]), e.get("mods", {}))
+				_mark_src(target, e["key"], caster)
 				_refresh_stats(target)
 			"beacon":
 				if caster:
@@ -661,6 +669,7 @@ func _on_damage_dealt(caster: Unit, target: Unit, amount: float, school: String,
 		target.auras.append({"key": "ignite_talent", "kind": "dot", "per_tick": total / 2.0, "tick": 2.0,
 			"next": t + 2.0, "until": t + 4.0, "school": "fire", "source": caster.id})
 	if school == "frost" and target.alive and caster.flag("frostbite") > 0.0 and randf() < caster.flag("frostbite"):
+		_mark_src(target, "frozen", caster)
 		_freeze(target, 2.0, t)
 	if crit and school == "physical" and caster.flag("deep_wounds") > 0.0 and target.alive:
 		var bleed := amount * caster.flag("deep_wounds")
@@ -908,3 +917,81 @@ func ev_zone(id: int, kind: String, pos: Vector3, yaw: float, size: float, durat
 @rpc("authority", "call_local", "reliable")
 func ev_zone_end(id: int) -> void:
 	Vfx.end_zone(world, id)
+
+# ---------------------------------------------------------------- эффекты на цели (для рамки цели)
+## Клиент сообщает, кто у него в цели (request_watch). Сервер шлёт список эффектов на этом враге
+## только ему и только когда список меняется: наложили, сняли, обновили, сменились стаки.
+## В снимок мобов ничего не добавляется — 200 мобов не платят за то, что смотрят 1–6 игроков.
+
+var _watch: Dictionary = {}        # peer -> id врага в цели
+var _watch_sig: Dictionary = {}    # peer -> подпись последнего отправленного списка
+var _watch_acc := 0.0
+
+func _mark_src(target: Unit, key: String, caster: Unit) -> void:
+	if caster:
+		target.fx_src[key] = caster.id
+
+@rpc("any_peer", "reliable")
+func request_watch(uid: int) -> void:
+	if not Net.is_server():
+		return
+	var peer := multiplayer.get_remote_sender_id()
+	if peer == 0:
+		peer = multiplayer.get_unique_id()
+	_watch[peer] = uid
+	_watch_sig.erase(peer)
+
+## Эффекты на юните: [ключ, осталось сек., id наложившего, стаки].
+func unit_effects(u: Unit, t: float) -> Array:
+	var out: Array = []
+	for a in u.auras:
+		if a["kind"] == "dot":
+			out.append([a["key"], float(a["until"]) - t, int(a.get("source", 0)), 0])
+	if t < u.freeze_until:
+		out.append(["frozen", u.freeze_until - t, int(u.fx_src.get("frozen", 0)), 0])
+	elif t < u.stun_until:
+		out.append(["stunned", u.stun_until - t, int(u.fx_src.get("stunned", 0)), 0])
+	if t < u.root_until:
+		out.append(["rooted", u.root_until - t, int(u.fx_src.get("rooted", 0)), 0])
+	if t < u.slow_until and u.slow_pct > 0.0:
+		out.append(["slowed", u.slow_until - t, int(u.fx_src.get("slowed", 0)), 0])
+	if u.chill > 0 and t < u.chill_until:
+		out.append(["chill", u.chill_until - t, int(u.fx_src.get("chill", 0)), u.chill])
+	if u.kind == "mob":
+		var tinfo: Array = world.mobs.taunt_info(u)
+		if not tinfo.is_empty() and t < float(tinfo[0]):
+			out.append(["taunted", float(tinfo[0]) - t, int(tinfo[1]), 0])
+	for b in u.buffs:
+		if GameData.BUFF_INFO.has(b["key"]):
+			out.append([b["key"], float(b["until"]) - t, int(u.fx_src.get(b["key"], 0)), 0])
+	return out
+
+func _send_watched_effects(delta: float, t: float) -> void:
+	_watch_acc += delta
+	if _watch_acc < 0.25:
+		return
+	_watch_acc = 0.0
+	var peers := multiplayer.get_peers()
+	for peer in _watch.keys():
+		if peer != multiplayer.get_unique_id() and not peers.has(peer):
+			_watch.erase(peer)
+			_watch_sig.erase(peer)
+			continue
+		var uid: int = _watch[peer]
+		var u: Unit = world.get_unit(uid)
+		var list: Array = unit_effects(u, t) if u and u.alive and u.kind == "mob" else []
+		# подпись без «тиканья» времени: меняется при наложении, снятии, обновлении и стаках
+		var sig := str(uid)
+		for e in list:
+			sig += "|%s:%d:%d:%d" % [e[0], int((t + float(e[1])) * 4.0), e[2], e[3]]
+		if _watch_sig.get(peer, "") == sig:
+			continue
+		_watch_sig[peer] = sig
+		if peer == multiplayer.get_unique_id():
+			ev_effects(uid, list)
+		else:
+			ev_effects.rpc_id(peer, uid, list)
+
+@rpc("authority", "reliable")
+func ev_effects(uid: int, list: Array) -> void:
+	world.hud.set_target_effects(uid, list)

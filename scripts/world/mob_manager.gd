@@ -705,3 +705,10 @@ func _dbg_track(m: Mob, t: float) -> void:
 	elif prev == S.MOVE and m.state == S.CHASE and t - float(_dbg_drop.get(id, -100.0)) < 2.0:
 		dbg_flips += 1
 	_dbg_state[id] = m.state
+
+## Провокация на мобе: [до какого времени, id героя] или [].
+func taunt_info(u: Unit) -> Array:
+	var m: Mob = mobs.get(u.id, null)
+	if m == null or m.taunt_until <= 0.0:
+		return []
+	return [m.taunt_until, m.target]
