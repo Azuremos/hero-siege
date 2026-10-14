@@ -67,6 +67,10 @@ var _drag_from := Vector2i(-1, -1)     # (панель, ячейка), отку�
 func setup(w: Node3D) -> void:
 	world = w
 	layer = 5
+	# Элементы HUD (в том числе окна, создаваемые позже) не берут фокус клавиатуры:
+	# иначе Пробел (ui_accept) «нажимает» последнюю кликнутую кнопку вместо прыжка,
+	# а Tab (ui_focus_next) переводит фокус вместо выбора цели.
+	get_tree().node_added.connect(_on_node_added)
 	_font = _make_font()
 	var theme := Theme.new()
 	theme.default_font = _font
@@ -129,6 +133,10 @@ func setup(w: Node3D) -> void:
 	Keys.changed.connect(rebuild_action_bar)
 	get_viewport().size_changed.connect(_apply_layout)
 	_apply_layout.call_deferred()
+
+func _on_node_added(n: Node) -> void:
+	if n is Control and not (n is LineEdit or n is TextEdit) and is_ancestor_of(n):
+		(n as Control).focus_mode = Control.FOCUS_NONE
 
 func _make_font() -> Font:
 	var f := SystemFont.new()
