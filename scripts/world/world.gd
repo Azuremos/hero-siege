@@ -369,6 +369,18 @@ func _process(delta: float) -> void:
 		for h in heroes.values():
 			while h.unit.level < int(Net.cli["level"]):
 				give_xp(h, h.xp_next - h.xp)
+	# --choices=213 — столбец (1–3) для каждого ряда книги по порядку; одна цифра — для всех рядов
+	if Net.cli.has("choices") and is_server() and _test_t >= 1.1 and _test_t - delta < 1.1:
+		var code := str(Net.cli["choices"])
+		for h in heroes.values():
+			if not GameData.BOOKS.has(h.class_id):
+				continue
+			var rows: Array = GameData.BOOKS[h.class_id]["rows"]
+			var c := {}
+			for i in rows.size():
+				var col := clampi(int(code[mini(i, code.length() - 1)]) - 1, 0, 2)
+				c[i] = rows[i]["options"][col]
+			ev_choices.rpc(h.hero_id, c)
 	if Net.cli.has("cam") and _test_cam == null:
 		var parts: PackedStringArray = Net.cli["cam"].split(":")
 		var a := parts[0].split_floats(",")

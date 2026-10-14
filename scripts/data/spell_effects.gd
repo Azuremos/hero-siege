@@ -85,6 +85,8 @@ const PROC_BUFFS := {
 
 ## Заклинания, которые срабатывают сами (от проков талантов).
 const AUTO_SPELLS := {
+	"scorch_pool": {"name": "Опаление", "school": "fire", "radius": 3.0, "delay": 0.1, "vfx": "explosion_fire",
+		"enemy_fx": [{"type": "dot", "total": 15.0, "dur": 3.0, "tick": 1.0, "key": "burn"}]},
 	"meteor": {"name": "Огненная глыба", "school": "fire", "radius": 6.0, "delay": 0.7, "vfx": "meteor",
 		"enemy_fx": [{"type": "damage", "min": 55.0, "max": 70.0}, {"type": "dot", "total": 24.0, "dur": 4.0, "tick": 1.0, "key": "meteor_burn"}]},
 	"holy_star": {"name": "Звезда Света", "school": "holy", "radius": 6.0, "delay": 0.7, "vfx": "holy_star",

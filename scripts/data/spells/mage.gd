@@ -2,6 +2,24 @@ extends RefCounted
 ## Заклинания: Маг. Формат полей — в начале scripts/data/game_data.gd (раздел «Заклинания»).
 ## Здесь же заклинания, которые класс получает из талантов.
 
+const CLASS := "mage"
+
+## Книга заклинаний: базовые даются сразу, в каждом ряду — выбор одного из трёх (docs/design/spellbook.md).
+const BOOK := {
+	"base": ["frostbolt", "fireball", "arcane_missiles", "counterspell"],
+	"rows": [
+		{"level": 2, "name": "Удар по готовности", "role": "ротация", "options": ["arcane_barrage", "fire_blast", "ice_lance"]},
+		{"level": 3, "name": "Мобильность", "role": "мобильность", "options": ["blink", "fire_dash", "displacement"]},
+		{"level": 5, "name": "Площадь вокруг себя", "role": "площадь", "options": ["arcane_explosion", "dragons_breath", "cone_of_cold"]},
+		{"level": 7, "name": "Контроль", "role": "контроль", "options": ["polymorph", "blast_wave", "frost_nova"]},
+		{"level": 9, "name": "Площадь на землю", "role": "площадь", "options": ["arcane_orb", "flamestrike", "blizzard"]},
+		{"level": 11, "name": "Удержание дороги", "role": "контроль", "options": ["time_distortion", "fire_wall", "ice_wall"]},
+		{"level": 14, "name": "Защита", "role": "защита", "options": ["mirror_image", "blazing_barrier", "ice_block"]},
+		{"level": 18, "name": "Большая", "role": "большая", "options": ["presence_of_mind", "combustion", "icy_veins"]},
+		{"level": 22, "name": "Мастерство", "role": "мастерство", "options": ["slow", "scorch_passive", "brittle_ice"]},
+	],
+}
+
 const SPELLS := {
 	"frostbolt": {
 		"name": "Ледяная стрела", "school": "frost", "icon": "ЛС",
@@ -119,6 +137,158 @@ const SPELLS := {
 		"cast": 0.0, "cd": 30.0, "mana": 22.0, "range": 30.0,
 		"effects": [{"type": "damage", "min": 55.0, "max": 65.0, "frozen_bonus": 1.0}, {"type": "freeze", "dur": 4.0}],
 		"vfx": "ice_block", "anim": "shoot",
+	},
+	# --- книга заклинаний (сессия 04) ---
+	"fire_blast": {
+		"name": "Огненный взрыв", "school": "fire", "icon": "ОВ",
+		"desc": "Мгновенный взрыв огня на цели.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 8.0, "mana": 22.0, "range": 30.0,
+		"effects": [{"type": "damage", "min": 45.0, "max": 55.0}],
+		"vfx": "hit_fire", "anim": "shoot",
+	},
+	"ice_lance": {
+		"name": "Ледяное копьё", "school": "frost", "icon": "ЛК",
+		"desc": "Мгновенное копьё льда. По замороженным целям урон удваивается.",
+		"target": "enemy", "delivery": "projectile", "speed": 40.0,
+		"cast": 0.0, "cd": 6.0, "mana": 18.0, "range": 32.0,
+		"effects": [{"type": "damage", "min": 26.0, "max": 32.0, "frozen_bonus": 1.0}, {"type": "chill", "stacks": 1, "dur": 3.0}],
+		"vfx": "bolt_frost", "anim": "shoot",
+	},
+	"fire_dash": {
+		"name": "Огненный рывок", "school": "fire", "icon": "ОР", "no_gcd": true,
+		"desc": "Рывок на 10 м вперёд. Позади на 4 сек. остаётся горящая земля.",
+		"target": "self", "delivery": "blink", "distance": 10.0, "tick": 0.5,
+		"trail": {"radius": 3.0, "dur": 4.0, "vfx": "zone_flamestrike"},
+		"enemy_fx": [{"type": "damage", "min": 6.0, "max": 8.0}],
+		"cast": 0.0, "cd": 18.0, "mana": 20.0, "range": 0.0,
+		"vfx": "blink", "anim": "raise",
+	},
+	"displacement": {
+		"name": "Смещение", "school": "frost", "icon": "См", "no_gcd": true,
+		"desc": "Отскок на 10 м назад. Враги рядом с местом старта замерзают на 2 сек.",
+		"target": "self", "delivery": "blink", "distance": 10.0, "back": true,
+		"start_radius": 5.0, "start_fx": [{"type": "freeze", "dur": 2.0}],
+		"cast": 0.0, "cd": 20.0, "mana": 20.0, "range": 0.0,
+		"vfx": "blink", "anim": "raise",
+	},
+	"dragons_breath": {
+		"name": "Дыхание дракона", "school": "fire", "icon": "ДД",
+		"desc": "Конус огня на 10 м: урон и дезориентация на 2 сек. (урон снимает).",
+		"target": "self", "delivery": "cone", "radius": 10.0, "angle": 90.0,
+		"cast": 0.0, "cd": 15.0, "mana": 34.0, "range": 0.0,
+		"enemy_fx": [{"type": "damage", "min": 30.0, "max": 36.0}, {"type": "incapacitate", "dur": 2.0}],
+		"vfx": "explosion_fire", "anim": "raise",
+	},
+	"cone_of_cold": {
+		"name": "Конус холода", "school": "frost", "icon": "КХ",
+		"desc": "Конус холода на 10 м: урон и замедление на 60%.",
+		"target": "self", "delivery": "cone", "radius": 10.0, "angle": 90.0,
+		"cast": 0.0, "cd": 10.0, "mana": 30.0, "range": 0.0,
+		"enemy_fx": [{"type": "damage", "min": 26.0, "max": 32.0}, {"type": "slow", "pct": 0.6, "dur": 5.0}, {"type": "chill", "stacks": 1, "dur": 3.0}],
+		"vfx": "nova_frost", "anim": "raise",
+	},
+	"polymorph": {
+		"name": "Превращение", "school": "arcane", "icon": "Пр",
+		"desc": "Враг выключен на 8 сек. (у боссов вдвое короче). Любой урон снимает эффект.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 1.5, "cd": 15.0, "mana": 18.0, "range": 30.0,
+		"effects": [{"type": "incapacitate", "dur": 8.0}],
+		"vfx": "hit_arcane", "anim": "cast",
+	},
+	"blast_wave": {
+		"name": "Взрывная волна", "school": "fire", "icon": "ВВ",
+		"desc": "Отбрасывает всех врагов в 8 м и замедляет их на 50%.",
+		"target": "self", "delivery": "self_aoe", "radius": 8.0,
+		"cast": 0.0, "cd": 25.0, "mana": 32.0, "range": 0.0,
+		"enemy_fx": [{"type": "damage", "min": 20.0, "max": 24.0}, {"type": "knockback", "dist": 7.0}, {"type": "slow", "pct": 0.5, "dur": 4.0}],
+		"vfx": "explosion_fire", "anim": "raise",
+	},
+	"arcane_orb": {
+		"name": "Чародейская сфера", "school": "arcane", "icon": "ЧСф",
+		"desc": "Сфера летит вперёд на 30 м и бьёт всех на пути.",
+		"target": "self", "delivery": "line", "length": 30.0, "width": 4.0,
+		"cast": 0.0, "cd": 12.0, "mana": 40.0, "range": 0.0,
+		"enemy_fx": [{"type": "damage", "min": 44.0, "max": 52.0}],
+		"vfx": "nova_arcane", "anim": "shoot",
+	},
+	"time_distortion": {
+		"name": "Искажение времени", "school": "arcane", "icon": "ИВ",
+		"desc": "Зона 8 м на 8 сек.: враги внутри замедлены на 50%.",
+		"target": "ground", "delivery": "zone", "radius": 8.0, "duration": 8.0, "tick": 0.5,
+		"cast": 0.0, "cd": 30.0, "mana": 36.0, "range": 34.0,
+		"enemy_fx": [{"type": "slow", "pct": 0.5, "dur": 1.0}],
+		"vfx": "zone_barrier", "anim": "raise",
+	},
+	"mirror_image": {
+		"name": "Зеркальные копии", "school": "arcane", "icon": "ЗК",
+		"desc": "Копии отвлекают врагов: все вокруг (30 м) бросают мага, 8 сек. он получает на 30% меньше урона.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 60.0, "mana": 30.0, "range": 0.0,
+		"effects": [{"type": "drop_aggro", "radius": 30.0}, {"type": "buff", "key": "mirror_image", "dur": 8.0, "mods": {"dmg_taken": -0.3}}],
+		"vfx": "aura_arcane", "anim": "raise",
+	},
+	"blazing_barrier": {
+		"name": "Опаляющая преграда", "school": "fire", "icon": "ОП",
+		"desc": "Щит на 20% здоровья на 10 сек. Кто бьёт мага в ближнем бою, загорается.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 30.0, "mana": 30.0, "range": 0.0,
+		"effects": [{"type": "absorb", "pct_max": 0.2, "dur": 10.0}, {"type": "buff", "key": "blazing_barrier", "dur": 10.0}],
+		"vfx": "shield", "anim": "raise",
+	},
+	"ice_block": {
+		"name": "Ледяная глыба", "school": "frost", "icon": "ЛГ", "no_gcd": true,
+		"desc": "8 сек. неуязвимости, снимает периодический урон, враги рядом теряют мага из виду. Последний шанс.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 180.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "immune", "dur": 8.0}, {"type": "drop_aggro", "radius": 20.0}],
+		"vfx": "ice_block", "anim": "raise",
+	},
+	"presence_of_mind": {
+		"name": "Стремительность", "school": "arcane", "icon": "Ст",
+		"desc": "На 15 сек. заклинания произносятся на 30% быстрее.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 120.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "buff", "key": "presence_of_mind", "dur": 15.0, "mods": {"haste": 0.3}}],
+		"vfx": "aura_arcane", "anim": "raise",
+	},
+	"combustion": {
+		"name": "Возгорание", "school": "fire", "icon": "Вз",
+		"desc": "На 10 сек. огненные заклинания всегда наносят критический удар.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 120.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "buff", "key": "combustion", "dur": 10.0, "mods": {"fire_crit": 1.0}}],
+		"vfx": "explosion_fire", "anim": "raise",
+	},
+	"icy_veins": {
+		"name": "Стылая кровь", "school": "frost", "icon": "СК",
+		"desc": "На 20 сек. +20% к скорости произнесения и +15% к урону.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 120.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "buff", "key": "icy_veins", "dur": 20.0, "mods": {"haste": 0.2, "dmg": 0.15}}],
+		"vfx": "nova_frost", "anim": "raise",
+	},
+	"slow": {
+		"name": "Замедление", "school": "arcane", "icon": "Зм",
+		"desc": "Цель и враги в 5 м вокруг замедлены на 60% на 10 сек. Без перезарядки, но дорого.",
+		"target": "enemy", "delivery": "target_aoe", "radius": 5.0,
+		"cast": 0.0, "cd": 0.0, "mana": 45.0, "range": 32.0,
+		"effects": [{"type": "slow", "pct": 0.6, "dur": 10.0}],
+		"vfx": "hit_arcane", "anim": "shoot",
+	},
+	"scorch_passive": {
+		"name": "Опаление", "school": "fire", "icon": "Оп", "passive": true,
+		"desc": "Пассивно: огненные попадания с шансом 15% оставляют под целью горящую лужу на 3 сек.",
+		"target": "self", "delivery": "instant", "cast": 0.0, "cd": 0.0, "mana": 0.0, "range": 0.0,
+		"proc": {"on": "spell_hit", "school": "fire", "chance": 0.15, "spell": "scorch_pool"},
+		"vfx": "hit_fire", "anim": "raise",
+	},
+	"brittle_ice": {
+		"name": "Хрупкий лёд", "school": "frost", "icon": "ХЛ", "passive": true,
+		"desc": "Пассивно: замороженные враги получают от мага на 30% больше урона.",
+		"target": "self", "delivery": "instant", "cast": 0.0, "cd": 0.0, "mana": 0.0, "range": 0.0,
+		"flags": [["brittle", 0.3]],
+		"vfx": "frozen", "anim": "raise",
 	},
 	# --- прерывание (сессия 02)
 	"counterspell": {
