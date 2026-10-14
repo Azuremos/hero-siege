@@ -169,7 +169,7 @@ func _build_hero_snapshot(t: float) -> Array:
 			buffs.append([b["key"], maxf(0.0, b["until"] - t)])
 		out.append([hid, u.hp, u.max_hp, u.mana, u.max_mana, u.level, h.xp, h.xp_next, h.gold,
 			u.absorb if t < u.absorb_until else 0.0, u.alive, maxf(0.0, u.stun_until - t), buffs,
-			h.respawn_at - t if not u.alive else 0.0])
+			h.respawn_at - t if not u.alive else 0.0, u.speed_mult(t)])
 	return out
 
 @rpc("authority", "call_local", "unreliable_ordered")
@@ -192,6 +192,8 @@ func ev_hero_snapshot(snap: Array) -> void:
 		h.net_stun_left = e[11]
 		h.net_buffs = e[12]
 		h.net_respawn_left = e[13]
+		if e.size() > 14:
+			h.net_speed = e[14]
 
 @rpc("authority", "call_local", "unreliable_ordered")
 func ev_mode_state(snap: Array, alive_mobs: int) -> void:
@@ -244,6 +246,16 @@ func ev_level_up(hero_id: int, level: int) -> void:
 		if h.talent_points_free() > 0:
 			hud.error_info("Доступно очков талантов: %d  (клавиша N)" % h.talent_points_free())
 		hud.on_level_changed()
+
+## Выбор в книге заклинаний (сервер рассылает всем: нужен для подсказок и рамок группы).
+@rpc("authority", "call_local", "reliable")
+func ev_choices(hero_id: int, c: Dictionary) -> void:
+	var h = heroes.get(hero_id, null)
+	if h == null:
+		return
+	h.set_choices(c)
+	if h == local_hero:
+		hud.on_choices_changed()
 
 ## Изменение талантов героя (сервер рассылает всем).
 @rpc("authority", "call_local", "reliable")

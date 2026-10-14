@@ -638,6 +638,8 @@ func on_feedback(sid: String, err: String, cd: float, gcd: float) -> void:
 		return
 	if cd > 0.0:
 		cd_until[sid] = now() + cd
+	elif cd < 0.0:
+		cd_until.erase(sid)        # сервер сбросил перезарядку (прок)
 	if gcd > 0.0:
 		gcd_until = now() + gcd
 
@@ -820,3 +822,12 @@ func _bot_try_interrupt() -> bool:
 				return true
 		return false
 	return false
+
+## Книга заклинаний: выбранное заклинание встаёт в ячейку снятого.
+func replace_spell(old: String, new_sid: String) -> void:
+	var at := _find(old)
+	if at.x >= 0 and _find(new_sid).x < 0:
+		bars[at.x][at.y] = new_sid
+	if not _seen.has(new_sid):
+		_seen.append(new_sid)
+	save_bar()

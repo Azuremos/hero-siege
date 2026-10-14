@@ -1917,3 +1917,7 @@ func _update_elite_tags() -> void:
 		var u: Unit = list[i][1]
 		l.text = "★ %s\n%s" % [u.display_name, ", ".join(u.affixes.map(func(a): return GameData.AFFIXES[a]["name"]))]
 		l.position = cam.unproject_position(list[i][2]) - Vector2(120, 36)
+
+## Книга заклинаний: выбор изменился (окно книги перерисуется, когда появится).
+func on_choices_changed() -> void:
+	pass

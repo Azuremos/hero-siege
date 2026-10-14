@@ -162,6 +162,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	u.armor = def["armor"]
 	u.radius = def["radius"]
 	u.level = wave
+	u.def_ranged = def.get("ranged", false)
 	m.unit = u
 	m.def = def
 	m.route = source
@@ -581,6 +582,7 @@ func ev_spawn(list: Array) -> void:
 		u.hp = u.max_hp
 		u.radius = def["radius"]
 		u.level = e[6]
+		u.def_ranged = def.get("ranged", false)
 		if e.size() > 8:
 			u.affixes = e[7]
 			u.elite = e[8]
@@ -1183,3 +1185,9 @@ func _elite_visual(m: Mob) -> void:
 	ring.scale = Vector3(rr, 1, rr)
 	ring.position.y = 0.06
 	m.node.add_child(ring)
+
+## Враги в радиусе бросают этого героя (Зеркальные копии, сброс угрозы).
+func drop_aggro_on(u: Unit, radius: float) -> void:
+	for m: Mob in mobs.values():
+		if m.target == u.id and m.state == S.CHASE and m.pos2.distance_to(Vector2(u.pos.x, u.pos.z)) <= radius:
+			_drop_chase(m, true)

@@ -51,6 +51,8 @@ var fear_until: float = 0.0
 var fear_from := Vector3.ZERO
 var silence_until: float = 0.0
 var knock_until: float = 0.0
+var incap := false              # «превращён»: урон снимает оглушение
+var def_ranged := false         # моб дальнего боя (для отражения в ближнем бою)
 ## Элитные мобы: 0 — обычный, 1 — элитный, 2 — чемпион фракции; аффиксы — id из affixes.gd
 var elite := 0
 var affixes: Array = []

@@ -36,6 +36,7 @@ var respawn_at := 0.0
 # данные из снимков для интерфейса и визуала
 var net_absorb := 0.0
 var net_stun_left := 0.0
+var net_speed := 1.0               # множитель скорости бега (замедления, баффы скорости)
 var net_buffs: Array = []
 var net_respawn_left := 0.0
 
@@ -179,11 +180,27 @@ var talents: Dictionary = {}
 
 func set_talents(ranks: Dictionary) -> void:
 	talents = ranks.duplicate()
-	unit.mods = GameData.compute_mods(class_id, talents)
+	unit.mods = GameData.compute_mods(class_id, talents, choices)
 	apply_level_stats(false)
 
+## Выбор в книге заклинаний {ряд: id}. Новое заклинание встаёт на панель в ячейку прежнего.
+var choices: Dictionary = {}
+
+func set_choices(c: Dictionary) -> void:
+	var before: Array = spell_list()
+	choices = c.duplicate()
+	unit.mods = GameData.compute_mods(class_id, talents, choices)
+	apply_level_stats(false)
+	if is_local and controller:
+		var after: Array = spell_list()
+		var gone: Array = before.filter(func(s): return not after.has(s))
+		var fresh: Array = after.filter(func(s): return not before.has(s))
+		for k in mini(gone.size(), fresh.size()):
+			controller.replace_spell(gone[k], fresh[k])
+		controller.sync_bar()
+
 func spell_list() -> Array:
-	return GameData.hero_spells(class_id, talents)
+	return GameData.hero_spells(class_id, talents, choices)
 
 func talent_points_free() -> int:
 	return GameData.talent_points_total(unit.level) - GameData.talent_points_spent(talents)
@@ -279,7 +296,7 @@ func _local_move(delta: float) -> void:
 	var dir := (-transform.basis.z * fwd + transform.basis.x * strafe)
 	if dir.length() > 1.0:
 		dir = dir.normalized()
-	var spd := RUN_SPEED if fwd >= 0.0 else BACK_SPEED
+	var spd := (RUN_SPEED if fwd >= 0.0 else BACK_SPEED) * net_speed
 	velocity.x = dir.x * spd
 	velocity.z = dir.z * spd
 	if is_on_floor():
@@ -359,6 +376,9 @@ func ev_blink(dist: float) -> void:
 	if not is_local:
 		return
 	var dir := -global_transform.basis.z
+	if dist < 0.0:
+		dir = -dir          # Смещение: прыжок назад
+		dist = -dist
 	dir.y = 0.0
 	dir = dir.normalized()
 	var from := global_position

@@ -99,8 +99,51 @@ func mana_scale(class_id: String, level: int) -> float:
 const TalentData := preload("res://scripts/data/talent_data.gd")
 var _talent_index: Dictionary = {}   # class -> tid -> {"t": талант, "tree": индекс ветки}
 
+## Уровень открытия: у заклинания из ряда книги — уровень ряда, у базового — SPELL_LEVELS.
 func spell_level(sid: String) -> int:
+	for cid in BOOKS:
+		var rows: Array = BOOKS[cid]["rows"]
+		for r in rows:
+			if r["options"].has(sid):
+				return int(r["level"])
 	return int(SPELL_LEVELS.get(sid, 1))
+
+# ---------------------------------------------------------------- книга заклинаний
+## Книга класса: {"base": [...], "rows": [{"level", "name", "role", "options": [3 id]}]} — в spells/<класс>.gd.
+## Выбор героя — {номер ряда: id}. Пока игрок не выбрал, в ряду действует вариант по умолчанию —
+## заклинание, которое было у класса до книги (если оно в этом ряду есть).
+var BOOKS: Dictionary = _collect_books()
+
+func _collect_books() -> Dictionary:
+	var out := {}
+	for f in SPELL_FILES:
+		var consts: Dictionary = f.get_script_constant_map()
+		if consts.has("BOOK") and consts.has("CLASS"):
+			out[consts["CLASS"]] = consts["BOOK"]
+	return out
+
+func book_default(class_id: String, row: int) -> String:
+	for sid in BOOKS[class_id]["rows"][row]["options"]:
+		if CLASSES[class_id]["spells"].has(sid):
+			return sid
+	return ""
+
+func book_choice(class_id: String, row: int, choices: Dictionary) -> String:
+	if not BOOKS.has(class_id) or row < 0 or row >= BOOKS[class_id]["rows"].size():
+		return ""
+	var c: String = str(choices.get(row, ""))
+	if BOOKS[class_id]["rows"][row]["options"].has(c):
+		return c
+	return book_default(class_id, row)
+
+func book_row_of(class_id: String, sid: String) -> int:
+	if not BOOKS.has(class_id):
+		return -1
+	var rows: Array = BOOKS[class_id]["rows"]
+	for i in rows.size():
+		if rows[i]["options"].has(sid):
+			return i
+	return -1
 
 func talent_trees(class_id: String) -> Array:
 	return TalentData.TREES.get(class_id, [])
@@ -152,16 +195,32 @@ func can_learn(class_id: String, ranks: Dictionary, level: int, tid: String) -> 
 	return ""
 
 ## Сводит изученные таланты в модификаторы: {global, school, spell, flags}.
-func compute_mods(class_id: String, ranks: Dictionary) -> Dictionary:
+## Модификаторы героя: таланты (ранги) и пассивные варианты книги заклинаний (choices).
+## Область «row:N» — «ваше заклинание ряда N книги»: применяется к тому, что выбрано в этом ряду,
+## и при смене выбора переходит на новый вариант сам.
+func compute_mods(class_id: String, ranks: Dictionary, choices: Dictionary = {}) -> Dictionary:
 	var m := {"global": {}, "school": {}, "spell": {}, "flags": {}, "procs": []}
+	var sources: Array = []      # [данные с mods/flags/proc, ранг, id]
 	for tid in ranks:
-		var r := int(ranks[tid])
 		var info := find_talent(class_id, tid)
-		if r <= 0 or info.is_empty():
-			continue
-		var t: Dictionary = info["t"]
+		if int(ranks[tid]) > 0 and not info.is_empty():
+			sources.append([info["t"], int(ranks[tid]), tid])
+	if BOOKS.has(class_id):
+		for i in BOOKS[class_id]["rows"].size():
+			var c := book_choice(class_id, i, choices)
+			if c != "" and SPELLS[c].get("passive", false):
+				sources.append([SPELLS[c], 1, c])
+	for src in sources:
+		var t: Dictionary = src[0]
+		var r: int = src[1]
+		var tid: String = src[2]
 		for md in t.get("mods", []):
 			var scope: String = md[0]
+			if scope.begins_with("row:"):
+				var chosen := book_choice(class_id, int(scope.trim_prefix("row:")), choices)
+				if chosen == "":
+					continue
+				scope = "spell:" + chosen
 			var key: String = md[1]
 			var val: float = float(md[2]) * r
 			var bucket: Dictionary = m["global"]
@@ -194,8 +253,17 @@ func talent_spells(class_id: String, ranks: Dictionary) -> Array:
 				out.append(t["spell"])
 	return out
 
-func hero_spells(class_id: String, ranks: Dictionary) -> Array:
-	return CLASSES[class_id]["spells"] + talent_spells(class_id, ranks)
+## Заклинания героя: базовые книги + выбранные в рядах (кроме пассивных) + вершины талантов.
+## Уровень здесь не проверяется — закрытые показываются на панели с замком.
+func hero_spells(class_id: String, ranks: Dictionary, choices: Dictionary = {}) -> Array:
+	if not BOOKS.has(class_id):
+		return CLASSES[class_id]["spells"] + talent_spells(class_id, ranks)
+	var out: Array = BOOKS[class_id]["base"].duplicate()
+	for i in BOOKS[class_id]["rows"].size():
+		var c := book_choice(class_id, i, choices)
+		if c != "" and not SPELLS[c].get("passive", false):
+			out.append(c)
+	return out + talent_spells(class_id, ranks)
 
 func talent_desc(t: Dictionary, rank: int) -> String:
 	var r := maxi(rank, 1)
