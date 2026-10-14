@@ -35,3 +35,14 @@ static func mob_hp_mult(wave: int, players: int) -> float:
 static func mob_dmg_mult(wave: int) -> float:
 	return 1.0 + 0.09 * float(wave - 1)
 
+
+## Множитель стоимости заклинаний от уровня, как в WoW: стоимость — доля базового запаса маны класса.
+## Базовый запас — без снаряжения и талантов: base_mana + 15 × Интеллект класса на этом уровне.
+## Так заклинание на любом уровне стоит ту же долю «голого» запаса, а Интеллект со снаряжения,
+## эликсиры и таланты на запас маны дают реальный выигрыш.
+static func mana_scale(cls: Dictionary, level: int) -> float:
+	var int0: float = float(cls["attrs"]["int"])
+	var grow: float = float(cls["grow"]["int"])
+	var base0: float = float(cls["base_mana"]) + 15.0 * int0
+	var base_l: float = float(cls["base_mana"]) + 15.0 * (int0 + grow * float(level - 1))
+	return base_l / maxf(base0, 1.0)

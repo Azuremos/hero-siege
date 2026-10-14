@@ -682,11 +682,16 @@ func bot_tick(delta: float) -> void:
 	for u: Unit in world.units.values():
 		if u.team == Unit.Team.ENEMIES and u.alive and _dist_to(u) < 8.0:
 			near_enemies += 1
-	for sid in spell_ids():
+	for sid in _bot_priority():
 		var sp: Dictionary = GameData.SPELLS[sid]
 		if hero.unit.level < GameData.spell_level(sid):
 			continue
 		if now() < float(cd_until.get(sid, 0.0)) or hero.unit.mana < GameData.eff_mana(hero.unit, sid):
+			continue
+		# условия, которые сервер всё равно отклонит: Рывок вплотную, Казнь по здоровой цели
+		if sp.has("min_range") and (tu == null or _dist_to(tu) < float(sp["min_range"])):
+			continue
+		if sp.has("execute") and (tu == null or (tu.hp_frac() > float(sp["execute"]) and GameData.active_proc(hero.unit, sid).is_empty())):
 			continue
 		var long_buff := _long_buff_key(sp)
 		if long_buff != "":
@@ -704,7 +709,7 @@ func bot_tick(delta: float) -> void:
 				var need := 0.5 if sid == "lay_on_hands" else 0.85
 				if sid == "lay_on_hands":
 					need = 0.25
-				if weakest and weakest.hp_frac() < need:
+				if weakest and weakest.hp_frac() < need and not (sp.has("target_lockout") and weakest.has_buff(sp["target_lockout"]["key"])):
 					_bot_ally = weakest.id
 					_send_server("request_cast", [sid, weakest.id, Vector3.ZERO, 0.0])
 					return
@@ -758,3 +763,21 @@ func _long_buff_key(sp: Dictionary) -> String:
 		if e["type"] == "buff" and float(e["dur"]) >= 60.0:
 			return e["key"]
 	return ""
+## Порядок, в котором бот пробует заклинания, — как ротация живого игрока:
+## сначала с перезарядкой (большие → контроль → площадь → ротация), затем без перезарядки:
+## массовые раньше одиночных. Так бот не спамит первым заклинанием панели.
+func _bot_priority() -> Array:
+	var list: Array = spell_ids().duplicate()
+	if Net.cli.has("botspells"):
+		var only: PackedStringArray = Net.cli["botspells"].split(",")
+		list = list.filter(func(s): return only.has(s))
+	list.sort_custom(func(a, b): return _bot_rank(a) > _bot_rank(b))
+	return list
+
+func _bot_rank(sid: String) -> float:
+	var sp: Dictionary = GameData.SPELLS[sid]
+	var cd := float(sp.get("cd", 0.0))
+	if cd > 0.0:
+		return 1000.0 + cd
+	var aoe: bool = sp["target"] == "ground" or sp["delivery"] == "self_aoe" or sp["delivery"] == "party"
+	return 500.0 if aoe else 100.0 + float(sp.get("cast", 0.0))

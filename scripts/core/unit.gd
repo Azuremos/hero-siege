@@ -26,6 +26,11 @@ var crit_base: float = 0.05     # базовый шанс крита (ловко
 var spirit: float = 0.0         # дух — восполнение маны и здоровья
 var resource: String = "mana"  # mana | rage
 var combat_until: float = 0.0   # в бою до этого момента (ярость не угасает)
+var mana_spent_at := -100.0      # правило 5 секунд: когда последний раз тратил ману
+## Счётчики для --manalog и баланса (урон, лечение, потраченная мана)
+var stat_dmg := 0.0
+var stat_heal := 0.0
+var stat_spent := 0.0
 var heal_mult: float = 1.0
 
 # Состояния (время — серверное, сек)

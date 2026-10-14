@@ -13,6 +13,7 @@ const SPELL_LEVELS := {
 const BUFF_INFO := {
 	"renew": {"name": "Обновление", "color": Color(0.5, 1.0, 0.5), "icon": "renew"},
 	"absorb": {"name": "Щит", "color": Color(1.0, 0.95, 0.6), "icon": "pw_shield"},
+	"weakened_soul": {"name": "Ослабленная душа", "color": Color(0.6, 0.6, 0.78), "icon": "pw_shield", "debuff": true},
 	"immune": {"name": "Неуязвимость", "color": Color(1.0, 0.85, 0.3), "icon": "divine_shield"},
 	"barrier": {"name": "Барьер Света", "color": Color(1.0, 0.9, 0.5), "icon": "light_barrier"},
 	"arcane_power": {"name": "Чародейская мощь", "color": Color(0.8, 0.45, 1.0), "icon": "arcane_power"},

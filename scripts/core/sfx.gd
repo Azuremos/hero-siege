@@ -184,15 +184,15 @@ func play_music(track: String) -> void:
 	to.play()
 	create_tween().tween_property(to, "volume_db", -6.0, 1.5)
 
-## Закрыть игру: сначала заглушить звук и дать аудиосерверу пару кадров отпустить потоки,
+## Закрыть игру: сначала заглушить звук и дать аудиосерверу отпустить потоки,
 ## иначе при выходе Godot пишет об утечке ресурсов.
 func quit_game() -> void:
 	if _quitting:
 		return
 	_quitting = true
 	stop_all()
-	await get_tree().process_frame
-	await get_tree().process_frame
+	# 0,2 с реального времени: в headless кадры идут без паузы, и пары кадров аудиосерверу мало
+	await get_tree().create_timer(0.2, true, false, true).timeout
 	get_tree().quit()
 
 func _notification(what: int) -> void:

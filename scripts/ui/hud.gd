@@ -12,6 +12,7 @@ const BAR_SLOTS := 12
 const SLOT := 58.0
 const SLOT_GAP := 6.0
 const PORTRAIT_SHADER := preload("res://shaders/portrait.gdshader")
+const SWEEP_SHADER := preload("res://shaders/cooldown_sweep.gdshader")
 
 var world: Node3D
 var hover_unit_id := 0
@@ -407,6 +408,21 @@ func party_order() -> Array:
 
 # ---------------------------------------------------------------- панели заклинаний
 
+## «Часы» перезарядки на ячейке (шейдер cooldown_sweep): progress — доля оставшегося времени.
+func _sweep(slot: Control, shade: Color, edge: Color) -> ColorRect:
+	var r := ColorRect.new()
+	r.position = Vector2(2, 2)
+	r.size = Vector2(SLOT - 4, SLOT - 4)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = SWEEP_SHADER
+	mat.set_shader_parameter("shade", shade)
+	mat.set_shader_parameter("edge", edge)
+	mat.set_shader_parameter("progress", 0.0)
+	r.material = mat
+	slot.add_child(r)
+	return r
+
 func _side_btn(parent: Control, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -515,12 +531,7 @@ func _make_slot(box: BoxContainer, b: int, i: int) -> void:
 		var icon := SpellIcon.make_item(iid, SLOT - 4)
 		icon.position = Vector2(2, 2)
 		slot.add_child(icon)
-		var cd := ColorRect.new()
-		cd.color = Color(0, 0, 0, 0.65)
-		cd.position = Vector2(2, 2)
-		cd.size = Vector2(SLOT - 4, 0)
-		cd.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		slot.add_child(cd)
+		var cd := _sweep(slot, Color(0, 0, 0, 0.65), Color(0, 0, 0, 0))
 		var cnt := _label("", 13, Color.WHITE)
 		cnt.position = Vector2(SLOT - 24, SLOT - 20)
 		slot.add_child(cnt)
@@ -533,12 +544,8 @@ func _make_slot(box: BoxContainer, b: int, i: int) -> void:
 		var icon := SpellIcon.make(sid, SLOT - 4)
 		icon.position = Vector2(2, 2)
 		slot.add_child(icon)
-		var cd := ColorRect.new()
-		cd.color = Color(0, 0, 0, 0.65)
-		cd.position = Vector2(2, 2)
-		cd.size = Vector2(SLOT - 4, 0)
-		cd.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		slot.add_child(cd)
+		var gcd := _sweep(slot, Color(0, 0, 0, 0.32), Color(1.0, 0.92, 0.55, 0.9))
+		var cd := _sweep(slot, Color(0, 0, 0, 0.68), Color(1.0, 0.92, 0.55, 0.5))
 		var cd_l := _label("", 18, Color(1, 0.95, 0.6))
 		cd_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cd_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -555,7 +562,7 @@ func _make_slot(box: BoxContainer, b: int, i: int) -> void:
 		lock_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		lock_l.size = Vector2(SLOT - 4, SLOT - 4)
 		lock.add_child(lock_l)
-		entry.merge({"cd": cd, "cd_l": cd_l, "icon": icon, "lock": lock})
+		entry.merge({"cd": cd, "gcd": gcd, "cd_l": cd_l, "icon": icon, "lock": lock})
 	var key := _label(Keys.short_label("bar%d_%d" % [b + 1, i]), 12, Color(1, 1, 1, 0.9))
 	key.position = Vector2(5, 1)
 	slot.add_child(key)
@@ -1214,25 +1221,19 @@ func _process(delta: float) -> void:
 			continue
 		if s.has("item"):
 			var pleft: float = c.potion_until - t
-			var pfrac := clampf(pleft / GameData.POTION_CD, 0.0, 1.0)
-			s["cd"].size = Vector2(SLOT - 4, (SLOT - 4) * pfrac)
-			s["cd"].position = Vector2(2, 2 + (SLOT - 4) * (1.0 - pfrac))
+			(s["cd"].material as ShaderMaterial).set_shader_parameter("progress", clampf(pleft / GameData.POTION_CD, 0.0, 1.0))
 			var n: int = lh.bag_count(s["item"])
 			s["count"].text = str(n)
 			s["slot"].modulate = Color(0.5, 0.5, 0.5) if n <= 0 else Color.WHITE
 			continue
-		var until := maxf(float(c.cd_until.get(sid, 0.0)), c.gcd_until)
-		var total := GameData.eff_cd(lh.unit, sid) if t < float(c.cd_until.get(sid, 0.0)) else GameData.GCD
-		var left := until - t
-		var inner := SLOT - 4
-		if left > 0.0:
-			var frac := clampf(left / maxf(total, 0.01), 0.0, 1.0)
-			s["cd"].size = Vector2(inner, inner * frac)
-			s["cd"].position = Vector2(2, 2 + inner * (1.0 - frac))
-			s["cd_l"].text = str(int(ceil(left))) if left > 1.6 else ""
-		else:
-			s["cd"].size = Vector2(inner, 0)
-			s["cd_l"].text = ""
+		# своя перезарядка — тёмные «часы» с секундами; ГКД — светлая тень на всех ячейках, которые он держит
+		var cd_left := float(c.cd_until.get(sid, 0.0)) - t
+		var gcd_left: float = c.gcd_until - t
+		var cd_frac := clampf(cd_left / maxf(GameData.eff_cd(lh.unit, sid), 0.01), 0.0, 1.0) if cd_left > 0.0 else 0.0
+		var gcd_frac := clampf(gcd_left / GameData.GCD, 0.0, 1.0) if gcd_left > 0.0 and gcd_left >= cd_left else 0.0
+		(s["cd"].material as ShaderMaterial).set_shader_parameter("progress", cd_frac)
+		(s["gcd"].material as ShaderMaterial).set_shader_parameter("progress", gcd_frac)
+		s["cd_l"].text = str(int(ceil(cd_left))) if cd_left > 1.6 else ""
 		var no_mana: bool = lh.unit.mana < GameData.eff_mana(lh.unit, sid)
 		if procs.has(sid):
 			# прок: заклинание светится, как в WoW

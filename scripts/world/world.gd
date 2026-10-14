@@ -444,6 +444,12 @@ func _process(delta: float) -> void:
 	if Net.cli.has("autotest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		var fwd := -local_hero.global_transform.basis.z
 		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())
+	if Net.cli.has("godmode") and is_server():
+		for gh in heroes.values():
+			gh.unit.hp = maxf(gh.unit.hp, gh.unit.max_hp * 0.35)   # не погибает, но лекарю есть кого лечить
+			gh.unit.alive = true
+	if Net.cli.has("manalog") and is_server():
+		_manalog_tick()
 	if Net.cli.has("focustest"):
 		_focus_test_step()
 	if Net.cli.has("vfxtest") and _test_t >= 2.0 and _test_t - delta < 2.0:
@@ -460,6 +466,8 @@ func _process(delta: float) -> void:
 	if Net.cli.has("quit-after") and _test_t >= float(Net.cli["quit-after"]) and not Sfx._quitting:
 		if Net.cli.has("shot"):
 			_save_shot(Net.cli["shot"].get_basename() + "_end.png")
+		if Net.cli.has("manalog"):
+			_manalog_summary()
 		print("TEST END: wave=%d state=%s castle=%d" % [siege.wave if siege else 0, mode.state, int(siege.castle.hp) if siege else 0])
 		Sfx.quit_game()
 
@@ -555,3 +563,38 @@ func _ft_key(code: Key) -> void:
 		ev.physical_keycode = code
 		ev.pressed = pressed
 		Input.parse_input_event(ev)
+
+## --manalog: раз в 5 с — мана, расход, урон и лечение в секунду; момент, когда мана впервые кончилась.
+## В конце (--quit-after) — итог за минуту по каждому герою. Нужен для баланса маны и перезарядок.
+var _ml_t := 0.0
+var _ml_prev: Dictionary = {}       # hero_id -> [spent, dmg, heal]
+var _ml_empty: Dictionary = {}      # hero_id -> время, когда мана впервые упала ниже 10%
+var _ml_start: Dictionary = {}      # hero_id -> время начала боя (первая трата)
+
+func _manalog_tick() -> void:
+	for h in heroes.values():
+		var u: Unit = h.unit
+		if u.stat_spent > 0.0 and not _ml_start.has(h.hero_id):
+			_ml_start[h.hero_id] = _test_t
+		if u.resource != "rage" and _ml_start.has(h.hero_id) and not _ml_empty.has(h.hero_id) and u.mana < u.max_mana * 0.1:
+			_ml_empty[h.hero_id] = _test_t
+			print("MANA EMPTY %s (%s): через %.0f с боя, t=%.0f" % [h.player_name, h.class_id, _test_t - float(_ml_start[h.hero_id]), _test_t])
+	if _test_t - _ml_t < 5.0:
+		return
+	var dt := _test_t - _ml_t
+	_ml_t = _test_t
+	for h in heroes.values():
+		var u: Unit = h.unit
+		var prev: Array = _ml_prev.get(h.hero_id, [0.0, 0.0, 0.0])
+		print("MANA %s %s lvl=%d mana=%d/%d (%d%%) расход=%.1f/с урон=%.0f/с лечение=%.0f/с" % [h.player_name, h.class_id, u.level,
+			int(u.mana), int(u.max_mana), int(u.mana / maxf(u.max_mana, 1.0) * 100.0),
+			(u.stat_spent - prev[0]) / dt, (u.stat_dmg - prev[1]) / dt, (u.stat_heal - prev[2]) / dt])
+		_ml_prev[h.hero_id] = [u.stat_spent, u.stat_dmg, u.stat_heal]
+
+func _manalog_summary() -> void:
+	for h in heroes.values():
+		var u: Unit = h.unit
+		var fight := maxf(1.0, _test_t - float(_ml_start.get(h.hero_id, 0.0)))
+		print("BALANCE %s %s lvl=%d: урон %.0f/мин, лечение %.0f/мин, мана %.0f/мин, мана кончилась: %s" % [h.player_name, h.class_id, u.level,
+			u.stat_dmg / fight * 60.0, u.stat_heal / fight * 60.0, u.stat_spent / fight * 60.0,
+			"через %.0f с" % (float(_ml_empty[h.hero_id]) - float(_ml_start[h.hero_id])) if _ml_empty.has(h.hero_id) else "нет"])

@@ -104,7 +104,7 @@ static func tooltip(sid: String, u: Unit = null) -> String:
 	if sid.begins_with("item:"):
 		return GameData.item_tooltip(sid.trim_prefix("item:"))
 	var sp: Dictionary = GameData.SPELLS[sid]
-	var mana := float(sp["mana"]) if u == null else GameData.eff_mana(u, sid)
+	var mana := float(sp["mana"]) if u == null else GameData.spell_cost(u, sid)
 	var res_name := "Ярость" if (u != null and u.resource == "rage") or _is_warrior_spell(sid) else "Мана"
 	var cast := float(sp["cast"]) if u == null else GameData.eff_cast(u, sid)
 	var cd := float(sp["cd"]) if u == null else GameData.eff_cd(u, sid)
@@ -117,7 +117,7 @@ static func tooltip(sid: String, u: Unit = null) -> String:
 	lines.append("%s: %d" % [res_name, int(round(mana))])
 	lines.append("Мгновенное" if cast <= 0.0 else "Произнесение: %.1f сек." % cast)
 	if cd > 0.0:
-		lines.append("Восстановление: %s сек." % GameData._fmt(cd))
+		lines.append("Перезарядка: %s сек." % GameData._fmt(cd))
 	if rng > 0.0:
 		lines.append("Дальность: %d м" % int(rng))
 	lines.append("")

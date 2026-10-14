@@ -95,11 +95,17 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 			var extra := _wall_length(u, sid, length) * 0.5 if sp["target"] == "wall" else 0.0
 			if Vector2(ground.x - u.pos.x, ground.z - u.pos.z).length() > max_range + 2.0 + extra:
 				return _feedback(peer, sid, "Слишком далеко")
+	# «Ослабленная душа» и т.п.: заклинание нельзя повторить на ту же цель, пока на ней метка
+	if sp.has("target_lockout"):
+		var lu: Unit = world.get_unit(target_id)
+		var lk: Dictionary = sp["target_lockout"]
+		if lu and lu.has_buff(lk["key"]):
+			return _feedback(peer, sid, "На цели ещё действует «%s»" % GameData.BUFF_INFO[lk["key"]]["name"])
 	st["gcd"] = t + GameData.GCD
 	var cast_time := GameData.eff_cast(u, sid)
 	if sp["delivery"] == "channel":
 		# поток: мана и восстановление сразу, снаряды — по ходу произнесения
-		u.mana -= GameData.eff_mana(u, sid)
+		_spend_mana(u, GameData.eff_mana(u, sid), t)
 		if u.has_buff("clearcasting"):
 			u.remove_buff("clearcasting")
 		var cdc := GameData.eff_cd(u, sid)
@@ -136,6 +142,8 @@ func request_auto(target_id: int) -> void:
 		_hstate(hero.hero_id)["auto_target"] = target_id
 
 func _feedback(peer: int, sid: String, err: String, cd: float = 0.0, gcd: float = 0.0) -> void:
+	if err != "" and Net.cli.has("castlog"):
+		print("CAST FAIL ", sid, ": ", err)
 	if peer == multiplayer.get_unique_id():
 		ev_feedback(sid, err, cd, gcd)
 	else:
@@ -215,9 +223,20 @@ func server_tick(delta: float, t: float) -> void:
 				if t > u.combat_until:
 					u.mana = maxf(0.0, u.mana - 1.5)
 			else:
-				u.mana = minf(u.max_mana, u.mana + (u.max_mana * 0.004 + u.spirit * 0.25) * (1.0 + u.mod("regen")) * rest)
+				# в секунду: запас × 3% + Дух × 0,6; после траты маны 5 с — четверть (правило 5 секунд)
+				var per_s := u.max_mana * GameData.MANA_REGEN_POOL + u.spirit * GameData.MANA_REGEN_SPIRIT
+				if t - u.mana_spent_at < GameData.FIVE_SECOND_RULE:
+					per_s *= GameData.CASTING_REGEN
+				u.mana = minf(u.max_mana, u.mana + per_s * 0.5 * (1.0 + u.mod("regen")) * rest)
 			u.hp = minf(u.max_hp, u.hp + (u.max_hp * 0.0025 + u.spirit * 0.05) * rest)
 	_update_bursts(t)
+
+## Списать ману (или ярость). Трата маны запускает правило 5 секунд: восполнение в бою ниже.
+func _spend_mana(u: Unit, cost: float, t: float) -> void:
+	u.mana -= cost
+	if cost > 0.0 and u.resource != "rage":
+		u.mana_spent_at = t
+		u.stat_spent += cost
 
 func _auto_attack(hero, st: Dictionary, t: float) -> void:
 	var tid: int = st["auto_target"]
@@ -286,7 +305,9 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 	var mana_cost := GameData.eff_mana(u, sid)
 	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0 and u.resource != "rage":
 		u.remove_buff("clearcasting")
-	u.mana -= mana_cost
+	_spend_mana(u, mana_cost, world.now())
+	if sp.has("target_lockout") and tu:
+		tu.add_buff(sp["target_lockout"]["key"], t + float(sp["target_lockout"]["dur"]), {})
 	var cd := GameData.eff_cd(u, sid)
 	if cd > 0.0:
 		st["cds"][sid] = t + cd
@@ -654,7 +675,7 @@ func _on_damage_dealt(caster: Unit, target: Unit, amount: float, school: String,
 
 func _on_heal_crit(caster: Unit, target: Unit, sid: String, t: float) -> void:
 	if caster.flag("illumination") > 0.0 and GameData.SPELLS.has(sid):
-		caster.mana = minf(caster.max_mana, caster.mana + float(GameData.SPELLS[sid]["mana"]) * caster.flag("illumination"))
+		caster.mana = minf(caster.max_mana, caster.mana + GameData.spell_cost(caster, sid) * caster.flag("illumination"))
 	if caster.flag("inspiration") > 0.0:
 		target.add_buff("inspiration", t + 10.0, {"dmg_taken": -caster.flag("inspiration")})
 
@@ -781,6 +802,8 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		world.fx_number(dst.id, 0.0, "saved", "holy", src_id, false)
 		fx_at("heal_burst", dst.pos, dst.pos, 0.0, dst.id)
 		return
+	if src:
+		src.stat_dmg += minf(amount, maxf(dst.hp, 0.0))
 	dst.hp -= amount
 	if src:
 		dst.last_attacker = src.id
@@ -804,6 +827,8 @@ func heal(src: Unit, dst: Unit, amount: float, crit: bool) -> void:
 	var before := dst.hp
 	dst.hp = minf(dst.max_hp, dst.hp + amount)
 	world.fx_number(dst.id, dst.hp - before, "heal", "holy", src.id if src else 0, crit)
+	if src:
+		src.stat_heal += dst.hp - before
 	# Частица Света: отмеченный союзник получает 40% чужого лечения
 	if src and src.kind == "hero":
 		var bid := int(hs.get(src.id, {}).get("beacon", 0))

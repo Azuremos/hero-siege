@@ -11,6 +11,13 @@ const WAVE_COUNT := 20            # полная осада по умолчан�
 const MAX_WAVES := 100            # 0 в настройках = бесконечная осада
 const POTION_CD := 30.0           # общее восстановление зелий
 const FIRST_WAVE_DELAY := 25.0
+
+## Мана. Восполнение в секунду: запас × MANA_REGEN_POOL + Дух × MANA_REGEN_SPIRIT.
+## Правило 5 секунд: после траты маны 5 с восполнение — только CASTING_REGEN от обычного.
+const MANA_REGEN_POOL := 0.03
+const MANA_REGEN_SPIRIT := 0.6
+const CASTING_REGEN := 0.3
+const FIVE_SECOND_RULE := 5.0
 const WAVE_INTERVAL := 42.0
 
 # ---------------------------------------------------------------- Данные по файлам
@@ -77,6 +84,9 @@ func mob_hp_mult(wave: int, players: int) -> float:
 
 func mob_dmg_mult(wave: int) -> float:
 	return Formulas.mob_dmg_mult(wave)
+
+func mana_scale(class_id: String, level: int) -> float:
+	return Formulas.mana_scale(CLASSES[class_id], level)
 
 # ---------------------------------------------------------------- Таланты
 
@@ -210,7 +220,16 @@ func eff_mana(u: Unit, sid: String) -> float:
 	var pr := active_proc(u, sid)
 	if not pr.is_empty() and pr["data"].get("free", false):
 		return 0.0
-	return float(sp["mana"]) * maxf(0.0, 1.0 + u.mod("mana", sid, sp["school"]))
+	return spell_cost(u, sid)
+
+## Стоимость заклинания без учёта проков: растёт с уровнем героя (доля базового запаса маны),
+## таланты на экономию маны её снижают. Ярость не растёт с уровнем.
+func spell_cost(u: Unit, sid: String) -> float:
+	var sp: Dictionary = SPELLS[sid]
+	var cost := float(sp["mana"]) * maxf(0.0, 1.0 + u.mod("mana", sid, sp["school"]))
+	if u.resource != "rage" and u.kind == "hero" and CLASSES.has(u.type_id):
+		cost *= mana_scale(u.type_id, u.level)
+	return cost
 
 func eff_cast(u: Unit, sid: String) -> float:
 	var sp: Dictionary = SPELLS[sid]
@@ -292,7 +311,7 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99) -> 
 			lines.append("Восстанавливает %d маны (воину — ярость)." % int(u["mana"]))
 		if it["desc"] != "":
 			lines.append(it["desc"])
-		lines.append("Общее восстановление зелий: %d сек." % int(POTION_CD))
+		lines.append("Общая перезарядка зелий: %d сек." % int(POTION_CD))
 	lines.append(("Требуется уровень %d" if hero_level >= it["level"] else "✗ Требуется уровень %d") % it["level"])
 	lines.append("Цена: %d золота" % it["price"])
 	return "\n".join(lines)
