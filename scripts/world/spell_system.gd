@@ -342,6 +342,9 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 	var radius := float(sp.get("radius", 0.0)) + u.mod("radius_add", sid, school)
 	var duration := float(sp.get("duration", 0.0)) + u.mod("dur_add", sid, school)
 
+	# self_fx — эффекты на самого заклинателя вдобавок к основным (Щит праведности: удар + блок)
+	if sp.has("self_fx"):
+		apply_effects(u, u, sp["self_fx"], sid, school)
 	match sp["delivery"]:
 		"projectile":
 			_launch_projectile(u, tu, sp["effects"], sid, school, float(sp["speed"]), sp["vfx"], t)
