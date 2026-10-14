@@ -6,6 +6,7 @@ const SETTINGS_PATH := "user://settings.cfg"
 const GOLD := Color(0.95, 0.78, 0.35)
 const LANE_NAMES := ["1 — только с юга", "2 — юг и восток", "3 — юг, восток и запад", "4 — со всех сторон"]
 const WAVE_CHOICES := [1, 2, 3, 4, 5, 10, 20, 30, 50, 0]
+const BREAK_CHOICES := [30, 60, 90]
 
 var _cam: Camera3D
 var _preview: Node3D
@@ -22,6 +23,7 @@ var _race_option: OptionButton
 var _race_desc: Label
 var _waves_option: OptionButton
 var _lanes_option: OptionButton
+var _break_option: OptionButton
 var _ip_edit: LineEdit
 var _status: Label
 var _solo_box: Control
@@ -213,6 +215,16 @@ func _build_ui() -> void:
 	_lanes_option.select(3)
 	_lanes_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	opts.add_child(_lanes_option)
+	var l_b := _label("Передышка", 14, GOLD)
+	l_b.autowrap_mode = TextServer.AUTOWRAP_OFF
+	opts.add_child(l_b)
+	_break_option = OptionButton.new()
+	for n in BREAK_CHOICES:
+		_break_option.add_item("%d сек. каждые 3 волны" % n)
+		_break_option.set_item_metadata(_break_option.item_count - 1, n)
+	_break_option.select(BREAK_CHOICES.find(60))
+	_break_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opts.add_child(_break_option)
 	# действия: одиночная
 	_solo_box = HBoxContainer.new()
 	_solo_box.add_theme_constant_override("separation", 6)
@@ -393,7 +405,8 @@ func _toggle_keys() -> void:
 func _apply_local_info() -> void:
 	var n := _name_edit.text.strip_edges()
 	Net.local_info = {"name": n if n != "" else "Герой", "class": _selected_class(), "race": _selected_race()}
-	Net.settings = {"waves": int(_waves_option.get_item_metadata(_waves_option.selected)), "lanes": _lanes_option.selected + 1}
+	Net.settings = {"waves": int(_waves_option.get_item_metadata(_waves_option.selected)), "lanes": _lanes_option.selected + 1,
+		"break": int(_break_option.get_item_metadata(_break_option.selected))}
 	_save_settings()
 
 # ---------------------------------------------------------------- сеть
@@ -444,8 +457,8 @@ func _refresh_lobby() -> void:
 	if Net.is_server():
 		var addrs := Net.local_addresses()
 		var w: int = Net.settings.get("waves", 20)
-		_lobby_info.text = "Вы хост. Друзья подключаются по одному из адресов:\n%s\n(в Radmin VPN это адрес 26.x.x.x, порт %d)\nОсада: %s, направлений: %d" % [
-			", ".join(addrs), Net.PORT, "бесконечная" if w == 0 else "%d волн" % w, int(Net.settings.get("lanes", 4))]
+		_lobby_info.text = "Вы хост. Друзья подключаются по одному из адресов:\n%s\n(в Radmin VPN это адрес 26.x.x.x, порт %d)\nОсада: %s, направлений: %d, передышка: %d сек." % [
+			", ".join(addrs), Net.PORT, "бесконечная" if w == 0 else "%d волн" % w, int(Net.settings.get("lanes", 4)), int(Net.settings.get("break", 60))]
 		_start_btn.visible = true
 		_check_autostart()
 	else:
@@ -466,6 +479,9 @@ func _load_settings() -> void:
 		var wi := WAVE_CHOICES.find(int(cfg.get_value("game", "waves", 20)))
 		if wi >= 0:
 			_waves_option.select(wi)
+		var bi := BREAK_CHOICES.find(int(cfg.get_value("game", "break", 60)))
+		if bi >= 0:
+			_break_option.select(bi)
 		var rid: String = cfg.get_value("player", "race", "human")
 		for i in _race_option.item_count:
 			if _race_option.get_item_metadata(i) == rid:
@@ -484,6 +500,7 @@ func _save_settings() -> void:
 	cfg.set_value("net", "ip", _ip_edit.text.strip_edges())
 	cfg.set_value("game", "waves", Net.settings.get("waves", 20))
 	cfg.set_value("game", "lanes", Net.settings.get("lanes", 4))
+	cfg.set_value("game", "break", Net.settings.get("break", 60))
 	cfg.save(SETTINGS_PATH)
 
 func _parse_cli() -> void:
@@ -519,6 +536,10 @@ func _run_cli() -> void:
 		var wi := WAVE_CHOICES.find(int(_cli["waves"]))
 		if wi >= 0:
 			_waves_option.select(wi)
+	if _cli.has("breaktime"):
+		var bi := BREAK_CHOICES.find(int(_cli["breaktime"]))
+		if bi >= 0:
+			_break_option.select(bi)
 	_update_preview()
 	if _cli.has("solo"):
 		_on_solo()

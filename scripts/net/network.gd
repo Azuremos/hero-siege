@@ -17,8 +17,8 @@ var in_game := false
 var solo := false
 ## Параметры командной строки (для тестов: --solo --class=mage --bot --quit-after=60)
 var cli: Dictionary = {}
-## Настройки партии (выбирает хост): число волн и т.д.
-var settings: Dictionary = {"waves": 20, "lanes": 4}
+## Настройки партии (выбирает хост): число волн, направления, длительность передышки (сек.).
+var settings: Dictionary = {"waves": 20, "lanes": 4, "break": 60}
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)

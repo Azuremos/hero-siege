@@ -1,12 +1,13 @@
 extends Node
 ## Волны нежити (только сервер).
-## Каждые 3 волны — передышка: сначала добить всех врагов, затем 30 сек. отдыха
+## Каждые 3 волны — передышка: сначала добить всех врагов, затем отдых (60 сек., хост выбирает 30/60/90)
 ## (здоровье и мана восполняются быстрее). Хост может начать волну раньше.
 
 const BREAK_EVERY := 3
-const BREAK_TIME := 30.0
+const DEFAULT_BREAK_TIME := 60.0
 
 var world: Node3D
+var break_time := DEFAULT_BREAK_TIME
 var _next_wave_at := 0.0
 var _queue: Array = []            # [время, тип, полоса, множитель здоровья]
 var _started := false
@@ -18,6 +19,7 @@ func _ready() -> void:
 
 func begin() -> void:
 	_started = true
+	break_time = clampf(float(Net.settings.get("break", DEFAULT_BREAK_TIME)), 10.0, 300.0)
 	var delay: float = GameData.FIRST_WAVE_DELAY if world.wave_count == 0 else minf(GameData.FIRST_WAVE_DELAY, 12.0 + 3.0 * world.wave_count)
 	_next_wave_at = world.now() + delay
 	var mode: String = "  (бесконечная осада)" if world.wave_count == 0 else ("" if world.wave_count == GameData.WAVE_COUNT else "  (волн: %d)" % world.wave_count)
@@ -39,9 +41,9 @@ func server_tick(_delta: float, t: float) -> void:
 		if _queue.is_empty() and world.mobs.alive_count() == 0:
 			_break_pending = false
 			world.game_state = "break"
-			_next_wave_at = t + BREAK_TIME
+			_next_wave_at = t + break_time
 			world.sound_all("level_up")
-			world.announce_all("Передышка! Следующая волна через %d сек. — восстановите силы." % int(BREAK_TIME), Color(0.6, 1.0, 0.7))
+			world.announce_all("Передышка! Следующая волна через %d сек. — восстановите силы." % int(break_time), Color(0.6, 1.0, 0.7))
 		return
 	world.next_wave_in = maxf(0.0, _next_wave_at - t)
 	if t >= _next_wave_at:
