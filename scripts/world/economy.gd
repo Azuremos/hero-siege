@@ -307,9 +307,14 @@ func _sound(hero, snd: String) -> void:
 # ---------------------------------------------------------------- добыча с врагов
 
 ## Сервер: шанс выпадения предмета с убитого врага (лучше с ростом волны).
-func roll_loot(pos: Vector3, wave: int, boss: bool) -> void:
+func roll_loot(pos: Vector3, wave: int, boss: bool, elite: bool = false) -> void:
 	var drops: Array = []
-	if boss:
+	if elite:
+		# элитный — вещь получше наверняка, иногда ещё зелье
+		drops.append(_random_gear(wave + 2, pos))
+		if randf() < 0.5:
+			drops.append(_random_consumable(wave))
+	elif boss:
 		drops.append(_random_gear(wave + 4, pos))
 		drops.append(_random_gear(wave + 4, pos))
 		drops.append(_random_consumable(wave))

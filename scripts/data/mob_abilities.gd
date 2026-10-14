@@ -69,6 +69,10 @@ const ABILITIES := {
 	"affix_summon": {"name": "Призыв подмоги", "cd": 12.0, "range": 0.0, "target": "self", "cast": 1.5, "interrupt": true,
 		"school": "shadow", "delivery": "summon", "summon": "", "count": 2, "anim": "Spellcast_Summon"},
 
+	"affix_inspire": {"name": "Вдохновение", "cd": 3.0, "range": 0.0, "target": "self", "cast": 0.0, "interrupt": false,
+		"school": "physical", "delivery": "allies", "radius": 10.0, "silent": true,
+		"effects": [{"type": "buff", "key": "inspired", "dur": 4.0, "mods": {"dmg": 0.2, "speed": 0.15}}]},
+
 	# ---------------- проверка (--casttest)
 	"test_cast": {"name": "Учебная огненная глыба", "cd": 0.5, "range": 40.0, "target": "enemy", "cast": 3.0, "interrupt": true,
 		"school": "fire", "delivery": "target", "effects": [], "anim": "Spellcasting"},

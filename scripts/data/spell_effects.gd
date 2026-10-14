@@ -37,6 +37,7 @@ const BUFF_INFO := {
 	"bloodlust": {"name": "Жажда крови", "color": Color(1.0, 0.35, 0.2), "icon": "bloodthirst", "desc": "Урон и скорость атаки +25%."},
 	"war_drums": {"name": "Боевые барабаны", "color": Color(0.9, 0.6, 0.3), "icon": "battle_shout", "desc": "Двигается на 25% быстрее."},
 	"ogre_haste": {"name": "Ускорение", "color": Color(0.7, 0.5, 1.0), "icon": "blink", "desc": "Двигается и бьёт быстрее."},
+	"inspired": {"name": "Вдохновлён", "color": Color(1.0, 0.75, 0.3), "icon": "battle_shout", "desc": "Элитный союзник рядом: урон +20%, скорость +15%."},
 	"immune": {"name": "Неуязвимость", "color": Color(1.0, 0.85, 0.3), "icon": "divine_shield"},
 	"barrier": {"name": "Барьер Света", "color": Color(1.0, 0.9, 0.5), "icon": "light_barrier"},
 	"arcane_power": {"name": "Чародейская мощь", "color": Color(0.8, 0.45, 1.0), "icon": "arcane_power"},

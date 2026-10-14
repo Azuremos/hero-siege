@@ -716,3 +716,16 @@ static func telegraph(world: Node3D, shape: String, pos: Vector3, yaw: float, ra
 	mi.material_override = mat
 	n.add_child(mi)
 	n.create_tween().tween_method(func(v: float): mat.set_shader_parameter("progress", v), 0.0, 1.0, maxf(dur, 0.05))
+
+## Горящая земля (огненный след элитного): огонь по кругу на dur секунд.
+static func hazard_fire(world: Node3D, pos: Vector3, r: float, dur: float) -> void:
+	var n := _timed(world, Vector3(pos.x, 0.05, pos.z), dur)
+	var ring := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(r * 2.0, r * 2.0)
+	ring.mesh = pm
+	ring.material_override = ring_material(COL_FIRE, 0.0, false, 0.8)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	n.add_child(ring)
+	particles(n, COL_FIRE, 14, 0.9, {"shape": "ring", "radius": r * 0.7, "vmin": 0.6, "vmax": 1.6, "spread": 15.0,
+		"gravity": Vector3(0, 2.5, 0), "smin": 0.4, "smax": 0.9, "aabb": r + 2.0})

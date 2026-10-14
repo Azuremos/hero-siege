@@ -172,6 +172,8 @@ static func key_name(k: String) -> String:
 	if k.begins_with("mob:"):
 		var mid := k.trim_prefix("mob:")
 		return GameData.MOBS[mid]["name"] if GameData.MOBS.has(mid) else mid
+	if k.begins_with("affix:"):
+		return "Аффикс: " + str(GameData.AFFIXES.get(k.trim_prefix("affix:"), {}).get("name", k))
 	if k.begins_with("mab:"):
 		return GameData.MOB_ABILITIES.get(k.trim_prefix("mab:"), {}).get("name", k)
 	if k.begins_with("item:"):

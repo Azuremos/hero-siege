@@ -57,6 +57,7 @@ class Mob:
 	var cast: Dictionary = {}         # текущий каст: {ab, until, pick, center}
 	var extra_abilities: Array = []   # от аффиксов элитных
 	var fleeing := false              # вор убегает с золотом
+	var trail_at := 0.0               # огненный след элитного
 	var stolen := 0
 	var stolen_from := 0
 
@@ -153,8 +154,6 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	u.type_id = type
 	u.display_name = def["name"]
 	u.max_hp = float(def["hp"]) * GameData.mob_hp_mult(wave, players) * hp_scale
-	if opts.get("champion", false):
-		u.max_hp *= 4.0
 	if Net.cli.has("mobhp"):
 		u.max_hp *= float(Net.cli["mobhp"])    # тест: враги живут дольше, бой без пауз
 	u.hp = u.max_hp
@@ -166,6 +165,10 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	m.unit = u
 	m.def = def
 	m.route = source
+	var want_elite: bool = opts.get("champion", false) or (not def.get("boss", false) and (not opts.has("pos") or Net.cli.has("elite")) and def["role"] != "test"
+		and (Net.cli.has("elite") or randf() < GameData.AffixData.elite_chance(wave)))
+	if want_elite:
+		_make_elite(m, opts.get("champion", false), wave)
 	var ends: Array = world.mode.mob_start(source)
 	var start: Vector2 = ends[0]
 	m.pos2 = start + Vector2(randf_range(-2.5, 2.5), randf_range(-2.5, 2.5))
@@ -183,7 +186,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	mobs[u.id] = m
 	world.units[u.id] = u
 	_make_visual(m)
-	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave])
+	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave, u.affixes, u.elite])
 	return u.id
 
 func kill(u: Unit, killer: Unit) -> void:
@@ -192,9 +195,13 @@ func kill(u: Unit, killer: Unit) -> void:
 		return
 	mobs.erase(u.id)
 	world.units.erase(u.id)
-	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)))
-	world.award_kill(u.pos, xp, int(m.def["gold"]))
-	world.economy.roll_loot(u.pos, u.level, m.def.get("boss", false))
+	var reward := GameData.AffixData.ELITE_REWARD if u.elite > 0 else 1.0
+	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)) * reward)
+	world.award_kill(u.pos, xp, int(float(m.def["gold"]) * reward))
+	world.economy.roll_loot(u.pos, u.level, m.def.get("boss", false) or u.elite == 2, u.elite == 1)
+	if u.affixes.has("explosive"):
+		_delayed.append({"at": world.now() + 1.5, "pos": m.pos2, "r": 5.0, "min": 30.0, "max": 40.0, "power": u.power})
+		ev_telegraph.rpc("circle", u.pos, 0.0, 5.0, 0.0, 1.5)
 	world.mode.on_mob_killed(u, killer, m.def.get("boss", false))
 	corpses.append({"pos": m.pos2, "until": world.now() + CORPSE_TIME})
 	if corpses.size() > 80:
@@ -235,6 +242,7 @@ func server_tick(delta: float, t: float) -> void:
 		for m: Mob in mobs.values():
 			m.anim_state = AN.IDLE
 		return
+	_tick_hazards(delta, t)
 	_sim_acc += delta
 	while _sim_acc >= SIM_STEP:
 		_sim_acc -= SIM_STEP
@@ -367,6 +375,7 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 
 	if moving and not u.is_rooted(t):
 		_move(m, goal, dt, t)
+		_elite_trail(m, t)
 		m.anim_state = AN.MOVE
 	elif m.anim_state == AN.MOVE or m.anim_state == AN.STUN or m.anim_state == AN.SPAWN:
 		m.anim_state = AN.IDLE
@@ -572,6 +581,9 @@ func ev_spawn(list: Array) -> void:
 		u.hp = u.max_hp
 		u.radius = def["radius"]
 		u.level = e[6]
+		if e.size() > 8:
+			u.affixes = e[7]
+			u.elite = e[8]
 		m.unit = u
 		m.def = def
 		m.pos2 = Vector2(e[2], e[3])
@@ -625,6 +637,8 @@ func _make_visual(m: Mob) -> void:
 	if m.def.get("boss", false):
 		Sfx.play_at("boss_roar", m.node.position + Vector3(0, 2, 0), 6.0)
 	m.unit.node = m.node
+	_elite_visual(m)
+	m.geoms = m.node.find_children("*", "GeometryInstance3D", true, false)    # аура элитного могла смениться
 
 func _set_ice(m: Mob, on: bool) -> void:
 	if on and m.ice == null:
@@ -1060,3 +1074,111 @@ func _despawn(m: Mob) -> void:
 	m.unit.alive = false
 	_pending_deaths.append(m.unit.id)
 	_begin_dying(m)
+
+# ---------------------------------------------------------------- элитные мобы
+## Аффиксы — scripts/data/affixes.gd. Тип элиты и аффиксы уходят клиентам в ev_spawn (надёжно, один раз),
+## в снимок ничего не добавляется.
+
+var hazards: Array = []            # сервер: горящая земля {pos: Vector2, r, until, dps, src}
+var _hazard_acc := 0.0
+var _delayed: Array = []           # сервер: отложенные взрывы {at, pos: Vector2, r, min, max, src_power}
+
+## Сделать моба элитным (count аффиксов) или чемпионом. Возвращает список аффиксов.
+func _make_elite(m: Mob, champion: bool, wave: int) -> void:
+	var A = GameData.AffixData
+	var pool: Array = A.AFFIXES.keys()
+	var count := 3 if champion else clampi(1 + (1 if wave >= 10 else 0) + (1 if wave >= 18 else 0), 1, 3)
+	if not champion:
+		count = 1 + randi() % count
+	var list: Array = []
+	if Net.cli.has("affix") and A.AFFIXES.has(Net.cli["affix"]):
+		list.append(Net.cli["affix"])
+	pool.shuffle()
+	for a in pool:
+		if list.size() >= count:
+			break
+		if not list.has(a):
+			list.append(a)
+	_apply_affixes(m, list, champion)
+
+func _apply_affixes(m: Mob, list: Array, champion: bool) -> void:
+	var A = GameData.AffixData
+	var u := m.unit
+	u.elite = 2 if champion else 1
+	u.affixes = list
+	u.max_hp *= (A.CHAMPION_HP if champion else A.ELITE_HP)
+	u.hp = u.max_hp
+	u.power *= A.ELITE_DMG
+	u.phys_power = u.power
+	for a in list:
+		match a:
+			"armored":
+				u.armor = minf(0.8, u.armor + 0.35)
+			"fast":
+				u.add_buff("affix_fast", 1e9, {"speed": 0.4, "haste": 0.25})
+		var ab: String = A.AFFIXES[a].get("ability", "")
+		if ab != "":
+			m.extra_abilities.append(ab)
+			m.ab_ready[ab] = world.now() + 2.0 + randf() * 2.0
+
+## Огненный след: горящая земля под быстрым элитным, пока он идёт.
+func _elite_trail(m: Mob, t: float) -> void:
+	if not m.unit.affixes.has("fire_trail") or t < m.trail_at:
+		return
+	m.trail_at = t + 1.4
+	hazards.append({"pos": m.pos2, "r": 2.2, "until": t + 5.0, "dps": 10.0 * m.unit.power, "src": m.unit.id})
+	ev_hazard.rpc(Vector3(m.pos2.x, 0, m.pos2.y), 2.2, 5.0)
+
+## Сервер: горящая земля жжёт героев, отложенные взрывы взрываются.
+func _tick_hazards(delta: float, t: float) -> void:
+	var i := 0
+	while i < _delayed.size():
+		var d: Dictionary = _delayed[i]
+		if t < float(d["at"]):
+			i += 1
+			continue
+		_delayed.remove_at(i)
+		var c: Vector2 = d["pos"]
+		for h in world.heroes.values():
+			var hu: Unit = h.unit
+			if hu.alive and Vector2(hu.pos.x, hu.pos.z).distance_to(c) <= float(d["r"]) + hu.radius:
+				world.spells.deal_damage(null, hu, randf_range(d["min"], d["max"]) * float(d["power"]), "fire", false, "affix:explosive")
+		world.spells.fx_at("explosion_fire", Vector3(c.x, 0, c.y), Vector3(c.x, 0, c.y), float(d["r"]), 0)
+	_hazard_acc += delta
+	if _hazard_acc < 0.5:
+		return
+	_hazard_acc = 0.0
+	hazards = hazards.filter(func(z): return float(z["until"]) > t)
+	for z in hazards:
+		var src: Unit = world.get_unit(int(z["src"]))
+		for h in world.heroes.values():
+			var hu: Unit = h.unit
+			if hu.alive and Vector2(hu.pos.x, hu.pos.z).distance_to(z["pos"]) <= float(z["r"]) + hu.radius:
+				world.spells.deal_damage(src, hu, float(z["dps"]) * 0.5, "fire", false, "affix:fire_trail")
+
+@rpc("authority", "call_local", "reliable")
+func ev_hazard(pos: Vector3, r: float, dur: float) -> void:
+	Vfx.hazard_fire(world, pos, r, dur)
+
+## Внешний вид элитного: крупнее, цветная аура под ногами.
+func _elite_visual(m: Mob) -> void:
+	var old := m.node.get_node_or_null("EliteAura")
+	if old:
+		old.free()
+	var base := float(m.def.get("scale", 1.0))
+	if m.unit.elite == 0:
+		m.node.scale = Vector3.ONE * base
+		return
+	m.node.scale = Vector3.ONE * base * (GameData.AffixData.ELITE_SCALE * (1.15 if m.unit.elite == 2 else 1.0))
+	var ring := MeshInstance3D.new()
+	ring.name = "EliteAura"
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(2, 2)
+	ring.mesh = pm
+	var col: Color = GameData.AFFIXES[m.unit.affixes[0]]["color"] if not m.unit.affixes.is_empty() else Color(1, 0.8, 0.3)
+	ring.material_override = Vfx.ring_material(col, 0.0, false, 1.0)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var rr := m.unit.radius * 2.2 / maxf(m.node.scale.x, 0.01)
+	ring.scale = Vector3(rr, 1, rr)
+	ring.position.y = 0.06
+	m.node.add_child(ring)

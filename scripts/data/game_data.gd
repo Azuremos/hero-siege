@@ -33,6 +33,7 @@ const SpellEffects := preload("res://scripts/data/spell_effects.gd")
 const MobData := preload("res://scripts/data/mob_data.gd")
 const FactionData := preload("res://scripts/data/factions.gd")
 const MobAbilities := preload("res://scripts/data/mob_abilities.gd")
+const AffixData := preload("res://scripts/data/affixes.gd")
 const Formulas := preload("res://scripts/data/formulas.gd")
 const SPELL_FILES := [
 	preload("res://scripts/data/spells/mage.gd"),
@@ -52,6 +53,7 @@ const AUTO_SPELLS := SpellEffects.AUTO_SPELLS
 const MOBS := MobData.MOBS
 const FACTIONS := FactionData.FACTIONS
 const MOB_ABILITIES := MobAbilities.ABILITIES
+const AFFIXES := AffixData.AFFIXES
 
 # ---------------------------------------------------------------- Заклинания
 # target: enemy | ally | self | ground | wall

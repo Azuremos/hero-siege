@@ -348,6 +348,11 @@ func _build_target_frame() -> void:
 	p.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
 			_open_mark_menu())
+	var affix_l := _label("", 12, Color(1.0, 0.75, 0.35))
+	affix_l.visible = false
+	affix_l.mouse_filter = Control.MOUSE_FILTER_PASS
+	v.add_child(affix_l)
+	_target_frame["affix"] = affix_l
 	_target_frame["ecast"] = _make_enemy_cast_bar(266.0, 16.0, 13)
 	v.add_child(_target_frame["ecast"])
 	var fx_row := HBoxContainer.new()
@@ -1309,6 +1314,8 @@ func _process(delta: float) -> void:
 	_target_frame["panel"].visible = tu != null or is_editing()
 	if tu:
 		var title := tu.display_name
+		if tu.elite > 0:
+			title = ("★ Чемпион: " if tu.elite == 2 else "★ ") + title
 		if tu.kind == "mob":
 			title += "  •  ур. %d" % tu.level
 			_bar_color(_target_frame["hp"], Color(0.8, 0.15, 0.12))
@@ -1319,6 +1326,13 @@ func _process(delta: float) -> void:
 		if tu.kind == "hero":
 			absorb = world.heroes[tu.id].net_absorb
 		_fill_frame(_target_frame, tu, title, absorb)
+		# элитный: имя золотом, ниже — аффиксы
+		(_target_frame["name"] as Label).add_theme_color_override("font_color", Color(1.0, 0.82, 0.25) if tu.elite > 0 else GOLD)
+		var al: Label = _target_frame["affix"]
+		al.visible = not tu.affixes.is_empty()
+		al.text = ", ".join(tu.affixes.map(func(a): return GameData.AFFIXES[a]["name"]))
+		al.tooltip_text = "
+".join(tu.affixes.map(func(a): return "%s — %s" % [GameData.AFFIXES[a]["name"], GameData.AFFIXES[a]["desc"]]))
 		_target_ring.visible = tu.alive
 		var p := tu.pos
 		if tu.node and is_instance_valid(tu.node):
@@ -1338,6 +1352,7 @@ func _process(delta: float) -> void:
 	_update_target_effects(lh, c, tu, t)
 	_update_marks(c, tu)
 	_update_enemy_casts(tu, t)
+	_update_elite_tags()
 	# подсветка существа под курсором
 	var hov: int = c.pick_unit(get_viewport().get_mouse_position()) if not c._dragged else 0
 	if hover_unit_id != 0:
@@ -1864,3 +1879,41 @@ func _update_enemy_casts(tu: Unit, t: float) -> void:
 			continue
 		_fill_enemy_cast(b, casts[list[i][1]], t, false)
 		b.position = cam.unproject_position(list[i][2]) - Vector2(60, 6)
+
+## Подписи над ближайшими элитными: «★ Имя» и аффиксы золотом.
+var _elite_tags: Array = []
+
+func _update_elite_tags() -> void:
+	if _elite_tags.is_empty():
+		for i in 6:
+			var l := _label("", 13, Color(1.0, 0.82, 0.25))
+			l.add_theme_color_override("font_outline_color", Color.BLACK)
+			l.add_theme_constant_override("outline_size", 5)
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			l.size = Vector2(240, 36)
+			l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			l.visible = false
+			_root.add_child(l)
+			_elite_tags.append(l)
+	var cam := get_viewport().get_camera_3d()
+	var list: Array = []
+	if cam:
+		for u: Unit in world.units.values():
+			if u.kind != "mob" or u.elite == 0 or not u.alive:
+				continue
+			var p := u.pos
+			if u.node and is_instance_valid(u.node):
+				p = u.node.global_position
+			var wp := p + Vector3(0, 2.9 * (u.radius / 0.6) + 1.1, 0)
+			var d := cam.global_position.distance_to(wp)
+			if d < 45.0 and not cam.is_position_behind(wp):
+				list.append([d, u, wp])
+	list.sort_custom(func(a, b): return a[0] < b[0])
+	for i in _elite_tags.size():
+		var l: Label = _elite_tags[i]
+		l.visible = i < list.size()
+		if not l.visible:
+			continue
+		var u: Unit = list[i][1]
+		l.text = "★ %s\n%s" % [u.display_name, ", ".join(u.affixes.map(func(a): return GameData.AFFIXES[a]["name"]))]
+		l.position = cam.unproject_position(list[i][2]) - Vector2(120, 36)

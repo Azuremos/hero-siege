@@ -535,6 +535,9 @@ func _explode(a: Dictionary, u: Unit) -> void:
 func _m(u: Unit, key: String, sid: String = "", school: String = "") -> float:
 	return u.mod(key, sid, school) if u else 0.0
 
+## Неудержимый элитный не поддаётся контролю (кроме замедления).
+const CONTROL_TYPES := ["stun", "freeze", "fear", "knockback", "root", "chill"]
+
 func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, school: String) -> void:
 	var t: float = world.now()
 	var pw := 1.0
@@ -547,6 +550,9 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 	for e: Dictionary in effects:
 		if not target.alive:
 			return
+		if target.affixes.has("unstoppable") and CONTROL_TYPES.has(e["type"]):
+			world.fx_number(target.id, 0.0, "immune", school, caster.id if caster else 0, false)
+			continue
 		match e["type"]:
 			"damage":
 				var mult := 1.0 + amp + _m(caster, "dmg")
@@ -855,6 +861,11 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		fx_at("heal_burst", dst.pos, dst.pos, 0.0, dst.id)
 		return
 	world.meter.on_damage(src, dst, minf(amount, maxf(dst.hp, 0.0)), sid, crit)
+	# аффиксы элитных: вампиризм и отражение урона
+	if src and src.affixes.has("vampiric") and src.alive:
+		src.hp = minf(src.max_hp, src.hp + amount * 0.3)
+	if dst.affixes.has("reflect") and src and src.kind == "hero" and sid != "affix:reflect":
+		deal_damage(dst, src, amount * 0.2, school, false, "affix:reflect")
 	if src:
 		src.stat_dmg += minf(amount, maxf(dst.hp, 0.0))
 	dst.hp -= amount
