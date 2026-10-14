@@ -1,0 +1,123 @@
+class_name GameMode
+extends Node
+## Режим игры — правила партии поверх общего мира (герои, мобы, бой, добыча).
+## Мир знает только об активном режиме: где появляются герои, куда идут враги, когда победа
+## и поражение, что показывает панель режима. Осада — первый режим (SiegeMode);
+## подземелья и открытый мир будут новыми наследниками, без правок world.gd.
+##
+## Жизненный цикл: setup() → read_map() → begin() (только сервер) → server_tick() каждый кадр.
+## Состояние для клиентов: state_snapshot() на сервере → apply_snapshot() у клиентов (2 раза в секунду).
+
+var world: Node3D
+## Общая стадия партии. Режим может добавлять свои (у осады есть break и clearing).
+var state := "prep"          # prep | running | victory | defeat
+
+func setup(w: Node3D) -> void:
+	world = w
+
+## Прочитать из карты то, что нужно режиму (маршруты, точки, цели).
+func read_map(_map: Node3D) -> void:
+	pass
+
+## Сервер: партия началась (все загрузились).
+func begin() -> void:
+	pass
+
+func server_tick(_delta: float, _t: float) -> void:
+	pass
+
+func is_over() -> bool:
+	return state == "victory" or state == "defeat"
+
+## Отдых: здоровье и мана восполняются быстрее.
+func is_resting() -> bool:
+	return false
+
+## Идёт бой — играет боевая музыка.
+func is_combat() -> bool:
+	return state == "running"
+
+## Сервер: закончить партию.
+func finish(victory: bool) -> void:
+	if is_over():
+		return
+	state = "victory" if victory else "defeat"
+	world.announce_all(game_over_text(victory), Color(1, 0.85, 0.3) if victory else Color(1, 0.3, 0.3))
+
+# ---------------------------------------------------------------- герои
+
+## Где появляется герой номер index из count.
+func hero_spawn_point(index: int, count: int) -> Vector3:
+	return Vector3((index - (count - 1) * 0.5) * 2.5, 0, 0)
+
+func hero_spawn_yaw() -> float:
+	return 0.0
+
+func respawn_point(_hero) -> Vector3:
+	return hero_spawn_point(0, 1)
+
+# ---------------------------------------------------------------- события (сервер)
+
+func on_mob_killed(_u: Unit, _killer: Unit, _boss: bool) -> void:
+	pass
+
+func on_hero_died(_hero) -> void:
+	pass
+
+## Погиб юнит, который не моб и не герой (у осады — замок).
+func on_unit_destroyed(_u: Unit) -> void:
+	pass
+
+# ---------------------------------------------------------------- цель движения мобов
+## Моб не знает о полосах: режим говорит, откуда он выходит, куда идёт и что атакует в конце пути.
+## Поля m.route и m.wp — данные режима (у осады это полоса и точка маршрута).
+
+## Начальная точка и следующая за ней (для разворота) для источника source.
+func mob_start(_source: int) -> Array:
+	return [Vector2.ZERO, Vector2(0, -1)]
+
+func mob_spawned(m) -> void:
+	m.route = 0
+	m.wp = 0
+
+## Куда моб идёт сейчас, когда ни с кем не дерётся.
+func mob_goal(m) -> Vector2:
+	return m.pos2
+
+## Что моб атакует, дойдя до конца пути (или null).
+func mob_objective(_m) -> Unit:
+	return null
+
+## Моб бросил погоню — продолжить путь с ближайшего места впереди.
+func mob_resume(_m) -> void:
+	pass
+
+## Насколько моб отошёл от своего пути (для поводка). INF — поводка нет.
+func mob_leash_dist(_m) -> float:
+	return 0.0
+
+# ---------------------------------------------------------------- сеть
+
+func state_snapshot() -> Array:
+	return [state]
+
+func apply_snapshot(s: Array) -> void:
+	state = s[0]
+
+# ---------------------------------------------------------------- интерфейс
+
+## Что показать в панели режима:
+## {title, bar_visible, bar, bar_max, bar_text, can_skip, skip_text}
+func hud_panel(_alive_mobs: int) -> Dictionary:
+	return {"title": "", "bar_visible": false, "bar": 0.0, "bar_max": 1.0, "bar_text": "", "can_skip": false, "skip_text": ""}
+
+## Хост нажал кнопку панели режима («Начать волну сейчас» у осады).
+func skip() -> void:
+	pass
+
+func game_over_text(victory: bool) -> String:
+	return "ПОБЕДА!" if victory else "Поражение..."
+
+## Строка под заголовком в окне итогов партии.
+func game_over_details(_victory: bool) -> String:
+	return ""

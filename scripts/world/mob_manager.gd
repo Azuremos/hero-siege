@@ -16,14 +16,14 @@ const REAGGRO_DELAY := 2.5      # сек.: бросив погоню по пов
 const REACH_SLACK_MELEE := 0.3  # м: запас дальности, пока моб уже бьёт цель
 const REACH_SLACK_RANGED := 1.5
 
-enum S { MOVE, CHASE, WALL, CASTLE, SPAWNING }
+enum S { MOVE, CHASE, WALL, OBJECTIVE, SPAWNING }   # OBJECTIVE — бьёт цель режима (замок)
 enum AN { IDLE, MOVE, ATTACK, DEAD, STUN, SPAWN, FROZEN }
 
 class Mob:
 	var unit: Unit
 	var def: Dictionary
-	var lane := 0
-	var wp := 1
+	var route := 0                 # данные режима: откуда вышел (у осады — полоса)
+	var wp := 1                    # и какая точка маршрута следующая
 	var state: int = S.SPAWNING
 	var target := 0
 	var wall := 0
@@ -132,7 +132,7 @@ func _remove_wall(id: int) -> void:
 
 # ---------------------------------------------------------------- появление и смерть
 
-func spawn(type: String, lane: int, wave: int, players: int, hp_scale: float = 1.0) -> void:
+func spawn(type: String, source: int, wave: int, players: int, hp_scale: float = 1.0) -> void:
 	var def: Dictionary = GameData.MOBS[type]
 	var m := Mob.new()
 	var u := Unit.new()
@@ -151,13 +151,15 @@ func spawn(type: String, lane: int, wave: int, players: int, hp_scale: float = 1
 	u.level = wave
 	m.unit = u
 	m.def = def
-	m.lane = lane
-	var start: Vector2 = world.lanes[lane][0]
+	m.route = source
+	var ends: Array = world.mode.mob_start(source)
+	var start: Vector2 = ends[0]
 	m.pos2 = start + Vector2(randf_range(-2.5, 2.5), randf_range(-2.5, 2.5))
 	var t: float = world.now()
 	m.spawn_until = t + 1.3
 	m.next_think = t + 1.3 + randf() * 0.4
-	var nxt: Vector2 = world.lanes[lane][1]
+	var nxt: Vector2 = ends[1]
+	world.mode.mob_spawned(m)
 	m.yaw = atan2(-(nxt.x - start.x), -(nxt.y - start.y))
 	u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
 	mobs[u.id] = m
@@ -174,6 +176,7 @@ func kill(u: Unit, killer: Unit) -> void:
 	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)))
 	world.award_kill(u.pos, xp, int(m.def["gold"]))
 	world.economy.roll_loot(u.pos, u.level, m.def.get("boss", false))
+	world.mode.on_mob_killed(u, killer, m.def.get("boss", false))
 	_pending_deaths.append(u.id)
 	_begin_dying(m)
 
@@ -190,7 +193,7 @@ func on_damaged(u: Unit, src: Unit) -> void:
 	var m: Mob = mobs.get(u.id, null)
 	if m == null or src == null or src.kind != "hero":
 		return
-	if (m.state == S.MOVE or m.state == S.CASTLE) and world.now() >= m.reaggro_at:
+	if (m.state == S.MOVE or m.state == S.OBJECTIVE) and world.now() >= m.reaggro_at:
 		m.state = S.CHASE
 		m.target = src.id
 		m.in_reach = false
@@ -198,7 +201,7 @@ func on_damaged(u: Unit, src: Unit) -> void:
 # ---------------------------------------------------------------- серверная симуляция
 
 func server_tick(delta: float, t: float) -> void:
-	if world.game_state == "victory" or world.game_state == "defeat":
+	if world.mode.is_over():
 		for m: Mob in mobs.values():
 			m.anim_state = AN.IDLE
 		return
@@ -293,17 +296,19 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 				m.state = S.MOVE
 			else:
 				_attack_wall(m, w, t)
-		S.CASTLE:
-			_attack(m, world.castle, t)
+		S.OBJECTIVE:
+			var obj: Unit = world.mode.mob_objective(m)
+			if obj == null or not obj.alive:
+				m.state = S.MOVE
+			else:
+				_attack(m, obj, t)
 	if m.state == S.MOVE:
-		var lane: PackedVector2Array = world.lanes[m.lane]
-		var castle_d := m.pos2.length()
-		if castle_d <= world.castle_radius + reach + u.radius:
-			m.state = S.CASTLE
+		# куда идти, решает режим: у осады — по полосе к замку
+		var target_obj: Unit = world.mode.mob_objective(m)
+		if target_obj and target_obj.alive and m.pos2.distance_to(Vector2(target_obj.pos.x, target_obj.pos.z)) <= target_obj.radius + reach + u.radius:
+			m.state = S.OBJECTIVE
 		else:
-			if m.wp < lane.size() - 1 and m.pos2.distance_to(lane[m.wp]) < 4.0:
-				m.wp += 1
-			goal = lane[m.wp]
+			goal = world.mode.mob_goal(m)
 			moving = true
 
 	if moving and not u.is_rooted(t):
@@ -320,7 +325,7 @@ func _think(m: Mob) -> void:
 			return
 		if tu == null or not tu.alive:
 			_drop_chase(m, false)
-		elif Vector2(tu.pos.x, tu.pos.z).distance_to(m.pos2) > CHASE_DROP_RANGE or _lane_dist(m) > LEASH_RANGE:
+		elif Vector2(tu.pos.x, tu.pos.z).distance_to(m.pos2) > CHASE_DROP_RANGE or world.mode.mob_leash_dist(m) > LEASH_RANGE:
 			_drop_chase(m, true)
 		return
 	if m.state == S.MOVE and world.now() < m.reaggro_at:
@@ -344,8 +349,7 @@ func _think(m: Mob) -> void:
 		m.target = best.id
 		m.in_reach = false
 
-## Моб бросает погоню и идёт дальше по полосе — к точке маршрута впереди себя.
-## Раньше он шёл к старой точке, которая за время погони оставалась позади, и снова замечал героя.
+## Моб бросает погоню и продолжает путь (у осады — к точке полосы впереди себя).
 ## leash — погоня брошена по поводку: какое-то время моб не отвлекается на героев.
 func _drop_chase(m: Mob, leash: bool) -> void:
 	m.state = S.MOVE
@@ -353,27 +357,7 @@ func _drop_chase(m: Mob, leash: bool) -> void:
 	m.in_reach = false
 	if leash:
 		m.reaggro_at = world.now() + REAGGRO_DELAY
-	var lane: PackedVector2Array = world.lanes[m.lane]
-	m.wp = mini(_nearest_segment(m) + 1, lane.size() - 1)
-
-## Ближайший к мобу отрезок его полосы (индекс начальной точки).
-## Ищем по всей полосе: во время погони m.wp не обновляется, и поиск рядом с ним
-## считал моба далеко от полосы, даже когда он шёл прямо по ней.
-func _nearest_segment(m: Mob) -> int:
-	var lane: PackedVector2Array = world.lanes[m.lane]
-	var best := INF
-	var best_i := 0
-	for i in lane.size() - 1:
-		var d := Geometry2D.get_closest_point_to_segment(m.pos2, lane[i], lane[i + 1]).distance_squared_to(m.pos2)
-		if d < best:
-			best = d
-			best_i = i
-	return best_i
-
-func _lane_dist(m: Mob) -> float:
-	var lane: PackedVector2Array = world.lanes[m.lane]
-	var i := _nearest_segment(m)
-	return Geometry2D.get_closest_point_to_segment(m.pos2, lane[i], lane[i + 1]).distance_to(m.pos2)
+	world.mode.mob_resume(m)
 
 func _move(m: Mob, goal: Vector2, dt: float, t: float) -> void:
 	var u := m.unit

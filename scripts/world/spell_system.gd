@@ -205,7 +205,7 @@ func server_tick(delta: float, t: float) -> void:
 	_regen_accum += delta
 	if _regen_accum >= 0.5:
 		_regen_accum = 0.0
-		var rest := 8.0 if world.game_state == "break" else 1.0   # передышка — быстрый отдых
+		var rest := 8.0 if world.mode.is_resting() else 1.0   # передышка — быстрый отдых
 		for hero in world.heroes.values():
 			var u: Unit = hero.unit
 			if not u.alive:
@@ -831,8 +831,9 @@ func _on_death(dst: Unit, src: Unit) -> void:
 				h.respawn_at = world.now() + GameData.RESPAWN_BASE + dst.level * 0.6
 				_interrupt(h)
 				world.announce_all("%s погибает!" % h.player_name, Color(1, 0.5, 0.4))
-		"castle":
-			world.end_game(false)
+				world.mode.on_hero_died(h)
+		_:
+			world.mode.on_unit_destroyed(dst)
 
 # ---------------------------------------------------------------- таланты
 

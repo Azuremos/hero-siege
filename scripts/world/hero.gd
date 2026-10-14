@@ -357,7 +357,7 @@ func _server_tick() -> void:
 		unit.hp = unit.max_hp
 		unit.mana = 0.0 if unit.resource == "rage" else unit.max_mana
 		respawn_at = 0.0
-		ev_respawn.rpc(world.hero_spawn + Vector3(randf_range(-2, 2), 0, randf_range(-1, 1)))
+		ev_respawn.rpc(world.mode.respawn_point(self))
 
 # ---------------------------------------------------------------- анимация
 

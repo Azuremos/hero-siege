@@ -422,7 +422,7 @@ func _apply_local_info() -> void:
 func _on_solo() -> void:
 	_apply_local_info()
 	if Net.host_game(true) != OK:
-		_status.text = "Не удалось запустить игру (порт %d занят?)" % Net.PORT
+		_status.text = "Не удалось запустить игру (порт %d занят?)" % Net.port()
 		return
 	Net.start_game()
 
@@ -430,7 +430,7 @@ func _on_host() -> void:
 	_apply_local_info()
 	var err := Net.host_game(false)
 	if err != OK:
-		_status.text = "Не удалось создать игру: порт %d занят." % Net.PORT
+		_status.text = "Не удалось создать игру: порт %d занят." % Net.port()
 		return
 	_show("lobby")
 
@@ -472,7 +472,7 @@ func _refresh_lobby() -> void:
 		var addrs := Net.local_addresses()
 		var w: int = Net.settings.get("waves", 20)
 		_lobby_info.text = "Вы хост. Друзья подключаются по одному из адресов:\n%s\n(в Radmin VPN это адрес 26.x.x.x, порт %d)\nОсада: %s, направлений: %d, передышка: %d сек." % [
-			", ".join(addrs), Net.PORT, "бесконечная" if w == 0 else "%d волн" % w, int(Net.settings.get("lanes", 4)), int(Net.settings.get("break", 60))]
+			", ".join(addrs), Net.port(), "бесконечная" if w == 0 else "%d волн" % w, int(Net.settings.get("lanes", 4)), int(Net.settings.get("break", 60))]
 		_start_btn.visible = true
 		_check_autostart()
 	else:

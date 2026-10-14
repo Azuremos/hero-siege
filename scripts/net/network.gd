@@ -8,6 +8,10 @@ signal game_starting
 signal disconnected(reason: String)
 
 const PORT := 7777
+
+## Порт сетевой игры. --port= меняет его для тестов (чтобы не мешать запущенной копии игры).
+func port() -> int:
+	return int(cli.get("port", PORT))
 const MAX_PLAYERS := 6
 
 ## peer_id -> {name, class, race, version, hero_id}
@@ -58,7 +62,7 @@ func host_game(is_solo: bool = false) -> Error:
 	# можно играть, даже если 7777 занят другой копией игры, и брандмауэр не спрашивает.
 	if is_solo:
 		peer.set_bind_ip("127.0.0.1")
-	var err := peer.create_server(0 if is_solo else PORT, 1 if is_solo else MAX_PLAYERS)
+	var err := peer.create_server(0 if is_solo else port(), 1 if is_solo else MAX_PLAYERS)
 	if err != OK:
 		return err
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
@@ -74,7 +78,7 @@ func host_game(is_solo: bool = false) -> Error:
 func join_game(address: String) -> Error:
 	leave()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(address.strip_edges(), PORT)
+	var err := peer.create_client(address.strip_edges(), port())
 	if err != OK:
 		return err
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)

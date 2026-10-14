@@ -22,7 +22,7 @@ var _root: Control
 var _overlay: Control
 var _frames: Dictionary = {}           # id -> Control (подвижные рамки)
 var _frame_titles := {"player": "Мой герой", "target": "Цель", "party": "Группа", "bar1": "Панель 1",
-	"bar2": "Панель 2", "cast": "Полоса произнесения", "siege": "Осада"}
+	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима"}
 var _layout_pos: Dictionary = {}       # id -> Vector2 (сохранённое)
 var _opts := {"party_horizontal": false, "bar2_vertical": false}
 
@@ -44,9 +44,9 @@ var _keybinds: Control
 var _cast_bar: Dictionary
 var _xp_bar: ProgressBar
 var _xp_label: Label
-var _wave_label: Label
-var _castle_bar: ProgressBar
-var _castle_label: Label
+var _mode_title: Label
+var _mode_bar: ProgressBar
+var _mode_bar_label: Label
 var _gold_label: Label
 var _announce: Label
 var _announce_t := 0.0
@@ -93,7 +93,7 @@ func setup(w: Node3D) -> void:
 	_build_party()
 	_build_bars()
 	_build_cast_bar()
-	_build_siege()
+	_build_mode_panel()
 	_build_messages()
 	_build_menu()
 	_build_help()
@@ -639,30 +639,30 @@ func _build_cast_bar() -> void:
 	cb.add_child(cl)
 	_cast_bar = {"panel": cast, "bar": cb, "label": cl}
 
-func _build_siege() -> void:
+## Панель режима: у осады — номер волны, прочность замка, золото и кнопка «Начать волну сейчас».
+func _build_mode_panel() -> void:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", _panel_style())
 	p.custom_minimum_size = Vector2(380, 0)
-	_frame("siege", p)
+	_frame("mode", p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 4)
 	p.add_child(v)
-	_wave_label = _label("", 16, GOLD)
-	_wave_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(_wave_label)
-	_castle_bar = _bar(Color(0.3, 0.55, 0.95), 18)
-	v.add_child(_castle_bar)
-	_castle_label = _label("", 12)
-	_castle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_castle_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_castle_bar.add_child(_castle_label)
+	_mode_title = _label("", 16, GOLD)
+	_mode_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_mode_title)
+	_mode_bar = _bar(Color(0.3, 0.55, 0.95), 18)
+	v.add_child(_mode_bar)
+	_mode_bar_label = _label("", 12)
+	_mode_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_mode_bar_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_mode_bar.add_child(_mode_bar_label)
 	_gold_label = _label("", 15, GOLD)
 	_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_gold_label)
 	_skip_btn = Button.new()
-	_skip_btn.text = "Начать волну сейчас"
 	_skip_btn.visible = false
-	_skip_btn.pressed.connect(func(): world.waves.skip_break())
+	_skip_btn.pressed.connect(func(): world.mode.skip())
 	v.add_child(_skip_btn)
 
 	var help_hint := _label("H — управление    Esc — меню", 13, Color(1, 1, 1, 0.6))
@@ -788,6 +788,9 @@ func _load_layout() -> void:
 	for id in _frame_titles:
 		if cfg.has_section_key("pos", id):
 			_layout_pos[id] = cfg.get_value("pos", id)
+	# до v0.5 панель режима называлась «siege»
+	if not _layout_pos.has("mode") and cfg.has_section_key("pos", "siege"):
+		_layout_pos["mode"] = cfg.get_value("pos", "siege")
 	for k in _opts:
 		_opts[k] = cfg.get_value("opt", k, _opts[k])
 
@@ -806,7 +809,7 @@ func _default_pos(id: String, size: Vector2, vp: Vector2) -> Vector2:
 		"player": return Vector2(16, 12)
 		"target": return Vector2(360, 12)
 		"party": return Vector2(16, 175)
-		"siege": return Vector2(vp.x - size.x - 16, 12)
+		"mode": return Vector2(vp.x - size.x - 16, 12)
 		"bar1": return Vector2((vp.x - size.x) * 0.5 + 80, bar1_y)
 		"bar2":
 			if _opts["bar2_vertical"]:
@@ -1072,7 +1075,7 @@ func show_game_over(victory: bool) -> void:
 	var t := _label("ПОБЕДА!" if victory else "ПОРАЖЕНИЕ", 34, GOLD if victory else Color(1, 0.35, 0.3))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
-	var d := _label("Все волны отбиты (%d). Замок выстоял!" % world.wave_count if victory else "Замок пал на волне %d." % world.wave, 17)
+	var d := _label(world.mode.game_over_details(victory), 17)
 	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(d)
 	var b := Button.new()
@@ -1269,20 +1272,15 @@ func _process(delta: float) -> void:
 	if lh.gold > _last_gold:
 		Sfx.play("coins")
 	_last_gold = lh.gold
-	var total := "∞" if world.wave_count == 0 else str(world.wave_count)
-	var wave_text := "Подготовка" if world.wave == 0 else "Волна %d / %s" % [world.wave, total]
-	if world.game_state == "clearing":
-		wave_text += "\nдобейте врагов — затем передышка"
-	elif world.game_state == "break":
-		wave_text = "Передышка\nволна %d через %d сек." % [world.wave + 1, int(ceil(world.next_wave_in))]
-	elif world.next_wave_in > 0.0:
-		wave_text += "\nследующая через %d сек." % int(ceil(world.next_wave_in))
-	_skip_btn.visible = Net.is_server() and (world.game_state == "break" or world.game_state == "prep")
-	_wave_label.text = wave_text
-	_castle_bar.max_value = world.castle.max_hp
-	_castle_bar.value = world.castle.hp
 	var alive_mobs: int = world.mobs.alive_count() if Net.is_server() else world.mobs.client_alive_count
-	_castle_label.text = "Замок: %d / %d      Врагов: %d" % [int(world.castle.hp), int(world.castle.max_hp), alive_mobs]
+	var mp: Dictionary = world.mode.hud_panel(alive_mobs)
+	_mode_title.text = mp["title"]
+	_mode_bar.visible = mp["bar_visible"]
+	_mode_bar.max_value = maxf(1.0, mp["bar_max"])
+	_mode_bar.value = mp["bar"]
+	_mode_bar_label.text = mp["bar_text"]
+	_skip_btn.text = mp["skip_text"]
+	_skip_btn.visible = Net.is_server() and mp["can_skip"]
 
 	_death_label.text = "Вы погибли. Воскрешение через %d сек." % int(ceil(lh.net_respawn_left)) if not lh.alive_visual else ""
 

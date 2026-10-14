@@ -5,37 +5,24 @@ extends Node3D
 const HeroScript := preload("res://scripts/world/hero.gd")
 const MobManagerScript := preload("res://scripts/world/mob_manager.gd")
 const SpellSystemScript := preload("res://scripts/world/spell_system.gd")
-const WaveManagerScript := preload("res://scripts/world/wave_manager.gd")
 const HudScript := preload("res://scripts/ui/hud.gd")
 const EconomyScript := preload("res://scripts/world/economy.gd")
-
-const CASTLE_ID := 100
 
 var map: Node3D
 var heroes_root: Node3D
 var vfx_root: Node3D
 var mobs: Node            # MobManager
 var spells: Node          # SpellSystem
-var waves: Node           # WaveManager
+var mode: GameMode        # режим игры (осада, позже подземелья): волны, цели, победа и поражение
 var economy: Node         # Economy: торговцы, предметы, добыча
 var hud: CanvasLayer
 
 var units: Dictionary = {}        # id -> Unit
 var heroes: Dictionary = {}       # hero_id -> Hero
 var local_hero: CharacterBody3D = null
-var castle: Unit
-var lanes: Array = []             # Array[PackedVector2Array] от кладбища к замку
-var hero_spawn := Vector3(0, 0, 14)
-var castle_radius := 6.5
 
-# Состояние партии (сервер — истина, клиенты — копия)
-var wave := 0
-var next_wave_in := 0.0
-var game_state := "prep"          # prep | running | victory | defeat
-var wave_count := 20               # сколько волн в этой партии (выбирается в меню)
-## Откуда идут враги: индексы полос (0 север, 1 восток, 2 юг, 3 запад). Порядок — по удобству для героя.
-const LANE_ORDER := [2, 1, 3, 0]
-var active_lanes: Array = [0, 1, 2, 3]
+## Режимы игры. Выбор режима — Net.settings["mode"]; пока есть только осада.
+const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd")}
 
 var _snap_accum := 0.0
 var _state_accum := 0.0
@@ -63,25 +50,16 @@ func _ready() -> void:
 	spells = SpellSystemScript.new()
 	spells.name = "Spells"
 	add_child(spells)
-	waves = WaveManagerScript.new()
-	waves.name = "Waves"
-	add_child(waves)
+	var mode_script: GDScript = MODES.get(str(Net.settings.get("mode", "siege")), MODES["siege"])
+	mode = mode_script.new()
+	mode.name = "Mode"
+	add_child(mode)
+	mode.setup(self)
 	economy = EconomyScript.new()
 	economy.name = "Economy"
 	add_child(economy)
 
-	wave_count = clampi(int(Net.settings.get("waves", GameData.WAVE_COUNT)), 0, GameData.MAX_WAVES)   # 0 — бесконечная осада
-	active_lanes = LANE_ORDER.slice(0, clampi(int(Net.settings.get("lanes", 4)), 1, 4))
 	_read_map()
-	castle = Unit.new()
-	castle.id = CASTLE_ID
-	castle.kind = "castle"
-	castle.team = Unit.Team.PLAYERS
-	castle.display_name = "Замок"
-	castle.max_hp = GameData.CASTLE_HP
-	castle.hp = castle.max_hp
-	castle.radius = castle_radius
-	units[CASTLE_ID] = castle
 
 	_spawn_heroes()
 	hud = HudScript.new()
@@ -93,20 +71,12 @@ func _ready() -> void:
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	if is_server():
 		_ready_peers[1] = true
-		waves.begin()
+		mode.begin()
 	else:
 		_client_ready.rpc_id(1)
 
 func _read_map() -> void:
-	for lane_node in map.get_node("Lanes").get_children():
-		var pts := PackedVector2Array()
-		for m in lane_node.get_children():
-			var p: Vector3 = (m as Node3D).position
-			pts.append(Vector2(p.x, p.z))
-		lanes.append(pts)
-	hero_spawn = (map.get_node("HeroSpawn") as Node3D).position
-	var core := map.get_node("CastleCore") as Node3D
-	castle_radius = float(core.get_meta("radius", 6.5))
+	mode.read_map(map)
 	mobs.build_static_obstacles(map.get_node("Colliders"))
 	economy.spawn_vendors()
 	_apply_cobblestone()
@@ -122,9 +92,8 @@ func _spawn_heroes() -> void:
 		var hid := int(info.get("hero_id", i + 1))
 		hero.name = "Hero_%d" % hid
 		hero.setup(self, hid, pid, info)
-		var offset := Vector3((i - (peers.size() - 1) * 0.5) * 2.5, 0, 0)
-		hero.position = hero_spawn + offset
-		hero.rotation.y = PI
+		hero.position = mode.hero_spawn_point(i, peers.size())
+		hero.rotation.y = mode.hero_spawn_yaw()
 		heroes_root.add_child(hero)
 		heroes[hid] = hero
 		units[hid] = hero.unit
@@ -152,7 +121,7 @@ func _physics_process(delta: float) -> void:
 		h.unit.pos = h.server_position()
 	spells.server_tick(delta, t)
 	mobs.server_tick(delta, t)
-	waves.server_tick(delta, t)
+	mode.server_tick(delta, t)
 	economy.server_tick(delta, t)
 
 	_snap_accum += delta
@@ -162,7 +131,7 @@ func _physics_process(delta: float) -> void:
 	_state_accum += delta
 	if _state_accum >= 0.5:
 		_state_accum = 0.0
-		ev_game_state.rpc(wave, next_wave_in, castle.hp, castle.max_hp, game_state, mobs.alive_count())
+		ev_mode_state.rpc(mode.state_snapshot(), mobs.alive_count())
 
 func _build_hero_snapshot(t: float) -> Array:
 	var out: Array = []
@@ -207,15 +176,12 @@ func ev_hero_snapshot(snap: Array) -> void:
 		h.net_respawn_left = e[13]
 
 @rpc("authority", "call_local", "unreliable_ordered")
-func ev_game_state(w: int, next_in: float, c_hp: float, c_max: float, state: String, alive_mobs: int) -> void:
-	wave = w
-	next_wave_in = next_in
-	castle.hp = c_hp
-	castle.max_hp = c_max
+func ev_mode_state(snap: Array, alive_mobs: int) -> void:
+	if not is_server():
+		mode.apply_snapshot(snap)
 	mobs.client_alive_count = alive_mobs
-	game_state = state
-	if (state == "victory" or state == "defeat") and not hud.game_over_shown:
-		hud.show_game_over(state == "victory")
+	if mode.is_over() and not hud.game_over_shown:
+		hud.show_game_over(mode.state == "victory")
 
 # ---------------------------------------------------------------- опыт и уровни (сервер)
 
@@ -308,10 +274,6 @@ func sound_all(name: String) -> void:
 func ev_sound(name: String) -> void:
 	Sfx.play(name)
 
-func end_game(victory: bool) -> void:
-	game_state = "victory" if victory else "defeat"
-	announce_all("ПОБЕДА! Замок выстоял." if victory else "Замок пал...", Color(1, 0.85, 0.3) if victory else Color(1, 0.3, 0.3))
-
 @rpc("any_peer", "reliable")
 func _client_ready() -> void:
 	_ready_peers[multiplayer.get_remote_sender_id()] = true
@@ -347,6 +309,7 @@ func _process(delta: float) -> void:
 	_update_music(delta)
 	if Net.cli.is_empty():
 		return
+	var siege: SiegeMode = mode as SiegeMode    # хуки волн — только для осады
 	if _start_ms == 0:
 		_start_ms = Time.get_ticks_msec()
 	delta = (Time.get_ticks_msec() - _start_ms) * 0.001 - _test_t
@@ -360,13 +323,13 @@ func _process(delta: float) -> void:
 		if lh:
 			print("   talents=%s  bar=%s" % [str(lh.talents), str(lh.controller.bar)])
 		print("[t=%d] fps=%d wave=%d mobs=%d castle=%d hero_lvl=%d xp=%d hp=%d/%d mana=%d gold=%d" % [
-			int(_test_t), Engine.get_frames_per_second(), wave,
-			mobs.alive_count() if is_server() else mobs.client_alive_count, int(castle.hp),
+			int(_test_t), Engine.get_frames_per_second(), siege.wave if siege else 0,
+			mobs.alive_count() if is_server() else mobs.client_alive_count, int(siege.castle.hp) if siege else 0,
 			lh.unit.level if lh else 0, lh.xp if lh else 0, int(lh.unit.hp) if lh else 0, int(lh.unit.max_hp) if lh else 0,
 			int(lh.unit.mana) if lh else 0, lh.gold if lh else 0])
 	if Net.cli.has("chasedebug") and _test_t >= 1.0 and _test_t - delta < 1.0:
-		for i in lanes.size():
-			print("LANE ", i, " ", lanes[i])
+		for i in siege.lanes.size():
+			print("LANE ", i, " ", siege.lanes[i])
 	if Net.cli.has("chasedebug") and Net.cli.has("post") and _test_t >= 1.5 and _test_t - delta < 1.5:
 		var pf: PackedFloat64Array = Net.cli["post"].split_floats(",")
 		local_hero.global_position = Vector3(pf[0], 0.5, pf[1])
@@ -424,8 +387,8 @@ func _process(delta: float) -> void:
 	if Net.cli.has("lanedebug") and _test_t >= 14.0 and _test_t - delta < 14.0:
 		var per := {}
 		for m in mobs.mobs.values():
-			per[m.lane] = per.get(m.lane, 0) + 1
-		print("LANES active=", active_lanes, " mobs_per_lane=", per)
+			per[m.route] = per.get(m.route, 0) + 1
+		print("LANES active=", siege.active_lanes, " mobs_per_lane=", per)
 	if Net.cli.has("gold") and is_server() and _test_t >= 1.0 and _test_t - delta < 1.0:
 		for h in heroes.values():
 			h.gold = int(Net.cli["gold"])
@@ -485,19 +448,19 @@ func _process(delta: float) -> void:
 		_focus_test_step()
 	if Net.cli.has("vfxtest") and _test_t >= 2.0 and _test_t - delta < 2.0:
 		_vfx_showcase()
-	if Net.cli.has("startwave") and is_server() and wave == 0 and _test_t > 1.0:
-		wave = int(Net.cli["startwave"]) - 1
-		waves._next_wave_at = now()
-	if Net.cli.has("wavegap") and is_server() and wave > 0 and waves._next_wave_at - now() > float(Net.cli["wavegap"]):
-		waves._next_wave_at = now() + float(Net.cli["wavegap"])
-	if Net.cli.has("fastwaves") and is_server() and _test_t > 3.0 and wave == 0:
-		waves._next_wave_at = now()
+	if Net.cli.has("startwave") and siege and is_server() and siege.wave == 0 and _test_t > 1.0:
+		siege.wave = int(Net.cli["startwave"]) - 1
+		siege._next_wave_at = now()
+	if Net.cli.has("wavegap") and siege and is_server() and siege.wave > 0 and siege._next_wave_at - now() > float(Net.cli["wavegap"]):
+		siege._next_wave_at = now() + float(Net.cli["wavegap"])
+	if Net.cli.has("fastwaves") and siege and is_server() and _test_t > 3.0 and siege.wave == 0:
+		siege._next_wave_at = now()
 	if Net.cli.has("shot-at") and absf(_test_t - float(Net.cli["shot-at"])) < delta * 0.5 + 0.001:
 		_save_shot(Net.cli.get("shot", "user://shot.png"))
 	if Net.cli.has("quit-after") and _test_t >= float(Net.cli["quit-after"]) and not Sfx._quitting:
 		if Net.cli.has("shot"):
 			_save_shot(Net.cli["shot"].get_basename() + "_end.png")
-		print("TEST END: wave=%d state=%s castle=%d" % [wave, game_state, int(castle.hp)])
+		print("TEST END: wave=%d state=%s castle=%d" % [siege.wave if siege else 0, mode.state, int(siege.castle.hp) if siege else 0])
 		Sfx.quit_game()
 
 func _save_shot(path: String) -> void:
@@ -535,7 +498,7 @@ func _update_music(delta: float) -> void:
 		return
 	_music_t = 0.5
 	var track := "rest"
-	if game_state == "running" or game_state == "clearing":
+	if mode.is_combat():
 		track = "battle"
 	Sfx.play_music(track)
 ## --focustest: клик мышью по кнопкам у панели, закрытие окон, затем Пробел —
