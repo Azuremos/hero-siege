@@ -136,6 +136,11 @@ func _start_wave(t: float) -> void:
 	if plan["special"] != "":
 		boss += "  %s!" % GameData.FactionData.SPECIAL_WAVES[plan["special"]]["name"]
 	world.sound_all("bell")
+	# боевые кличи фракций — со стороны их логов
+	for l in active_lanes:
+		var fs: Dictionary = GameData.FACTIONS[lane_faction[l]]["sounds"]
+		var sp: Vector2 = lanes[l][0]
+		world.ev_sound_at.rpc(fs["war_cry"], Vector3(sp.x * 0.45, 2.0, sp.y * 0.45), 4.0, float(fs["pitch"]))
 	world.sound_all("horde")
 	var last: bool = wave_count > 0 and w >= wave_count
 	var after := "" if w % BREAK_EVERY != 0 or last else "  После неё — передышка."

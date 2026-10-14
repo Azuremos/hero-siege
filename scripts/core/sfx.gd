@@ -111,12 +111,12 @@ func _pick(pool: Array) -> Node:
 			return p
 	return pool[randi() % pool.size()]
 
-func _setup(p: Node, name: String, vol: float) -> void:
+func _setup(p: Node, name: String, vol: float, pitch: float = 1.0) -> void:
 	var def: Array = SOUNDS[name]
 	var files: Array = def[0]
 	p.stream = _stream(files[randi() % files.size()])
 	p.volume_db = float(def[1]) + vol
-	p.pitch_scale = randf_range(0.93, 1.07)
+	p.pitch_scale = randf_range(0.93, 1.07) * pitch
 	p.set_meta("snd", name)
 	_active[name].append(p)
 
@@ -131,7 +131,8 @@ func play(name: String, vol: float = 0.0) -> void:
 	p.play()
 
 ## Звук в точке мира (с затуханием по расстоянию).
-func play_at(name: String, pos: Vector3, vol: float = 0.0) -> void:
+## pitch — высота голоса (фракции: орки и демоны ниже, гоблины выше).
+func play_at(name: String, pos: Vector3, vol: float = 0.0, pitch: float = 1.0) -> void:
 	if _quitting:
 		return
 	var cam := get_viewport().get_camera_3d()
@@ -140,7 +141,7 @@ func play_at(name: String, pos: Vector3, vol: float = 0.0) -> void:
 	if not _allowed(name):
 		return
 	var p: AudioStreamPlayer3D = _pick(_p3d)
-	_setup(p, name, vol)
+	_setup(p, name, vol, pitch)
 	p.global_position = pos
 	p.play()
 

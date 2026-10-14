@@ -660,7 +660,7 @@ func _set_ice(m: Mob, on: bool) -> void:
 func _begin_dying(m: Mob) -> void:
 	_set_ice(m, false)
 	var fs: Dictionary = GameData.FACTIONS.get(m.def.get("faction", "undead"), GameData.FACTIONS["undead"])["sounds"]
-	Sfx.play_at(fs["death"], m.node.position + Vector3(0, 0.5, 0))
+	Sfx.play_at(fs["death"], m.node.position + Vector3(0, 0.5, 0), 0.0, float(fs["pitch"]))
 	m.death_time = 2.6
 	m.unit.alive = false
 	_play(m, "Death_A" if m.def.get("src", "enemy") == "hero" else "Death_C_Skeletons", 0.1)
@@ -707,7 +707,8 @@ func _choose_anim(m: Mob, delta: float) -> void:
 		var atk: String = m.def.get("attack_anim", "Spellcast_Shoot" if m.def.get("ranged", false) else "1H_Melee_Attack_Chop")
 		_play(m, atk, 0.08, true)
 		m.anim_lock = 0.7
-		Sfx.play_at("mob_swing", m.node.position + Vector3(0, 1.2, 0))
+		var sw_p: float = GameData.FACTIONS.get(m.def.get("faction", "undead"), GameData.FACTIONS["undead"])["sounds"]["pitch"]
+		Sfx.play_at("mob_swing", m.node.position + Vector3(0, 1.2, 0), 0.0, sw_p)
 		return
 	if m.anim_state == AN.CAST:
 		var cdata: Dictionary = casts.get(m.unit.id, {})

@@ -674,3 +674,8 @@ func _manalog_summary() -> void:
 		print("BALANCE %s %s lvl=%d: урон %.0f/мин, лечение %.0f/мин, мана %.0f/мин, мана кончилась: %s" % [h.player_name, h.class_id, u.level,
 			u.stat_dmg / fight * 60.0, u.stat_heal / fight * 60.0, u.stat_spent / fight * 60.0,
 			"через %.0f с" % (float(_ml_empty[h.hero_id]) - float(_ml_start[h.hero_id])) if _ml_empty.has(h.hero_id) else "нет"])
+
+## Звук в точке мира у всех игроков (клич фракции со стороны её логова).
+@rpc("authority", "call_local", "unreliable")
+func ev_sound_at(snd: String, pos: Vector3, vol: float, pitch: float) -> void:
+	Sfx.play_at(snd, pos, vol, pitch)
