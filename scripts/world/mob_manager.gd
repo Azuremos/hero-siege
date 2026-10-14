@@ -10,7 +10,11 @@ const CELL := 6.0
 const SEP_CELL := 2.0         # мелкая сетка для расталкивания в толпе
 const MAX_NEIGHBORS := 6
 const AGGRO_RANGE := 11.0
-const LEASH_RANGE := 32.0
+const LEASH_RANGE := 32.0       # м: дальше от своей полосы моб не уходит
+const CHASE_DROP_RANGE := 40.0  # м: цель дальше этого — погоня брошена (больше дальности любого заклинания героя)
+const REAGGRO_DELAY := 2.5      # сек.: бросив погоню по поводку, моб столько не отвлекается на героев
+const REACH_SLACK_MELEE := 0.3  # м: запас дальности, пока моб уже бьёт цель
+const REACH_SLACK_RANGED := 1.5
 
 enum S { MOVE, CHASE, WALL, CASTLE, SPAWNING }
 enum AN { IDLE, MOVE, ATTACK, DEAD, STUN, SPAWN, FROZEN }
@@ -43,6 +47,8 @@ class Mob:
 	var ice: MeshInstance3D = null
 	var anim_speed := 1.0
 	var taunt_until := 0.0
+	var reaggro_at := 0.0          # после того как бросил погоню, до этого времени не берёт новую цель
+	var in_reach := false          # уже атакует цель (чтобы не дёргаться на краю дальности)
 	var shadow_on := true
 
 var world: Node3D
@@ -184,9 +190,10 @@ func on_damaged(u: Unit, src: Unit) -> void:
 	var m: Mob = mobs.get(u.id, null)
 	if m == null or src == null or src.kind != "hero":
 		return
-	if m.state == S.MOVE or m.state == S.CASTLE:
+	if (m.state == S.MOVE or m.state == S.CASTLE) and world.now() >= m.reaggro_at:
 		m.state = S.CHASE
 		m.target = src.id
+		m.in_reach = false
 
 # ---------------------------------------------------------------- серверная симуляция
 
@@ -265,12 +272,17 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 		S.CHASE:
 			var tu: Unit = world.get_unit(m.target)
 			if tu == null or not tu.alive:
-				m.state = S.MOVE
+				_drop_chase(m, false)
 			else:
 				var tp := Vector2(tu.pos.x, tu.pos.z)
-				if m.pos2.distance_to(tp) <= reach + tu.radius + u.radius * 0.5:
+				var need := reach + tu.radius + u.radius * 0.5
+				if m.in_reach:
+					need += REACH_SLACK_RANGED if m.def.get("ranged", false) else REACH_SLACK_MELEE
+				if m.pos2.distance_to(tp) <= need:
+					m.in_reach = true
 					_attack(m, tu, t)
 				else:
+					m.in_reach = false
 					goal = tp
 					moving = true
 		S.WALL:
@@ -304,9 +316,12 @@ func _think(m: Mob) -> void:
 		var tu: Unit = world.get_unit(m.target)
 		if world.now() < m.taunt_until and tu and tu.alive:
 			return
-		if tu == null or not tu.alive or Vector2(tu.pos.x, tu.pos.z).distance_to(m.pos2) > LEASH_RANGE or _lane_dist(m) > LEASH_RANGE:
-			m.state = S.MOVE
-			m.target = 0
+		if tu == null or not tu.alive:
+			_drop_chase(m, false)
+		elif Vector2(tu.pos.x, tu.pos.z).distance_to(m.pos2) > CHASE_DROP_RANGE or _lane_dist(m) > LEASH_RANGE:
+			_drop_chase(m, true)
+		return
+	if m.state == S.MOVE and world.now() < m.reaggro_at:
 		return
 	var aggro := AGGRO_RANGE * (1.4 if m.def.get("ranged", false) else 1.0) * (1.3 if m.def.get("boss", false) else 1.0)
 	if m.state == S.WALL:
@@ -325,14 +340,38 @@ func _think(m: Mob) -> void:
 	if best:
 		m.state = S.CHASE
 		m.target = best.id
+		m.in_reach = false
+
+## Моб бросает погоню и идёт дальше по полосе — к точке маршрута впереди себя.
+## Раньше он шёл к старой точке, которая за время погони оставалась позади, и снова замечал героя.
+## leash — погоня брошена по поводку: какое-то время моб не отвлекается на героев.
+func _drop_chase(m: Mob, leash: bool) -> void:
+	m.state = S.MOVE
+	m.target = 0
+	m.in_reach = false
+	if leash:
+		m.reaggro_at = world.now() + REAGGRO_DELAY
+	var lane: PackedVector2Array = world.lanes[m.lane]
+	m.wp = mini(_nearest_segment(m) + 1, lane.size() - 1)
+
+## Ближайший к мобу отрезок его полосы (индекс начальной точки).
+## Ищем по всей полосе: во время погони m.wp не обновляется, и поиск рядом с ним
+## считал моба далеко от полосы, даже когда он шёл прямо по ней.
+func _nearest_segment(m: Mob) -> int:
+	var lane: PackedVector2Array = world.lanes[m.lane]
+	var best := INF
+	var best_i := 0
+	for i in lane.size() - 1:
+		var d := Geometry2D.get_closest_point_to_segment(m.pos2, lane[i], lane[i + 1]).distance_squared_to(m.pos2)
+		if d < best:
+			best = d
+			best_i = i
+	return best_i
 
 func _lane_dist(m: Mob) -> float:
 	var lane: PackedVector2Array = world.lanes[m.lane]
-	var best := 1e9
-	for i in range(maxi(0, m.wp - 2), mini(lane.size() - 1, m.wp + 1)):
-		var c := Geometry2D.get_closest_point_to_segment(m.pos2, lane[i], lane[i + 1])
-		best = minf(best, c.distance_to(m.pos2))
-	return best
+	var i := _nearest_segment(m)
+	return Geometry2D.get_closest_point_to_segment(m.pos2, lane[i], lane[i + 1]).distance_to(m.pos2)
 
 func _move(m: Mob, goal: Vector2, dt: float, t: float) -> void:
 	var u := m.unit
