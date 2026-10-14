@@ -3,8 +3,11 @@ extends Node
 ## Всё решает хост; владельцу героя приходит копия сумки и снаряжения.
 
 const VENDORS := {
+	# кузнец — тот же варвар, что и герой-воин, поэтому: перекраска в кожаный фартук, без шапки и плаща,
+	# молот вместо топора, наковальня рядом и работа молотом — читается как торговец, а не игрок
 	"smith": {"marker": "Blacksmith", "name": "Кузнец Торвальд", "desc": "Оружие и броня", "model": "Barbarian",
-		"show": ["2H_Axe"], "kind": "gear"},
+		"show": [], "hide": ["Barbarian_Hat", "Barbarian_Cape"], "recolor": "smith", "tool": "hammer", "prop": "anvil",
+		"work": {"anim": "1H_Melee_Attack_Chop", "every": 3.2, "hit_at": 0.42}, "kind": "gear"},
 	"alchemist": {"marker": "Alchemy", "name": "Алхимик Мирра", "desc": "Зелья и эликсиры", "model": "Rogue_Hooded",
 		"show": ["Throwable"], "kind": "consumable"},
 }
@@ -15,6 +18,8 @@ const LOOT_TIME := 90.0
 var world: Node3D
 var vendor_pos: Dictionary = {}       # id -> Vector3
 var _vendor_nodes: Dictionary = {}
+var _anvil_top: Dictionary = {}       # vid -> наковальня (искры при ударе)
+var _work_t: Dictionary = {}          # vid -> время до следующего удара молотом
 var _loot: Dictionary = {}            # сервер: id -> {item, pos, until}
 var _loot_nodes: Dictionary = {}      # визуал: id -> Node3D
 var _next_loot := 1
@@ -40,6 +45,17 @@ func spawn_vendors() -> void:
 				if att is BoneAttachment3D and att.bone_name.begins_with("handslot"):
 					for mesh in att.get_children():
 						(mesh as Node3D).visible = v["show"].has(mesh.name)
+				if att is BoneAttachment3D:
+					for mesh in att.get_children():
+						if v.get("hide", []).has(mesh.name):
+							(mesh as Node3D).visible = false
+					if v.get("tool", "") == "hammer" and att.bone_name == "handslot.r":
+						var hammer := _make_hammer()
+						hammer.rotation_degrees = Vector3(0, -180, 0)
+						hammer.position = Vector3(0, 0.033, 0)
+						att.add_child(hammer)
+		if v.get("recolor", "") != "":
+			ModelFactory.recolor_model(inst, v["model"], v["recolor"])
 		var ap := ModelFactory.find_anim(holder)
 		if ap:
 			ap.play("Idle")
@@ -57,6 +73,11 @@ func spawn_vendors() -> void:
 		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		tag.position.y = 3.2
 		holder.add_child(tag)
+		if v.get("prop", "") == "anvil":
+			var anvil := _make_anvil()
+			anvil.position = Vector3(0.15, 0, 0.95)
+			holder.add_child(anvil)
+			_anvil_top[vid] = anvil
 		_vendor_nodes[vid] = holder
 
 ## Торговец под курсором (для клика ПКМ).
@@ -432,3 +453,87 @@ func lootsim_report() -> String:
 	var n := maxf(1.0, float(_ls["n"]))
 	return "LOOTSIM героев×вещей=%d | было: сразу %d%%, через ≤2 ур. %d%% | стало: сразу %d%%, через ≤2 ур. %d%%" % [_ls["n"],
 		int(_ls["old_now"] / n * 100.0), int(_ls["old_soon"] / n * 100.0), int(_ls["new_now"] / n * 100.0), int(_ls["new_soon"] / n * 100.0)]
+
+# ---------------------------------------------------------------- облик торговцев
+
+static func _metal(col: Color, metallic: float = 0.8, rough: float = 0.45) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.metallic = metallic
+	m.roughness = rough
+	return m
+
+static func _part(mesh: Mesh, mat: Material, pos: Vector3, rot_deg: Vector3 = Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation_degrees = rot_deg
+	return mi
+
+## Кузнечный молот из примитивов (в паке KayKit молота нет): рукоять вдоль Y, как у топора.
+static func _make_hammer() -> Node3D:
+	var n := Node3D.new()
+	n.name = "Smith_Hammer"
+	var handle := CylinderMesh.new()
+	handle.top_radius = 0.035
+	handle.bottom_radius = 0.04
+	handle.height = 0.62
+	n.add_child(_part(handle, _metal(Color(0.42, 0.26, 0.14), 0.0, 0.8), Vector3(0, 0.26, 0)))
+	var head := BoxMesh.new()
+	head.size = Vector3(0.3, 0.15, 0.15)
+	n.add_child(_part(head, _metal(Color(0.32, 0.32, 0.36)), Vector3(0, 0.56, 0)))
+	return n
+
+## Наковальня с раскалённой заготовкой.
+static func _make_anvil() -> Node3D:
+	var n := Node3D.new()
+	n.name = "Anvil"
+	var iron := _metal(Color(0.2, 0.2, 0.23))
+	var b1 := BoxMesh.new()
+	b1.size = Vector3(0.42, 0.28, 0.3)
+	n.add_child(_part(b1, iron, Vector3(0, 0.14, 0)))
+	var b2 := BoxMesh.new()
+	b2.size = Vector3(0.24, 0.18, 0.2)
+	n.add_child(_part(b2, iron, Vector3(0, 0.37, 0)))
+	var top := BoxMesh.new()
+	top.size = Vector3(0.62, 0.13, 0.28)
+	n.add_child(_part(top, iron, Vector3(0, 0.52, 0)))
+	var horn := CylinderMesh.new()
+	horn.top_radius = 0.0
+	horn.bottom_radius = 0.1
+	horn.height = 0.3
+	n.add_child(_part(horn, iron, Vector3(0.46, 0.53, 0), Vector3(0, 0, -90)))
+	var hot := BoxMesh.new()
+	hot.size = Vector3(0.26, 0.04, 0.07)
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(1.0, 0.45, 0.1)
+	glow.emission_enabled = true
+	glow.emission = Color(1.0, 0.4, 0.05)
+	glow.emission_energy_multiplier = 2.5
+	n.add_child(_part(hot, glow, Vector3(-0.05, 0.605, 0)))
+	return n
+
+## Кузнец время от времени бьёт молотом по наковальне: искры и негромкий звон. Только визуал, у каждого игрока свой.
+func _process(delta: float) -> void:
+	for vid in _vendor_nodes:
+		var v: Dictionary = VENDORS[vid]
+		if not v.has("work"):
+			continue
+		var w: Dictionary = v["work"]
+		_work_t[vid] = float(_work_t.get(vid, randf() * 2.0)) - delta
+		if _work_t[vid] > 0.0:
+			continue
+		_work_t[vid] = float(w["every"]) + randf_range(-0.4, 0.4)
+		var ap := ModelFactory.find_anim(_vendor_nodes[vid])
+		if ap == null or not ap.has_animation(w["anim"]):
+			continue
+		ap.play(w["anim"], 0.15)
+		ap.queue("Idle")
+		var anvil: Node3D = _anvil_top.get(vid, null)
+		if anvil:
+			get_tree().create_timer(float(w["hit_at"])).timeout.connect(func():
+				if is_instance_valid(anvil):
+					var p := anvil.global_position + Vector3(-0.05, 0.62, 0)
+					Vfx.burst(world, p, Color(1.0, 0.65, 0.2))
+					Sfx.play_at("blade_hit", p, -12.0))

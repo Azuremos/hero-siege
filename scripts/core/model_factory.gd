@@ -176,6 +176,9 @@ static func _recolor_texture(tex: Texture2D, scheme: String, skin: String) -> Te
 			var v := c.v
 			var out := c
 			var is_skin := h > 0.03 and h < 0.11 and s > 0.18 and s < 0.55 and v > 0.75
+			if scheme == "smith" and not is_skin and s > 0.18 and h > 0.42 and h < 0.75:
+				# синяя одежда варвара -> закопчённая кожа фартука
+				out = Color.from_hsv(0.075, clampf(s * 0.75, 0.3, 0.65), v * 0.6)
 			if scheme == "priest" and not is_skin:
 				if s > 0.2 and h > 0.6 and h < 0.8:
 					# фиолетовая мантия -> белоснежная с тёплым оттенком
@@ -191,3 +194,7 @@ static func _recolor_texture(tex: Texture2D, scheme: String, skin: String) -> Te
 			img.set_pixel(x, y, out)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
+## Перекрасить готовую модель по схеме (например, «smith» — кузнец в кожаном фартуке).
+static func recolor_model(inst: Node, model_name: String, scheme: String) -> void:
+	_apply_recolor(inst, "%s|%s|" % [model_name, scheme], scheme, "")
