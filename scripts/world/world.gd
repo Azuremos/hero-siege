@@ -158,6 +158,13 @@ func _build_hero_snapshot(t: float) -> Array:
 			buffs.append(["immune", u.immune_until - t])
 		if u.damage_taken_mult < 0.99:
 			buffs.append(["barrier", 0.0])
+		# контроль от врагов — видно в рамках героя и группы
+		if t < u.stun_until:
+			buffs.append(["stunned", u.stun_until - t])
+		if t < u.fear_until:
+			buffs.append(["feared", u.fear_until - t])
+		if t < u.silence_until:
+			buffs.append(["silenced", u.silence_until - t])
 		for b in u.buffs:
 			buffs.append([b["key"], maxf(0.0, b["until"] - t)])
 		out.append([hid, u.hp, u.max_hp, u.mana, u.max_mana, u.level, h.xp, h.xp_next, h.gold,
@@ -493,10 +500,11 @@ func _process(delta: float) -> void:
 		var fwd := -local_hero.global_transform.basis.z
 		var side := fwd.cross(Vector3.UP)
 		for i in types.size():
-			var p3: Vector3 = local_hero.global_position + fwd * 9.0 + side * (float(i) - float(types.size() - 1) * 0.5) * 2.6
+			var p3: Vector3 = local_hero.global_position + fwd * (4.0 if Net.cli.has("near") else 9.0) + side * (float(i) - float(types.size() - 1) * 0.5) * 2.6
 			var uid: int = mobs.spawn(types[i], 2, 5, 1, 1.0, {"pos": Vector2(p3.x, p3.z)})
 			var mu: Unit = get_unit(uid)
-			mu.root_until = now() + 1e6     # стоят на месте для осмотра
+			if not Net.cli.has("near"):
+				mu.root_until = now() + 1e6     # стоят на месте для осмотра
 		print("MOBTEST ", types)
 	if Net.cli.has("godmode") and is_server():
 		for gh in heroes.values():

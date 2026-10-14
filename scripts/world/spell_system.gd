@@ -61,6 +61,8 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 		return _feedback(peer, sid, "Откроется на %d уровне" % GameData.spell_level(sid))
 	if not u.alive or u.is_stunned(t):
 		return _feedback(peer, sid, "Сейчас нельзя")
+	if t < u.silence_until or t < u.fear_until:
+		return _feedback(peer, sid, "Сейчас нельзя: вы под контролем")
 	if not st["cast"].is_empty():
 		return _feedback(peer, sid, "Вы уже произносите заклинание")
 	var proc := GameData.active_proc(u, sid)
@@ -587,6 +589,8 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				fx_at("rooted", target.pos, target.pos, float(e["dur"]), target.id)
 			"freeze":
 				_mark_src(target, "frozen", caster)
+				if target.kind == "mob":
+					world.mobs.stop_cast(target)
 				_freeze(target, float(e["dur"]), t)
 			"taunt":
 				if caster and target.kind == "mob":
@@ -606,6 +610,10 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				var dur := (float(e["dur"]) + _m(caster, "stun_add", sid, school)) * (0.5 if target.kind == "mob" and _is_boss(target) else 1.0)
 				target.stun_until = maxf(target.stun_until, t + dur)
 				_mark_src(target, "stunned", caster)
+				if e.has("key"):
+					target.add_buff(e["key"], t + dur, {})      # «Очарован» и т.п. — своё название в рамке
+				if target.kind == "mob":
+					world.mobs.stop_cast(target)
 				fx_at("stunned", target.pos, target.pos, dur, target.id)
 			"dot", "hot":
 				var ticks := float(e["dur"]) / float(e["tick"])
@@ -633,6 +641,39 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 			"immune":
 				target.immune_until = t + float(e["dur"])
 				target.auras = target.auras.filter(func(a): return a["kind"] != "dot")
+			"mana_burn":
+				# выжигание маны: сгорает мана, половина сгоревшего — урон тьмой
+				if target.kind == "hero" and target.resource != "rage":
+					var burn := minf(target.mana, float(e["amount"]) * pw)
+					target.mana -= burn
+					if burn > 0.0:
+						deal_damage(caster, target, burn * 0.5, "shadow", false, sid)
+						world.fx_number(target.id, burn, "mana_burn", "shadow", caster.id if caster else 0, false)
+			"knockback":
+				_knockback(caster, target, float(e["dist"]), t)
+			"fear":
+				if target.kind == "hero":
+					target.fear_until = maxf(target.fear_until, t + float(e["dur"]))
+					target.fear_from = caster.pos if caster else target.pos
+					var fh = world.heroes.get(target.id, null)
+					if fh:
+						fh.ev_control.rpc("fear", float(e["dur"]), target.fear_from)
+				else:
+					target.stun_until = maxf(target.stun_until, t + float(e["dur"]))
+			"silence":
+				target.silence_until = maxf(target.silence_until, t + float(e["dur"]))
+				if target.kind == "mob":
+					world.mobs.stop_cast(target)
+			"steal_gold":
+				var vh = world.heroes.get(target.id, null)
+				if vh and caster and caster.kind == "mob":
+					var g := mini(vh.gold, int(float(e["amount"]) * (1.0 + 0.1 * float(caster.level))))
+					vh.gold -= g
+					world.mobs.on_steal(caster, vh, g)
+			"interrupt":
+				# сбить каст врага; школа заклинания заблокирована на lock сек.
+				if target.kind == "mob" and world.mobs.interrupt(target, float(e.get("lock", 4.0))) and caster:
+					world.meter.on_interrupt(caster, target)
 			"buff":
 				target.add_buff(e["key"], t + float(e["dur"]), e.get("mods", {}))
 				_mark_src(target, e["key"], caster)
@@ -692,6 +733,7 @@ func _on_heal_crit(caster: Unit, target: Unit, sid: String, t: float) -> void:
 func _freeze(target: Unit, dur: float, t: float) -> void:
 	if target.kind != "mob" or not target.alive:
 		return
+	world.mobs.stop_cast(target)
 	if _is_boss(target):
 		dur *= 0.5
 	var was_frozen := target.is_frozen(t)
@@ -1000,3 +1042,19 @@ func _send_watched_effects(delta: float, t: float) -> void:
 @rpc("authority", "reliable")
 func ev_effects(uid: int, list: Array) -> void:
 	world.hud.set_target_effects(uid, list)
+
+## Отбрасывание: мобов толкает сервер, героя — сервер считает точку, а клиент героя летит туда
+## (как Рывок и Скачок). Пока герой в полёте, сервер не принимает его движение.
+func _knockback(caster: Unit, target: Unit, dist: float, t: float) -> void:
+	var from := caster.pos if caster else target.pos
+	var dir := Vector2(target.pos.x - from.x, target.pos.z - from.z)
+	if dir.length() < 0.1:
+		dir = Vector2(randf_range(-1, 1), randf_range(-1, 1))
+	dir = dir.normalized() * dist
+	if target.kind == "mob":
+		world.mobs.push(target, dir)
+	elif target.kind == "hero":
+		var h = world.heroes.get(target.id, null)
+		if h:
+			target.knock_until = t + 0.45
+			h.ev_knock.rpc(target.pos + Vector3(dir.x, 0, dir.y))

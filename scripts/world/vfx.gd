@@ -692,3 +692,27 @@ static func end_zone(world: Node3D, id: int) -> void:
 	particles(shatter, COL_FROST, 60, 0.9, {"shape": "box", "extents": Vector3(4, 1, 0.6), "pos": Vector3(0, 1.2, 0),
 		"vmin": 3.0, "vmax": 6.0, "spread": 180.0, "one_shot": true, "explosive": 1.0, "gravity": Vector3(0, -12, 0), "aabb": 10.0})
 	n.queue_free()
+
+# ---------------------------------------------------------------- телеграфы опасных способностей
+
+const TELEGRAPH_SHADER := preload("res://shaders/telegraph.gdshader")
+
+## Фигура на земле, заливка растёт к моменту удара (через dur секунд), затем быстро гаснет.
+## shape: "circle" (pos — центр) или "cone" (pos — моб, yaw — направление, angle — полный угол, градусы).
+static func telegraph(world: Node3D, shape: String, pos: Vector3, yaw: float, radius: float, angle: float, dur: float, col: Color = Color(1.0, 0.25, 0.1)) -> void:
+	var n := _timed(world, Vector3(pos.x, 0.07, pos.z), dur + 0.25)
+	n.rotation.y = yaw
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(radius * 2.0, radius * 2.0)
+	mi.mesh = pm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := ShaderMaterial.new()
+	mat.shader = TELEGRAPH_SHADER
+	mat.set_shader_parameter("shape", 1.0 if shape == "cone" else 0.0)
+	mat.set_shader_parameter("half_angle", deg_to_rad(angle) * 0.5)
+	mat.set_shader_parameter("color", col)
+	mat.set_shader_parameter("progress", 0.0)
+	mi.material_override = mat
+	n.add_child(mi)
+	n.create_tween().tween_method(func(v: float): mat.set_shader_parameter("progress", v), 0.0, 1.0, maxf(dur, 0.05))

@@ -46,6 +46,11 @@ var slow_pct: float = 0.0
 var slow_until: float = 0.0
 ## Кто наложил контроль и ослабления (ключ эффекта -> id) — свои эффекты в рамке цели крупнее
 var fx_src: Dictionary = {}
+## Контроль от врагов: страх (герой бежит прочь), немота (нельзя колдовать), отбрасывание (полёт)
+var fear_until: float = 0.0
+var fear_from := Vector3.ZERO
+var silence_until: float = 0.0
+var knock_until: float = 0.0
 var damage_taken_mult: float = 1.0   # пересчитывается каждый тик (барьеры)
 
 ## Периодические эффекты: {key, kind: "dot"/"hot", per_tick, tick, next, until, school, source}
@@ -106,9 +111,10 @@ func is_rooted(now: float) -> bool:
 	return now < root_until or now < stun_until or now < freeze_until
 
 func speed_mult(now: float) -> float:
+	var k := maxf(0.2, 1.0 + mod("speed"))     # баффы скорости (Боевые барабаны, Ускорение)
 	if now < slow_until:
-		return 1.0 - slow_pct
-	return 1.0
+		return (1.0 - slow_pct) * k
+	return k
 
 func hp_frac() -> float:
 	return clampf(hp / max_hp, 0.0, 1.0) if max_hp > 0.0 else 0.0

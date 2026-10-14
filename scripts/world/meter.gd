@@ -30,8 +30,8 @@ func _new_seg(seg_name: String) -> Dictionary:
 	return {"name": seg_name, "start": world.now() if world else 0.0, "end": -1.0, "heroes": {}}
 
 static func _new_row() -> Dictionary:
-	return {"dmg": 0.0, "heal": 0.0, "over": 0.0, "taken": 0.0, "deaths": 0,
-		"by": {"dmg": {}, "heal": {}, "taken": {}, "deaths": {}}}
+	return {"dmg": 0.0, "heal": 0.0, "over": 0.0, "taken": 0.0, "deaths": 0, "kicks": 0,
+		"by": {"dmg": {}, "heal": {}, "taken": {}, "deaths": {}, "kicks": {}}}
 
 ## Сервер: начался новый бой (волна): текущий отрезок становится «прошлым».
 func new_segment(seg_name: String) -> void:
@@ -86,6 +86,17 @@ func on_heal(src: Unit, dst: Unit, amount: float, over: float, sid: String, crit
 	if src and src.kind == "hero" and (amount > 0.0 or over > 0.0):
 		_add(src.id, "heal", amount, _key(sid, src), crit, over)
 
+## Герой сбил каст врага (прерывание).
+func on_interrupt(src: Unit, target: Unit = null) -> void:
+	if src.kind != "hero":
+		return
+	for s in ["current", "total"]:
+		var row := _row(segs[s], src.id)
+		row["kicks"] += 1
+		var k := ("mob:" + target.type_id) if target else "other"
+		var e: Array = row["by"]["kicks"].get(k, [0.0, 0, 0, 0.0])
+		row["by"]["kicks"][k] = [float(e[0]) + 1.0, int(e[1]) + 1, 0, 0.0]
+
 func on_death(dst: Unit, src: Unit) -> void:
 	if dst.kind != "hero":
 		return
@@ -109,7 +120,7 @@ func server_tick(delta: float) -> void:
 		var rows: Array = []
 		for hid in seg["heroes"]:
 			var r: Dictionary = seg["heroes"][hid]
-			rows.append([hid, roundf(r["dmg"]), roundf(r["heal"]), roundf(r["over"]), roundf(r["taken"]), r["deaths"]])
+			rows.append([hid, roundf(r["dmg"]), roundf(r["heal"]), roundf(r["over"]), roundf(r["taken"]), r["deaths"], r["kicks"]])
 		var dur: float = (float(seg["end"]) if float(seg["end"]) > 0.0 else t) - float(seg["start"])
 		packed[s] = [seg["name"], maxf(1.0, dur), rows]
 	ev_meter.rpc(packed)
@@ -123,7 +134,7 @@ func ev_meter(packed: Dictionary) -> void:
 ## Клиент просит разбивку: отрезок, герой, режим (dmg | heal | taken | deaths).
 @rpc("any_peer", "reliable")
 func request_detail(seg: String, hid: int, field: String) -> void:
-	if not Net.is_server() or not segs.has(seg) or not field in ["dmg", "heal", "taken", "deaths"]:
+	if not Net.is_server() or not segs.has(seg) or not field in ["dmg", "heal", "taken", "deaths", "kicks"]:
 		return
 	var by: Dictionary = segs[seg]["heroes"].get(hid, _new_row())["by"][field]
 	var list: Array = []
@@ -161,6 +172,8 @@ static func key_name(k: String) -> String:
 	if k.begins_with("mob:"):
 		var mid := k.trim_prefix("mob:")
 		return GameData.MOBS[mid]["name"] if GameData.MOBS.has(mid) else mid
+	if k.begins_with("mab:"):
+		return GameData.MOB_ABILITIES.get(k.trim_prefix("mab:"), {}).get("name", k)
 	if k.begins_with("item:"):
 		var it := GameData.item(k.trim_prefix("item:"))
 		return it.get("name", k)

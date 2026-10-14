@@ -17,7 +17,7 @@ const REACH_SLACK_MELEE := 0.3  # м: запас дальности, пока м
 const REACH_SLACK_RANGED := 1.5
 
 enum S { MOVE, CHASE, WALL, OBJECTIVE, SPAWNING }   # OBJECTIVE — бьёт цель режима (замок)
-enum AN { IDLE, MOVE, ATTACK, DEAD, STUN, SPAWN, FROZEN }
+enum AN { IDLE, MOVE, ATTACK, DEAD, STUN, SPAWN, FROZEN, CAST }
 
 class Mob:
 	var unit: Unit
@@ -50,6 +50,15 @@ class Mob:
 	var reaggro_at := 0.0          # после того как бросил погоню, до этого времени не берёт новую цель
 	var in_reach := false          # уже атакует цель (чтобы не дёргаться на краю дальности)
 	var shadow_on := true
+	# способности
+	var ab_ready: Dictionary = {}     # id способности -> когда готова
+	var used: Dictionary = {}         # использованные «один раз»
+	var locked: Dictionary = {}       # школа -> до какого времени заблокирована (прерывание)
+	var cast: Dictionary = {}         # текущий каст: {ab, until, pick, center}
+	var extra_abilities: Array = []   # от аффиксов элитных
+	var fleeing := false              # вор убегает с золотом
+	var stolen := 0
+	var stolen_from := 0
 
 var world: Node3D
 var mobs: Dictionary = {}          # id -> Mob (живые)
@@ -165,6 +174,8 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	var t: float = world.now()
 	m.spawn_until = t + 1.3
 	m.next_think = t + 1.3 + randf() * 0.4
+	for aid in def.get("abilities", []):
+		m.ab_ready[aid] = t + 2.0 + randf() * 3.0     # не все разом в первую же секунду
 	var nxt: Vector2 = ends[1]
 	world.mode.mob_spawned(m)
 	m.yaw = atan2(-(nxt.x - start.x), -(nxt.y - start.y))
@@ -185,6 +196,15 @@ func kill(u: Unit, killer: Unit) -> void:
 	world.award_kill(u.pos, xp, int(m.def["gold"]))
 	world.economy.roll_loot(u.pos, u.level, m.def.get("boss", false))
 	world.mode.on_mob_killed(u, killer, m.def.get("boss", false))
+	corpses.append({"pos": m.pos2, "until": world.now() + CORPSE_TIME})
+	if corpses.size() > 80:
+		corpses.pop_front()
+	if m.stolen > 0:
+		var victim = world.heroes.get(m.stolen_from, null)
+		if victim:
+			victim.gold += m.stolen
+			world.announce_all("Золото возвращено: %d." % m.stolen, Color(1, 0.85, 0.3))
+	casts.erase(u.id)
 	_pending_deaths.append(u.id)
 	_begin_dying(m)
 
@@ -209,6 +229,8 @@ func on_damaged(u: Unit, src: Unit) -> void:
 # ---------------------------------------------------------------- серверная симуляция
 
 func server_tick(delta: float, t: float) -> void:
+	if not corpses.is_empty() and float(corpses[0]["until"]) < t:
+		corpses = corpses.filter(func(c): return float(c["until"]) >= t)
 	if world.mode.is_over():
 		for m: Mob in mobs.values():
 			m.anim_state = AN.IDLE
@@ -270,11 +292,35 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 	if m.state == S.SPAWNING:
 		m.state = S.MOVE
 	if u.is_stunned(t):
+		_cancel_cast(m, false)
 		m.anim_state = AN.FROZEN if u.is_frozen(t) else AN.STUN
 		return
 	if t >= m.next_think:
 		m.next_think = t + 0.35 + randf() * 0.15
 		_think(m)
+		_try_abilities(m, t)
+	if not m.cast.is_empty():
+		# произносит: стоит лицом к цели
+		var cu: Unit = world.get_unit(int(m.cast["pick"].get("unit", 0)))
+		if cu and cu != u and cu.alive:
+			_face(m, Vector2(cu.pos.x, cu.pos.z))
+		m.anim_state = AN.CAST
+		if t >= float(m.cast["until"]):
+			_finish_cast(m, t)
+		u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
+		return
+	if m.fleeing:
+		# вор бежит к логову; добежал — пропал вместе с золотом
+		var home: Vector2 = world.mode.mob_start(m.route)[0]
+		if m.pos2.distance_to(home) < 3.0:
+			world.announce_all("%s сбежал с %d золота." % [u.display_name, m.stolen], Color(1, 0.6, 0.4))
+			_despawn(m)
+			return
+		if not u.is_rooted(t):
+			_move(m, home, dt, t)
+		m.anim_state = AN.MOVE
+		u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
+		return
 
 	if _dbg_on:
 		_dbg_track(m, t)
@@ -437,7 +483,7 @@ func _attack(m: Mob, tu: Unit, t: float) -> void:
 		if m.anim_state != AN.ATTACK:
 			m.anim_state = AN.IDLE
 		return
-	m.attack_ready = t + float(m.def["atk_speed"])
+	m.attack_ready = t + float(m.def["atk_speed"]) * maxf(0.4, 1.0 - m.unit.mod("haste"))
 	m.swing = (m.swing + 1) % 32
 	m.anim_state = AN.ATTACK
 	var fx: Array = [{"type": "damage", "min": m.def["min"], "max": m.def["max"]}]
@@ -649,6 +695,11 @@ func _choose_anim(m: Mob, delta: float) -> void:
 		m.anim_lock = 0.7
 		Sfx.play_at("mob_swing", m.node.position + Vector3(0, 1.2, 0))
 		return
+	if m.anim_state == AN.CAST:
+		var cdata: Dictionary = casts.get(m.unit.id, {})
+		var can: String = GameData.MOB_ABILITIES.get(cdata.get("ab", ""), {}).get("anim", "Spellcasting")
+		_play(m, "Spellcasting" if can == "" else can, 0.15)
+		return
 	match m.anim_state:
 		AN.MOVE:
 			# темп бега под скорость моба, чтобы ноги не скользили по земле
@@ -725,3 +776,287 @@ func taunt_info(u: Unit) -> Array:
 	if m == null or m.taunt_until <= 0.0:
 		return []
 	return [m.taunt_until, m.target]
+
+# ---------------------------------------------------------------- способности врагов
+## Решение — в _think (2–3 раза в секунду). Каст — поле моба, а не состояние: во время каста моб стоит
+## лицом к цели; оглушение, заморозка или отбрасывание его сбивают, прерывание героя — ещё и блокирует школу.
+## Клиенты узнают о касте надёжным событием (ev_mob_cast), а не из снимка.
+
+const CORPSE_TIME := 25.0
+var corpses: Array = []            # сервер: [{pos: Vector2, until}]
+var casts: Dictionary = {}         # у всех: id моба -> {ab, start, dur, interrupt}
+
+func _ability_ready(m: Mob, aid: String, t: float) -> bool:
+	return t >= float(m.ab_ready.get(aid, 0.0))
+
+func _try_abilities(m: Mob, t: float) -> void:
+	if not m.cast.is_empty() or m.fleeing:
+		return
+	for aid in m.def.get("abilities", []) + m.extra_abilities:
+		if not _ability_ready(m, aid, t):
+			continue
+		var ab: Dictionary = GameData.MOB_ABILITIES[aid]
+		if t < float(m.locked.get(ab.get("school", ""), 0.0)) or t < m.unit.silence_until:
+			continue
+		var cond: Dictionary = ab.get("cond", {})
+		if cond.get("once", false) and m.used.has(aid):
+			continue
+		if cond.has("hp_below") and m.unit.hp_frac() >= float(cond["hp_below"]):
+			continue
+		var pick := _pick_target(m, ab)
+		if pick.is_empty():
+			continue
+		m.used[aid] = true
+		m.ab_ready[aid] = t + float(ab["cd"])
+		_begin_cast(m, aid, ab, pick, t)
+		return
+
+## Цель способности: {"unit": id, "point": Vector2, "corpse": индекс} или {} — не нашлось.
+func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
+	var rng := float(ab["range"])
+	match ab["target"]:
+		"self":
+			if ab.get("delivery", "") == "allies" and m.state != S.CHASE and m.state != S.OBJECTIVE and m.state != S.WALL:
+				return {}      # баффы — только в бою
+			return {"unit": m.unit.id, "point": m.pos2}
+		"enemy", "enemy_point":
+			var best: Unit = world.get_unit(m.target) if m.state == S.CHASE else null
+			if best == null or not best.alive or best.kind != "hero" or _d(m, best) > rng:
+				best = null
+				var bd := rng
+				for h in world.heroes.values():
+					var hu: Unit = h.unit
+					if hu.alive and _d(m, hu) <= bd:
+						bd = _d(m, hu)
+						best = hu
+			if best == null:
+				return {}
+			if ab.get("cond", {}).has("min_dist") and _d(m, best) < float(ab["cond"]["min_dist"]):
+				return {}
+			return {"unit": best.id, "point": Vector2(best.pos.x, best.pos.z)}
+		"ally_hurt", "ally":
+			var best_m: Unit = null
+			var bf := 0.7 if ab["target"] == "ally_hurt" else 2.0
+			for o: Unit in query_radius(m.pos2, rng):
+				var om: Mob = mobs.get(o.id, null)
+				if om == null or (ab["target"] == "ally" and om.state != S.CHASE and om.state != S.OBJECTIVE):
+					continue
+				if o.hp_frac() < bf:
+					bf = o.hp_frac()
+					best_m = o
+			if best_m == null:
+				return {}
+			return {"unit": best_m.id, "point": Vector2(best_m.pos.x, best_m.pos.z)}
+		"corpse":
+			for i in corpses.size():
+				if (corpses[i]["pos"] as Vector2).distance_to(m.pos2) <= rng:
+					return {"unit": 0, "point": corpses[i]["pos"], "corpse": i}
+			return {}
+		"wall_or_enemy":
+			if m.state == S.WALL and walls.has(m.wall):
+				return {"unit": 0, "point": m.pos2, "wall": m.wall}
+			for h in world.heroes.values():
+				if h.unit.alive and _d(m, h.unit) <= rng:
+					return {"unit": h.unit.id, "point": m.pos2}
+			return {}
+	return {}
+
+func _d(m: Mob, u: Unit) -> float:
+	return m.pos2.distance_to(Vector2(u.pos.x, u.pos.z)) - u.radius
+
+func _begin_cast(m: Mob, aid: String, ab: Dictionary, pick: Dictionary, t: float) -> void:
+	if Net.cli.has("castlog"):
+		print("MOBCAST ", m.unit.type_id, " ", aid)
+	var dur := float(ab.get("cast", 0.0))
+	m.cast = {"ab": aid, "until": t + dur, "pick": pick}
+	_face(m, pick["point"])
+	if ab.has("telegraph"):
+		var tg: Dictionary = ab["telegraph"]
+		var center: Vector2 = pick["point"] if tg["shape"] == "circle" else m.pos2
+		if ab["delivery"] == "self_explode":
+			center = m.pos2
+		m.cast["center"] = center
+		ev_telegraph.rpc(tg["shape"], Vector3(center.x, 0, center.y), m.yaw, float(tg["radius"]), float(tg.get("angle", 0.0)), maxf(dur, 0.3))
+	if dur > 0.0:
+		ev_mob_cast.rpc(m.unit.id, aid, dur, bool(ab.get("interrupt", false)))
+	else:
+		_finish_cast(m, t)
+
+func _cancel_cast(m: Mob, interrupted: bool) -> void:
+	if m.cast.is_empty():
+		return
+	m.cast = {}
+	ev_mob_cast_end.rpc(m.unit.id, interrupted)
+
+## Прерывание героем: сбивает сбиваемый каст и блокирует школу на lock секунд.
+func interrupt(u: Unit, lock: float) -> bool:
+	var m: Mob = mobs.get(u.id, null)
+	if m == null or m.cast.is_empty():
+		return false
+	var ab: Dictionary = GameData.MOB_ABILITIES[m.cast["ab"]]
+	if not ab.get("interrupt", false):
+		return false
+	m.locked[ab.get("school", "")] = world.now() + lock
+	_cancel_cast(m, true)
+	return true
+
+## Сбить каст без блокировки школы (оглушение, заморозка, отбрасывание).
+func stop_cast(u: Unit) -> void:
+	var m: Mob = mobs.get(u.id, null)
+	if m:
+		_cancel_cast(m, false)
+
+func _finish_cast(m: Mob, t: float) -> void:
+	var aid: String = m.cast["ab"]
+	var ab: Dictionary = GameData.MOB_ABILITIES[aid]
+	var pick: Dictionary = m.cast["pick"]
+	var center: Vector2 = m.cast.get("center", pick["point"])
+	m.cast = {}
+	if float(ab.get("cast", 0.0)) > 0.0:
+		ev_mob_cast_end.rpc(m.unit.id, false)
+	m.swing = (m.swing + 1) % 32
+	m.anim_state = AN.ATTACK
+	var sid := "mab:" + aid
+	var school: String = ab.get("school", "physical")
+	var fx: Array = ab.get("effects", [])
+	var tu: Unit = world.get_unit(int(pick.get("unit", 0)))
+	match ab["delivery"]:
+		"target":
+			if tu and tu.alive:
+				world.spells.apply_effects(m.unit, tu, fx, sid, school)
+				world.spells.fx_at("hit_" + school, tu.pos, m.unit.pos, 0.0, tu.id)
+		"projectile":
+			if tu and tu.alive:
+				world.spells._launch_projectile(m.unit, tu, fx, sid, school, 22.0, "bolt_" + school, t)
+		"chain":
+			var hit: Array = []
+			var cur: Unit = tu
+			var from := m.unit.pos
+			for i in int(ab.get("jumps", 3)):
+				if cur == null or not cur.alive:
+					break
+				hit.append(cur)
+				world.spells.apply_effects(m.unit, cur, fx, sid, school)
+				world.spells.fx_at("hit_" + school, cur.pos, from, 0.0, cur.id)
+				from = cur.pos
+				var nxt: Unit = null
+				var nd := float(ab.get("jump_range", 9.0))
+				for h in world.heroes.values():
+					var hu: Unit = h.unit
+					if hu.alive and not hit.has(hu) and hu.pos.distance_to(cur.pos) <= nd:
+						nd = hu.pos.distance_to(cur.pos)
+						nxt = hu
+				cur = nxt
+		"area", "self_explode", "leap", "cone":
+			if ab["delivery"] == "leap":
+				var dest: Vector2 = pick["point"]
+				if tu and ab["target"] == "enemy":
+					dest = Vector2(tu.pos.x, tu.pos.z)
+					dest += (m.pos2 - dest).normalized() * (tu.radius + m.unit.radius)
+				m.pos2 = dest
+				m.unit.pos = Vector3(dest.x, 0, dest.y)
+				center = dest
+			var r: float = float(ab.get("telegraph", {}).get("radius", 3.0))
+			for h in world.heroes.values():
+				var hu: Unit = h.unit
+				if not hu.alive:
+					continue
+				var hp2 := Vector2(hu.pos.x, hu.pos.z)
+				if hp2.distance_to(center) > r + hu.radius:
+					continue
+				if ab["delivery"] == "cone":
+					var to := hp2 - m.pos2
+					var fwd := Vector2(-sin(m.yaw), -cos(m.yaw))
+					if to.length() > 0.5 and rad_to_deg(absf(fwd.angle_to(to.normalized()))) > float(ab["telegraph"].get("angle", 90.0)) * 0.5:
+						continue
+				world.spells.apply_effects(m.unit, hu, fx, sid, school)
+			world.spells.fx_at("explosion_fire" if school == "fire" else "nova_phys", Vector3(center.x, 0, center.y), m.unit.pos, r, 0)
+			if ab["delivery"] == "self_explode":
+				var wd := float(ab.get("wall_damage", 0.0))
+				for wid in walls.keys():
+					var w: Dictionary = walls[wid]
+					if Geometry2D.get_closest_point_to_segment(center, w["a"], w["b"]).distance_to(center) <= r:
+						w["hp"] -= wd
+						if w["hp"] <= 0.0:
+							_remove_wall(wid)
+				m.unit.hp = 0.0
+				world.spells._on_death(m.unit, null)
+		"allies":
+			for o: Unit in query_radius(m.pos2, float(ab.get("radius", 10.0))):
+				world.spells.apply_effects(m.unit, o, fx, sid, school)
+			if not ab.get("silent", false):
+				world.spells.fx_at("aura_war", m.unit.pos, m.unit.pos, 0.0, m.unit.id)
+		"summon":
+			var kind: String = ab.get("summon", "")
+			if kind == "":
+				kind = _swarm_of(m.def.get("faction", "undead"))
+			for i in int(ab.get("count", 2)):
+				var p: Vector2 = pick["point"] + Vector2(randf_range(-1.5, 1.5), randf_range(-1.5, 1.5))
+				var sid2: int = spawn(kind, m.route, m.unit.level, world.heroes.size(), 0.7, {"pos": p})
+				var sm: Mob = mobs.get(sid2, null)
+				if sm:
+					sm.wp = m.wp
+			_take_corpse(pick)
+		"devour":
+			world.spells.heal(m.unit, m.unit, m.unit.max_hp * float(ab.get("heal_pct", 0.3)), false, sid)
+			world.spells.fx_at("hit_blood", m.unit.pos, m.unit.pos, 0.0, m.unit.id)
+			_take_corpse(pick)
+
+func _take_corpse(pick: Dictionary) -> void:
+	if pick.has("corpse"):
+		var i: int = pick["corpse"]
+		if i < corpses.size():
+			corpses.remove_at(i)
+
+## Самый дешёвый «массовый» враг фракции — для призыва подмоги.
+func _swarm_of(faction: String) -> String:
+	for id in GameData.MOBS:
+		var d: Dictionary = GameData.MOBS[id]
+		if d.get("faction", "") == faction and d["role"] == "swarm":
+			return id
+	return "minion"
+
+## Отбрасывание моба (эффект knockback): толчок от источника, сбивает каст.
+func push(u: Unit, vec: Vector2) -> void:
+	var m: Mob = mobs.get(u.id, null)
+	if m == null:
+		return
+	m.pos2 += vec
+	u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
+	_cancel_cast(m, false)
+
+## Кража золота (гоблин-вор): моб убегает к своему логову; убьёте — золото вернётся.
+func on_steal(thief: Unit, victim, amount: int) -> void:
+	var m: Mob = mobs.get(thief.id, null)
+	if m == null or amount <= 0:
+		return
+	m.stolen += amount
+	m.stolen_from = victim.hero_id
+	m.fleeing = true
+	m.state = S.MOVE
+	world.announce_all("%s украл %d золота у %s — догоните его!" % [thief.display_name, amount, victim.player_name], Color(1, 0.8, 0.3))
+
+@rpc("authority", "call_local", "reliable")
+func ev_mob_cast(id: int, aid: String, dur: float, can_interrupt: bool) -> void:
+	casts[id] = {"ab": aid, "start": world.now(), "dur": dur, "interrupt": can_interrupt}
+
+@rpc("authority", "call_local", "reliable")
+func ev_mob_cast_end(id: int, interrupted: bool) -> void:
+	casts.erase(id)
+	if interrupted:
+		var u: Unit = world.get_unit(id)
+		if u:
+			world.hud.float_text(u, "Прервано!", Color(1.0, 0.85, 0.3))
+			Sfx.play_at("hit_metal", u.pos + Vector3(0, 1.5, 0))
+
+@rpc("authority", "call_local", "reliable")
+func ev_telegraph(shape: String, pos: Vector3, yaw: float, radius: float, angle: float, dur: float) -> void:
+	Vfx.telegraph(world, shape, pos, yaw, radius, angle, dur)
+
+## Убрать моба без награды (вор добежал до логова).
+func _despawn(m: Mob) -> void:
+	mobs.erase(m.unit.id)
+	world.units.erase(m.unit.id)
+	m.unit.alive = false
+	_pending_deaths.append(m.unit.id)
+	_begin_dying(m)

@@ -33,4 +33,4 @@ const SPECIAL_WAVES := {
 }
 
 ## Обычные веса ролей в волне.
-const ROLE_WEIGHTS := {"swarm": 4.5, "heavy": 1.8, "fast": 1.5, "ranged": 1.7, "support": 0.8, "special": 0.7}
+const ROLE_WEIGHTS := {"swarm": 4.5, "heavy": 1.8, "fast": 1.5, "ranged": 1.7, "support": 1.1, "special": 1.2}

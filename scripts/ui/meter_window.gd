@@ -5,7 +5,7 @@ extends PanelContainer
 ## Окно тянется за правый нижний угол (ширина и число строк), двигается в режиме настройки интерфейса.
 
 const GOLD := Color(0.95, 0.78, 0.35)
-const MODES := [["dmg", "Урон"], ["heal", "Лечение"], ["taken", "Получено"], ["deaths", "Смерти"]]
+const MODES := [["dmg", "Урон"], ["heal", "Лечение"], ["taken", "Получено"], ["deaths", "Смерти"], ["kicks", "Прерывания"]]
 const SEGS := [["current", "Текущий бой"], ["last", "Прошлая волна"], ["total", "Вся партия"]]
 const ROW_H := 20.0
 
@@ -142,8 +142,8 @@ func _data() -> Array:
 	return [vw["rows"], float(vw["time"])]
 
 func _fake_rows() -> Array:
-	return [[1, 48200, 0, 0, 9100, 0], [2, 31500, 2100, 400, 15300, 1], [3, 12800, 26400, 7800, 4200, 0],
-		[4, 27400, 8800, 1200, 21000, 2], [5, 39900, 0, 0, 6100, 0], [6, 9100, 18800, 5100, 3900, 1]]
+	return [[1, 48200, 0, 0, 9100, 0, 3], [2, 31500, 2100, 400, 15300, 1, 7], [3, 12800, 26400, 7800, 4200, 0, 1],
+		[4, 27400, 8800, 1200, 21000, 2, 4], [5, 39900, 0, 0, 6100, 0, 2], [6, 9100, 18800, 5100, 3900, 1, 0]]
 
 func _hero_info(hid: int) -> Array:
 	if preview:
@@ -162,7 +162,7 @@ func _process(_delta: float) -> void:
 	var d := _data()
 	var rows: Array = d[0]
 	var dur: float = maxf(1.0, d[1])
-	var field_i: int = [1, 2, 4, 5][_mode]
+	var field_i: int = [1, 2, 4, 5, 6][_mode]
 	var list: Array = rows.filter(func(r): return float(r[field_i]) > 0.0)
 	list.sort_custom(func(a, b): return float(a[field_i]) > float(b[field_i]))
 	var total := 0.0
@@ -192,7 +192,7 @@ func _process(_delta: float) -> void:
 		var info := _hero_info(int(r[0]))
 		(c.get_meta("name") as Label).text = "%d. %s" % [i + 1, info[0]]
 		var right := ""
-		if _mode == 3:
+		if _mode >= 3:
 			right = "%d" % int(val)
 		else:
 			right = "%s  (%s/с, %d%%)" % [fmt(val), fmt(val / dur), int(round(val / maxf(total, 1.0) * 100.0))]
@@ -268,7 +268,7 @@ func _on_detail() -> void:
 		lines.append("пока ничего")
 	for e in list:
 		var line := "%s  %s  %d%%" % [meter.key_name(e[0]), fmt(float(e[1])), int(round(float(e[1]) / maxf(total, 1.0) * 100.0))]
-		if MODES[_mode][0] != "deaths":
+		if not MODES[_mode][0] in ["deaths", "kicks"]:
 			line += "  (%d, криты %d)" % [int(e[2]), int(e[3])]
 		if MODES[_mode][0] == "heal" and float(e[4]) > 0.0:
 			line += "  перелеч. %s" % fmt(float(e[4]))

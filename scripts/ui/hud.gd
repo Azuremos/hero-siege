@@ -1261,6 +1261,9 @@ func floating_number(u: Unit, amount: float, kind: String, school: String, crit:
 		"saved":
 			text = "Спасён Оберегающим духом!"
 			col = Color(1, 0.95, 0.6)
+		"mana_burn":
+			text = "-%s маны" % text
+			col = Color(0.55, 0.45, 1.0)
 		_:
 			if on_me:
 				col = Color(1, 0.25, 0.2)
@@ -1277,6 +1280,14 @@ func floating_number(u: Unit, amount: float, kind: String, school: String, crit:
 		"text": text, "color": col, "age": 0.0, "size": 30 if crit else 22, "drift": randf_range(-20, 20)})
 	if _numbers.size() > 60:
 		_numbers.pop_front()
+
+## Короткая надпись над существом («Прервано!»).
+func float_text(u: Unit, text: String, col: Color) -> void:
+	var base := u.pos
+	if u.node and is_instance_valid(u.node):
+		base = u.node.global_position
+	_numbers.append({"pos": base + Vector3(0, 3.6 * (u.radius / 0.6 if u.kind == "mob" else 1.0), 0),
+		"text": text, "color": col, "age": 0.0, "size": 28, "drift": 0.0})
 
 # ---------------------------------------------------------------- обновление
 

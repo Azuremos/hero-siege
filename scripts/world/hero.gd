@@ -268,6 +268,14 @@ func _local_move(delta: float) -> void:
 			rotation.y = c.cam_yaw
 		fwd = c.move_forward
 		strafe = c.move_strafe
+	if can_move and world.now() < _fear_until:
+		# страх: бежит прочь, управление не слушается
+		var away := global_position - _fear_from
+		away.y = 0.0
+		if away.length() > 0.1:
+			rotation.y = atan2(-away.x, -away.z)
+		fwd = 1.0
+		strafe = 0.0
 	var dir := (-transform.basis.z * fwd + transform.basis.x * strafe)
 	if dir.length() > 1.0:
 		dir = dir.normalized()
@@ -301,12 +309,35 @@ func is_moving() -> bool:
 func net_move(p: Vector3, yaw: float, st: int) -> void:
 	if multiplayer.get_remote_sender_id() != peer_id:
 		return
+	# под оглушением и в полёте после отбрасывания сервер не принимает движение героя
+	if Net.is_server() and (unit.is_stunned(world.now()) or world.now() < unit.knock_until) and _net_initialized and p.distance_to(_net_pos) > 0.3:
+		return
 	_net_pos = p
 	_net_yaw = yaw
 	anim_state = st
 	if not _net_initialized or global_position.distance_to(p) > 8.0:
 		_net_initialized = true
 		global_position = p
+
+## Контроль от врагов (сервер решил — клиент героя выполняет). fear: герой бежит прочь от источника.
+var _fear_until := 0.0
+var _fear_from := Vector3.ZERO
+
+@rpc("authority", "call_local", "reliable")
+func ev_control(kind: String, dur: float, from: Vector3) -> void:
+	if kind == "fear":
+		_fear_until = world.now() + dur
+		_fear_from = from
+		Vfx.spawn(world, "taunt", global_position, from, 0.0, hero_id)
+
+## Отбрасывание: своего героя относит в точку, которую посчитал сервер.
+@rpc("authority", "call_local", "reliable")
+func ev_knock(dest: Vector3) -> void:
+	if not is_local:
+		return
+	velocity = Vector3.ZERO
+	var tw := create_tween()
+	tw.tween_property(self, "global_position", Vector3(dest.x, global_position.y, dest.z), 0.35).set_ease(Tween.EASE_OUT)
 
 ## Рывок воина: свой герой стремительно переносится к цели.
 @rpc("authority", "reliable")
