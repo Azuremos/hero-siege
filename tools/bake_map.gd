@@ -83,6 +83,36 @@ func _cyl(pos: Vector3, radius: float, height: float) -> void:
 	cs.shape = sh
 	_add(body, cs)
 
+var _fp_cache: Dictionary = {}
+
+## Половина ширины модели по её габаритам (при масштабе 1) — для размера коллайдера.
+func _footprint(path: String) -> float:
+	if _fp_cache.has(path):
+		return _fp_cache[path]
+	var inst := (load(path) as PackedScene).instantiate() as Node3D
+	var box := AABB()
+	var first := true
+	for mi in inst.find_children("*", "MeshInstance3D", true, false):
+		var local := Transform3D.IDENTITY
+		var n: Node = mi
+		while n != inst:
+			local = (n as Node3D).transform * local
+			n = n.get_parent()
+		var bb: AABB = local * (mi as MeshInstance3D).mesh.get_aabb()
+		box = bb if first else box.merge(bb)
+		first = false
+	inst.free()
+	var r := maxf(box.size.x, box.size.z) * 0.5
+	_fp_cache[path] = r
+	print("  габарит %s: %.2f" % [path.get_file(), r])
+	return r
+
+## Коллайдер-цилиндр под декорацию: доля frac от её половины ширины (ствол, а не крона).
+## Случайные числа не трогаем — расстановка карты остаётся прежней.
+func _prop_collider(path: String, p: Vector2, scl: float, frac: float, height: float = 6.0) -> void:
+	var r := maxf(0.35, _footprint(path) * scl * frac)
+	_cyl(Vector3(p.x, 0, p.y), r, height)
+
 func _face_center(p: Vector2) -> float:
 	return atan2(-p.x, -p.y)
 
@@ -324,9 +354,11 @@ func _town() -> void:
 			["bucket_water.gltf", Vector2(-10, 14)], ["crate_long_A.gltf", Vector2(14, 24)], ["barrel.gltf", Vector2(24, 15)]]:
 		var p: Vector2 = pr[1]
 		_place(PROPS + pr[0], Vector3(p.x, 0, p.y), rng.randf() * TAU, S, town)
+		_prop_collider(PROPS + pr[0], p, S, 0.5, 2.0)
 	# Деревья внутри стен
 	for tp in [Vector2(-28, -24), Vector2(28, 24), Vector2(24, -28), Vector2(-24, 28)]:
 		_mm(NATURE + "tree_single_A.gltf", Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * TREE_S), Vector3(tp.x, 0, tp.y)))
+		_prop_collider(NATURE + "tree_single_A.gltf", tp, TREE_S, 0.16, 8.0)
 	occupied.append([Vector2.ZERO, 50.0])
 
 # ---------------------------------------------------------------- кладбища (точки появления)
@@ -361,6 +393,10 @@ func _graveyards() -> void:
 			var item: String = pick[rng.randi() % pick.size()]
 			var scl := 1.6 if item.begins_with("tree") else 1.3
 			_place(GRAVE + item, Vector3(p.x, 0, p.y), rot + rng.randf_range(-0.3, 0.3), scl, gy)
+			if item.begins_with("tree"):
+				_prop_collider(GRAVE + item, p, scl, 0.18, 6.0)
+			elif item.begins_with("grave"):
+				_prop_collider(GRAVE + item, p, scl, 0.4, 2.0)
 			placed += 1
 		occupied.append([spawn, 24.0])
 
@@ -381,6 +417,7 @@ func _nature() -> void:
 		var s := TREE_S * rng.randf_range(0.85, 1.2)
 		_mm(NATURE + item, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), Vector3(p.x, 0, p.y)))
 		occupied.append([p, 5.5])
+		_prop_collider(NATURE + item, p, s, 0.6 if item.begins_with("hills") else 0.45, 10.0)
 		placed += 1
 	# Камни
 	for i in 120:
@@ -388,7 +425,13 @@ func _nature() -> void:
 		if absf(p.x) < 40 and absf(p.y) < 40:
 			continue
 		var item := "rock_single_%s.gltf" % ["A", "B", "C", "D", "E"][rng.randi() % 5]
-		_mm(NATURE + item, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(5.0, 9.0)), Vector3(p.x, 0, p.y)))
+		var rock_s := rng.randf_range(5.0, 9.0)    # порядок как в прежней формуле: сначала масштаб, потом поворот
+		var rock_rot := rng.randf() * TAU
+		_mm(NATURE + item, Transform3D(Basis(Vector3.UP, rock_rot).scaled(Vector3.ONE * rock_s), Vector3(p.x, 0, p.y)))
+		# на дорогах камень остаётся без коллайдера, чтобы не перегородить путь
+		var rock_r := _footprint(NATURE + item) * rock_s * 0.75
+		if _dist_to_lanes(p) > rock_r + 3.0:
+			_cyl(Vector3(p.x, 0, p.y), maxf(0.35, rock_r), 3.0)
 	# Горы по краю карты
 	var mountains := ["mountain_A_grass_trees.gltf", "mountain_B_grass_trees.gltf", "mountain_C_grass_trees.gltf", "mountain_A_grass.gltf", "mountain_B.gltf"]
 	var t := -152.0
