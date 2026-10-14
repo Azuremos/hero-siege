@@ -138,6 +138,13 @@ const SPELLS := {
 		"effects": [{"type": "damage", "min": 55.0, "max": 65.0, "frozen_bonus": 1.0}, {"type": "freeze", "dur": 4.0}],
 		"vfx": "ice_block", "anim": "shoot",
 	},
+	"meteor_strike": {
+		"name": "Огненная глыба", "school": "fire", "icon": "ОГ", "talent": true,
+		"desc": "Глыба падает в точку через 0.7 сек.: 55–70 урона огнём всем в радиусе 6 м и горение 24 ед. за 4 сек.",
+		"target": "ground", "delivery": "auto_spell", "auto": "meteor", "radius": 6.0,
+		"cast": 0.0, "cd": 30.0, "mana": 50.0, "range": 36.0,
+		"vfx": "meteor", "anim": "raise",
+	},
 	# --- книга заклинаний (сессия 04) ---
 	"fire_blast": {
 		"name": "Огненный взрыв", "school": "fire", "icon": "ОВ",

@@ -159,6 +159,14 @@ func _build_trees() -> void:
 			cell.gui_input.connect(func(ev: InputEvent):
 				if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 					_learn(tid))
+			if t.has("spell") and not _preview:
+				# изученный талант-заклинание можно перетащить на панель
+				var tsid: String = t["spell"]
+				cell.set_drag_forwarding(func(_at: Vector2) -> Variant:
+					if int(_ranks().get(tid, 0)) <= 0:
+						return null
+					cell.set_drag_preview(SpellIcon.make(tsid, 50))
+					return {"type": "spell", "sid": tsid, "from": -1}, Callable(), Callable())
 			grid.add_child(cell)
 			var icon := SpellIcon.make_talent(t, col, CELL - 6)
 			icon.position = Vector2(3, 3)
