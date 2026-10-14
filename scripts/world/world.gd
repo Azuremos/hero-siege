@@ -292,6 +292,8 @@ func ev_number(target_id: int, amount: float, kind: String, school: String, sour
 	hud.floating_number(u, amount, kind, school, crit, target_id == local_hero.hero_id)
 
 func announce_all(text: String, color: Color = Color(1, 0.9, 0.6)) -> void:
+	if not Net.cli.is_empty():
+		print("ANNOUNCE [t=%d]: %s" % [int(now()), text])
 	ev_announce.rpc(text, color)
 
 @rpc("authority", "call_local", "reliable")
@@ -362,6 +364,14 @@ func _process(delta: float) -> void:
 			mobs.alive_count() if is_server() else mobs.client_alive_count, int(castle.hp),
 			lh.unit.level if lh else 0, lh.xp if lh else 0, int(lh.unit.hp) if lh else 0, int(lh.unit.max_hp) if lh else 0,
 			int(lh.unit.mana) if lh else 0, lh.gold if lh else 0])
+	if Net.cli.has("chasedebug") and _test_t >= 1.0 and _test_t - delta < 1.0:
+		for i in lanes.size():
+			print("LANE ", i, " ", lanes[i])
+	if Net.cli.has("chasedebug") and Net.cli.has("post") and _test_t >= 1.5 and _test_t - delta < 1.5:
+		var pf: PackedFloat64Array = Net.cli["post"].split_floats(",")
+		local_hero.global_position = Vector3(pf[0], 0.5, pf[1])
+	if Net.cli.has("chasedebug") and is_server() and _log_t == 0.0:
+		print("CHASE chases=%d drops=%d flips=%d hero=%s" % [mobs.dbg_chases, mobs.dbg_drops, mobs.dbg_flips, local_hero.global_position if local_hero else Vector3.ZERO])
 	if Net.cli.has("level") and is_server() and _test_t >= 1.0 and _test_t - delta < 1.0:
 		for h in heroes.values():
 			while h.unit.level < int(Net.cli["level"]):
@@ -384,6 +394,15 @@ func _process(delta: float) -> void:
 		spells.send_to_server("request_cast", ["ice_wall", 0, Vector3(0, 0, 22), 0.6, 6.0])
 	if Net.cli.has("walltest") and _test_t >= 5.0 and _test_t - delta < 5.0:
 		spells.send_to_server("request_cast", ["fire_wall", 0, Vector3(0, 0, 24), 0.0, 8.0])
+	if Net.cli.has("walldmg") and is_server():
+		for st in [1, 2]:
+			if _test_t >= 4.0 + st and _test_t - delta < 4.0 + st:
+				for id in mobs.walls:
+					var w: Dictionary = mobs.walls[id]
+					w["hp"] = w["max"] * (0.45 if st == 1 else 0.2)
+					w["stage"] = st
+					mobs.ev_wall_damage.rpc(id, st)
+					print("WALL ", id, " stage=", st, " hp=", int(w["hp"]), "/", int(w["max"]))
 	if Net.cli.has("walltest") and _test_t >= 6.0 and _test_t - delta < 6.0:
 		for id in mobs.walls:
 			print("WALL ", id, " len=", (mobs.walls[id]["a"] as Vector2).distance_to(mobs.walls[id]["b"]))
@@ -462,6 +481,8 @@ func _process(delta: float) -> void:
 	if Net.cli.has("autotest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		var fwd := -local_hero.global_transform.basis.z
 		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())
+	if Net.cli.has("focustest"):
+		_focus_test_step()
 	if Net.cli.has("vfxtest") and _test_t >= 2.0 and _test_t - delta < 2.0:
 		_vfx_showcase()
 	if Net.cli.has("startwave") and is_server() and wave == 0 and _test_t > 1.0:
@@ -473,11 +494,11 @@ func _process(delta: float) -> void:
 		waves._next_wave_at = now()
 	if Net.cli.has("shot-at") and absf(_test_t - float(Net.cli["shot-at"])) < delta * 0.5 + 0.001:
 		_save_shot(Net.cli.get("shot", "user://shot.png"))
-	if Net.cli.has("quit-after") and _test_t >= float(Net.cli["quit-after"]):
+	if Net.cli.has("quit-after") and _test_t >= float(Net.cli["quit-after"]) and not Sfx._quitting:
 		if Net.cli.has("shot"):
 			_save_shot(Net.cli["shot"].get_basename() + "_end.png")
 		print("TEST END: wave=%d state=%s castle=%d" % [wave, game_state, int(castle.hp)])
-		get_tree().quit()
+		Sfx.quit_game()
 
 func _save_shot(path: String) -> void:
 	var img := get_viewport().get_texture().get_image()
@@ -517,3 +538,57 @@ func _update_music(delta: float) -> void:
 	if game_state == "running" or game_state == "clearing":
 		track = "battle"
 	Sfx.play_music(track)
+## --focustest: клик мышью по кнопкам у панели, закрытие окон, затем Пробел —
+## герой должен прыгнуть, а окна не открыться (кнопки HUD не берут фокус).
+var _ft_step := 0
+var _ft_y0 := 0.0
+var _ft_max_y := 0.0
+
+func _focus_test_step() -> void:
+	var steps := [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.6]
+	if _ft_step >= steps.size() or _test_t < steps[_ft_step]:
+		if _ft_step == 7:
+			_ft_max_y = maxf(_ft_max_y, local_hero.global_position.y)
+		return
+	var btns: Array = [hud._talent_btn, hud._book_btn, hud._char_btn]
+	match _ft_step:
+		0, 2, 4:
+			var b: Control = btns[_ft_step / 2]
+			_ft_click(b.get_global_rect().get_center())
+		1, 3, 5:
+			var shown: Array = []
+			for w in [hud._talent_window, hud._spellbook, hud._char_window]:
+				if w and w.visible:
+					shown.append(w.name)
+			print("FOCUS click opened: ", shown)
+			_ft_key(KEY_ESCAPE)
+		6:
+			_ft_y0 = local_hero.global_position.y
+			_ft_max_y = _ft_y0
+			print("FOCUS owner before space: ", get_viewport().gui_get_focus_owner())
+			_ft_key(KEY_SPACE)
+			_ft_key(KEY_TAB)
+		7:
+			var open: Array = []
+			for w in [hud._talent_window, hud._spellbook, hud._char_window]:
+				if w and w.visible:
+					open.append(w.name)
+			print("FOCUS TEST: jumped=%s (dy=%.2f) open_windows=%s focus=%s" % [_ft_max_y - _ft_y0 > 0.3, _ft_max_y - _ft_y0, open, get_viewport().gui_get_focus_owner()])
+	_ft_step += 1
+
+func _ft_click(p: Vector2) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		ev.position = p
+		ev.global_position = p
+		Input.parse_input_event(ev)
+
+func _ft_key(code: Key) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventKey.new()
+		ev.keycode = code
+		ev.physical_keycode = code
+		ev.pressed = pressed
+		Input.parse_input_event(ev)

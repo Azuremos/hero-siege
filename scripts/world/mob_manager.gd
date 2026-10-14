@@ -265,6 +265,8 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 		m.next_think = t + 0.35 + randf() * 0.15
 		_think(m)
 
+	if _dbg_on:
+		_dbg_track(m, t)
 	var goal := m.pos2
 	var moving := false
 	var reach := float(m.def["range"])
@@ -696,3 +698,24 @@ func _play(m: Mob, n: String, blend: float, force: bool = false) -> void:
 		m.anim.play(n, blend)
 		if force:
 			m.anim.seek(0.0, false)
+
+# ---------------------------------------------------------------- --chasedebug
+## Счётчик «беготни»: моб бросил погоню (CHASE → MOVE) и меньше чем через 2 с снова погнался (MOVE → CHASE).
+var _dbg_on: bool = Net.cli.has("chasedebug")
+var _dbg_state: Dictionary = {}
+var _dbg_drop: Dictionary = {}
+var dbg_drops := 0
+var dbg_flips := 0
+var dbg_chases := 0
+
+func _dbg_track(m: Mob, t: float) -> void:
+	var id: int = m.unit.id
+	var prev: int = _dbg_state.get(id, -1)
+	if prev == S.CHASE and m.state == S.MOVE:
+		_dbg_drop[id] = t
+		dbg_drops += 1
+	if prev != S.CHASE and m.state == S.CHASE:
+		dbg_chases += 1
+	elif prev == S.MOVE and m.state == S.CHASE and t - float(_dbg_drop.get(id, -100.0)) < 2.0:
+		dbg_flips += 1
+	_dbg_state[id] = m.state

@@ -72,8 +72,10 @@ func _ready() -> void:
 		add_child(p)
 		_p3d.append(p)
 
-## При выходе из игры останавливаем всё, иначе аудиосервер держит потоки и Godot пишет об утечке.
-func _exit_tree() -> void:
+var _quitting := false
+
+## Остановить все звуки и музыку.
+func stop_all() -> void:
 	for p in _p2d + _p3d + _music:
 		p.stop()
 		p.stream = null
@@ -117,6 +119,8 @@ func _setup(p: Node, name: String, vol: float) -> void:
 
 ## Звук интерфейса / без положения в мире.
 func play(name: String, vol: float = 0.0) -> void:
+	if _quitting:
+		return
 	if not _allowed(name):
 		return
 	var p: AudioStreamPlayer = _pick(_p2d)
@@ -125,6 +129,8 @@ func play(name: String, vol: float = 0.0) -> void:
 
 ## Звук в точке мира (с затуханием по расстоянию).
 func play_at(name: String, pos: Vector3, vol: float = 0.0) -> void:
+	if _quitting:
+		return
 	var cam := get_viewport().get_camera_3d()
 	if cam and cam.global_position.distance_squared_to(pos) > 85.0 * 85.0:
 		return
@@ -155,6 +161,8 @@ var _music_idx := 0
 
 ## Трек из assets/music: menu, battle, rest. Пустое имя — тишина.
 func play_music(track: String) -> void:
+	if _quitting:
+		return
 	if track == _music_name:
 		return
 	_music_name = track
@@ -175,3 +183,21 @@ func play_music(track: String) -> void:
 	to.volume_db = -40.0
 	to.play()
 	create_tween().tween_property(to, "volume_db", -6.0, 1.5)
+
+## Закрыть игру: сначала заглушить звук и дать аудиосерверу пару кадров отпустить потоки,
+## иначе при выходе Godot пишет об утечке ресурсов.
+func quit_game() -> void:
+	if _quitting:
+		return
+	_quitting = true
+	stop_all()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_tree().quit()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		stop_all()
+
+func _exit_tree() -> void:
+	stop_all()

@@ -38,6 +38,8 @@ func my_id() -> int:
 ## Версия игры — одна на всё: application/config/version в project.godot (совпадает с тегом релиза).
 ## Играть вместе можно только на одинаковой версии.
 func game_version() -> String:
+	if cli.has("fakeversion"):
+		return str(cli["fakeversion"])
 	return str(ProjectSettings.get_setting("application/config/version", "?"))
 
 ## Адреса этого компьютера — подсказка для хоста (Radmin VPN выдаёт 26.x.x.x).
@@ -52,7 +54,11 @@ func local_addresses() -> Array:
 func host_game(is_solo: bool = false) -> Error:
 	leave()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(PORT, MAX_PLAYERS)
+	# Одиночной игре порт не нужен: любой свободный и только на этом компьютере —
+	# можно играть, даже если 7777 занят другой копией игры, и брандмауэр не спрашивает.
+	if is_solo:
+		peer.set_bind_ip("127.0.0.1")
+	var err := peer.create_server(0 if is_solo else PORT, 1 if is_solo else MAX_PLAYERS)
 	if err != OK:
 		return err
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
@@ -123,6 +129,7 @@ func _register_player(info: Dictionary) -> void:
 	if version != game_version():
 		var theirs := version if version != "" else "старая (до 0.5)"
 		lobby_notice = "%s пытался подключиться с версией %s — нужна %s." % [pname, theirs, game_version()]
+		print("VERSION REJECT: ", lobby_notice)
 		players_changed.emit()
 		_version_mismatch.rpc_id(id, game_version())
 		_kick_later(id)

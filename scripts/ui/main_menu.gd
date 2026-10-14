@@ -153,7 +153,7 @@ func _build_ui() -> void:
 	_big_button(m, "Таланты классов", func(): _show("talents"))
 	_big_button(m, "Настройки", _toggle_settings)
 	_big_button(m, "Об игре", func(): _show("about"))
-	_big_button(m, "Выход", func(): get_tree().quit())
+	_big_button(m, "Выход", func(): Sfx.quit_game())
 
 	# --- экран героя (общий для одиночной и сетевой игры)
 	var h := _panel("hero", 460)
@@ -448,6 +448,9 @@ func _on_join() -> void:
 func _on_fail(reason: String) -> void:
 	_open_hero("net")
 	_status.text = reason
+	if not Net.cli.is_empty():
+		print("NET FAIL: ", reason.replace("
+", " "))
 	_status.add_theme_color_override("font_color", Color(1, 0.6, 0.5))
 
 func _refresh_lobby() -> void:
@@ -569,4 +572,4 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_READY and _cli.has("menushot"):
 		await get_tree().create_timer(1.5).timeout
 		get_viewport().get_texture().get_image().save_png(_cli["menushot"])
-		get_tree().quit()
+		Sfx.quit_game()
