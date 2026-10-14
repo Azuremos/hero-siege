@@ -1444,7 +1444,9 @@ func _process(delta: float) -> void:
 	var tk := Keys.label("talents")
 	_talent_btn.text = "Таланты (%s)" % tk if free_pts <= 0 else "Таланты (%s)  +%d" % [tk, free_pts]
 	_talent_btn.modulate = Color(1.3, 1.15, 0.6) if free_pts > 0 else Color.WHITE
-	_book_btn.text = _with_key("Книга", "spellbook")
+	var book_new: bool = not preload("res://scripts/ui/spellbook.gd").pending_rows(world.local_hero).is_empty()
+	_book_btn.text = _with_key("Книга", "spellbook") + ("  !" if book_new else "")
+	_book_btn.modulate = Color(1.3, 1.15, 0.6).lerp(Color.WHITE, 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.008)) if book_new else Color.WHITE
 	_char_btn.text = _with_key("Персонаж", "character")
 	_meter_btn.text = _with_key("Счётчик", "meter")
 
@@ -1920,4 +1922,8 @@ func _update_elite_tags() -> void:
 
 ## Книга заклинаний: выбор изменился (окно книги перерисуется, когда появится).
 func on_choices_changed() -> void:
-	pass
+	Sfx.play("ui_learn")
+	world.local_hero.controller.sync_bar()
+	rebuild_action_bar()
+	if _spellbook and _spellbook.visible:
+		_spellbook.refresh()

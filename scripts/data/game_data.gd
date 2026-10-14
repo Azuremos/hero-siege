@@ -216,6 +216,9 @@ func compute_mods(class_id: String, ranks: Dictionary, choices: Dictionary = {})
 		var tid: String = src[2]
 		for md in t.get("mods", []):
 			var scope: String = md[0]
+			# талант на заклинание из ряда книги усиливает любой выбранный вариант этого ряда
+			if scope.begins_with("spell:") and book_row_of(class_id, scope.trim_prefix("spell:")) >= 0:
+				scope = "row:%d" % book_row_of(class_id, scope.trim_prefix("spell:"))
 			if scope.begins_with("row:"):
 				var chosen := book_choice(class_id, int(scope.trim_prefix("row:")), choices)
 				if chosen == "":
