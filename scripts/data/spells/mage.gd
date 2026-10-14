@@ -278,9 +278,9 @@ const SPELLS := {
 	},
 	"scorch_passive": {
 		"name": "Опаление", "school": "fire", "icon": "Оп", "passive": true,
-		"desc": "Пассивно: огненные попадания с шансом 15% оставляют под целью горящую лужу на 3 сек.",
+		"desc": "Пассивно: критические удары огнём оставляют под целью горящую лужу на 3 сек.",
 		"target": "self", "delivery": "instant", "cast": 0.0, "cd": 0.0, "mana": 0.0, "range": 0.0,
-		"proc": {"on": "spell_hit", "school": "fire", "chance": 0.15, "spell": "scorch_pool"},
+		"proc": {"on": "spell_hit", "school": "fire", "crit": true, "chance": 1.0, "spell": "scorch_pool"},
 		"vfx": "hit_fire", "anim": "raise",
 	},
 	"brittle_ice": {

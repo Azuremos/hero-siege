@@ -2,6 +2,24 @@ extends RefCounted
 ## Заклинания: Воин. Формат полей — в начале scripts/data/game_data.gd (раздел «Заклинания»).
 ## Здесь же заклинания, которые класс получает из талантов.
 
+const CLASS := "warrior"
+
+## Книга заклинаний: базовые даются сразу, в каждом ряду — выбор одного из трёх (docs/design/spellbook.md).
+const BOOK := {
+	"base": ["heroic_strike", "charge", "battle_shout", "taunt", "pummel"],
+	"rows": [
+		{"level": 2, "name": "Ротация", "role": "ротация", "options": ["rend", "bloodthirst", "shield_slam"]},
+		{"level": 3, "name": "Мобильность", "role": "мобильность", "options": ["heroic_leap", "berserker_rage", "intervene"]},
+		{"level": 5, "name": "Площадь", "role": "площадь", "options": ["sweeping_strikes", "whirlwind", "thunder_clap"]},
+		{"level": 7, "name": "Ослабление", "role": "контроль", "options": ["hamstring", "piercing_howl", "demoralizing_shout"]},
+		{"level": 9, "name": "Добивание", "role": "ротация", "options": ["execute", "victory_rush", "revenge"]},
+		{"level": 11, "name": "Утилита", "role": "утилита", "options": ["sunder_armor", "bloodrage", "spell_reflection"]},
+		{"level": 14, "name": "Личная защита", "role": "защита", "options": ["die_by_the_sword", "enraged_regeneration", "shield_wall"]},
+		{"level": 18, "name": "Большая", "role": "большая", "options": ["colossus_smash", "recklessness", "last_stand"]},
+		{"level": 22, "name": "Мастерство", "role": "мастерство", "options": ["bladestorm", "bloodlust_passive", "shield_and_sword"]},
+	],
+}
+
 const SPELLS := {
 	# ======================= ВОИН (ярость вместо маны: поле mana = ярость) =======================
 	"heroic_strike": {
@@ -123,6 +141,167 @@ const SPELLS := {
 		"cast": 0.0, "cd": 30.0, "mana": 5.0, "range": 0.0,
 		"enemy_fx": [{"type": "taunt", "dur": 6.0}],
 		"vfx": "taunt_aoe", "anim": "raise",
+	},
+	# --- книга заклинаний (сессия 04) ---
+	"rend": {
+		"name": "Кровопускание", "school": "physical", "icon": "Кр", "melee": true,
+		"desc": "Кровотечение: урон в течение 15 сек.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 0.0, "mana": 10.0, "range": 4.5,
+		"effects": [{"type": "dot", "total": 60.0, "dur": 15.0, "tick": 3.0, "key": "rend"}],
+		"vfx": "hit_blood", "anim": "melee",
+	},
+	"shield_slam": {
+		"name": "Мощный удар щитом", "school": "physical", "icon": "МУЩ", "melee": true,
+		"desc": "Удар щитом. 5 сек. воин получает на 25% меньше урона.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 6.0, "mana": 10.0, "range": 4.5,
+		"effects": [{"type": "damage", "min": 40.0, "max": 48.0}],
+		"self_fx": [{"type": "buff", "key": "shield_slam", "dur": 5.0, "mods": {"dmg_taken": -0.25}}],
+		"vfx": "hit_phys", "anim": "melee",
+	},
+	"heroic_leap": {
+		"name": "Героический прыжок", "school": "physical", "icon": "ГП", "no_gcd": true,
+		"desc": "Прыжок в точку до 20 м. При приземлении оглушает врагов в 4 м на 1,5 сек.",
+		"target": "ground", "delivery": "leap", "radius": 4.0,
+		"cast": 0.0, "cd": 25.0, "mana": 0.0, "range": 20.0,
+		"enemy_fx": [{"type": "damage", "min": 20.0, "max": 24.0}, {"type": "stun", "dur": 1.5}],
+		"vfx": "nova_phys", "anim": "raise",
+	},
+	"berserker_rage": {
+		"name": "Ярость берсерка", "school": "physical", "icon": "ЯБ", "no_gcd": true,
+		"desc": "3 сек. без контроля и +60% к скорости.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 20.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "cleanse"}, {"type": "buff", "key": "berserker", "dur": 3.0, "mods": {"speed": 0.6}}],
+		"vfx": "aura_war", "anim": "raise",
+	},
+	"intervene": {
+		"name": "Вмешательство", "school": "physical", "icon": "Вм", "no_gcd": true,
+		"desc": "Рывок к союзнику. Он получает щит на 15% здоровья на 4 сек.",
+		"target": "ally", "delivery": "dash_ally",
+		"cast": 0.0, "cd": 20.0, "mana": 0.0, "range": 25.0,
+		"effects": [{"type": "absorb", "pct_max": 0.15, "dur": 4.0}],
+		"vfx": "shield", "anim": "raise",
+	},
+	"sweeping_strikes": {
+		"name": "Рассекающий удар", "school": "physical", "icon": "РУ", "no_gcd": true,
+		"desc": "6 сек. удары воина задевают ещё 2 врагов рядом (60% урона).",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 12.0, "mana": 10.0, "range": 0.0,
+		"effects": [{"type": "buff", "key": "sweeping", "dur": 6.0}],
+		"vfx": "aura_war", "anim": "raise",
+	},
+	"hamstring": {
+		"name": "Подрезать сухожилия", "school": "physical", "icon": "ПС", "melee": true,
+		"desc": "Замедляет цель на 50% на 10 сек.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 0.0, "mana": 10.0, "range": 4.5,
+		"effects": [{"type": "damage", "min": 8.0, "max": 10.0}, {"type": "slow", "pct": 0.5, "dur": 10.0}],
+		"vfx": "hit_blood", "anim": "melee",
+	},
+	"piercing_howl": {
+		"name": "Пронзительный вой", "school": "physical", "icon": "ПВ",
+		"desc": "Враги в 10 м замедлены на 50% на 6 сек.",
+		"target": "self", "delivery": "self_aoe", "radius": 10.0,
+		"cast": 0.0, "cd": 15.0, "mana": 10.0, "range": 0.0,
+		"enemy_fx": [{"type": "slow", "pct": 0.5, "dur": 6.0}],
+		"vfx": "taunt_aoe", "anim": "raise",
+	},
+	"victory_rush": {
+		"name": "Победный раж", "school": "physical", "icon": "ПР", "melee": true,
+		"desc": "Удар, который лечит воина на 20% здоровья.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 20.0, "mana": 0.0, "range": 4.5,
+		"effects": [{"type": "damage", "min": 34.0, "max": 40.0}, {"type": "heal_self_pct", "pct": 0.2}],
+		"vfx": "hit_blood", "anim": "melee",
+	},
+	"revenge": {
+		"name": "Реванш", "school": "physical", "icon": "Рв", "melee": true,
+		"desc": "Сильный удар по цели и ещё 2 врагам рядом.",
+		"target": "enemy", "delivery": "target_aoe", "radius": 5.0, "max_targets": 3,
+		"cast": 0.0, "cd": 5.0, "mana": 5.0, "range": 4.5,
+		"effects": [{"type": "damage", "min": 40.0, "max": 46.0}],
+		"vfx": "nova_phys", "anim": "melee",
+	},
+	"sunder_armor": {
+		"name": "Раскол брони", "school": "physical", "icon": "РБ", "melee": true,
+		"desc": "Цель 10 сек. получает на 20% больше физического урона.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 20.0, "mana": 10.0, "range": 4.5,
+		"effects": [{"type": "damage", "min": 18.0, "max": 22.0}, {"type": "buff", "key": "sunder_armor", "dur": 10.0, "mods": {"phys_taken": 0.2}}],
+		"vfx": "hit_phys", "anim": "melee",
+	},
+	"bloodrage": {
+		"name": "Кровавая ярость", "school": "physical", "icon": "КЯ", "no_gcd": true,
+		"desc": "Сразу 30 ярости.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 60.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "rage", "amount": 30.0}],
+		"vfx": "aura_war", "anim": "raise",
+	},
+	"spell_reflection": {
+		"name": "Отражение заклинаний", "school": "physical", "icon": "ОЗ", "no_gcd": true,
+		"desc": "5 сек.: следующее вражеское заклинание отражается обратно.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 25.0, "mana": 10.0, "range": 0.0,
+		"effects": [{"type": "buff", "key": "spell_reflect", "dur": 5.0}],
+		"vfx": "shield", "anim": "raise",
+	},
+	"die_by_the_sword": {
+		"name": "Бой насмерть", "school": "physical", "icon": "БН", "no_gcd": true,
+		"desc": "6 сек. воин получает на 70% меньше физического урона.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 90.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "buff", "key": "die_by_the_sword", "dur": 6.0, "mods": {"phys_taken": -0.7}}],
+		"vfx": "aura_war", "anim": "raise",
+	},
+	"enraged_regeneration": {
+		"name": "Безудержное восстановление", "school": "physical", "icon": "БВ", "no_gcd": true,
+		"desc": "Восстанавливает 30% здоровья за 10 сек.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 120.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "hot_pct", "pct": 0.3, "dur": 10.0, "tick": 1.0, "key": "enraged_regeneration"}],
+		"vfx": "aura_war", "anim": "raise",
+	},
+	"colossus_smash": {
+		"name": "Сокрушение колосса", "school": "physical", "icon": "СКл",
+		"desc": "Враги в 8 м 10 сек. получают на 25% больше физического урона.",
+		"target": "self", "delivery": "self_aoe", "radius": 8.0,
+		"cast": 0.0, "cd": 90.0, "mana": 10.0, "range": 0.0,
+		"enemy_fx": [{"type": "damage", "min": 30.0, "max": 36.0}, {"type": "buff", "key": "colossus_smash", "dur": 10.0, "mods": {"phys_taken": 0.25}}],
+		"vfx": "nova_phys", "anim": "melee",
+	},
+	"last_stand": {
+		"name": "Последний рубеж", "school": "physical", "icon": "ПРб", "no_gcd": true,
+		"desc": "Сразу лечит на 30% здоровья, 20 сек. воин получает на 20% меньше урона.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 180.0, "mana": 0.0, "range": 0.0,
+		"effects": [{"type": "heal_pct", "pct": 0.3}, {"type": "buff", "key": "last_stand", "dur": 20.0, "mods": {"dmg_taken": -0.2}}],
+		"vfx": "aura_war", "anim": "raise",
+	},
+	"bladestorm": {
+		"name": "Вихрь клинков", "school": "physical", "icon": "ВК",
+		"desc": "6 сек. вращения: удар по всем в 7 м каждую секунду, контроль не действует.",
+		"target": "self", "delivery": "instant",
+		"cast": 0.0, "cd": 90.0, "mana": 20.0, "range": 0.0,
+		"effects": [{"type": "buff", "key": "berserker", "dur": 6.0},
+			{"type": "pulse", "dur": 6.0, "tick": 1.0, "radius": 7.0, "key": "bladestorm", "effects": [{"type": "damage", "min": 18.0, "max": 22.0}]}],
+		"vfx": "whirl", "anim": "spin",
+	},
+	"bloodlust_passive": {
+		"name": "Кровожадность", "school": "physical", "icon": "Кж", "passive": true,
+		"desc": "Пассивно: каждое убийство даёт 10 ярости.",
+		"target": "self", "delivery": "instant", "cast": 0.0, "cd": 0.0, "mana": 0.0, "range": 0.0,
+		"flags": [["kill_rage", 10.0]],
+		"vfx": "hit_blood", "anim": "raise",
+	},
+	"shield_and_sword": {
+		"name": "Щит и меч", "school": "physical", "icon": "ЩМч", "passive": true,
+		"desc": "Пассивно: Реванш и Удар грома с шансом 30% сбрасывают перезарядку Мощного удара щитом.",
+		"target": "self", "delivery": "instant", "cast": 0.0, "cd": 0.0, "mana": 0.0, "range": 0.0,
+		"proc": {"on": "cast", "spells": ["revenge", "thunder_clap"], "chance": 0.3, "reset": "shield_slam"},
+		"vfx": "shield", "anim": "raise",
 	},
 	# --- прерывание (сессия 02)
 	"pummel": {
