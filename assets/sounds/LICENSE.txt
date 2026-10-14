@@ -6,6 +6,7 @@ CC0 (без обязательного указания авторов):
   - Ice breaking/shattering — IgnasD — https://opengameart.org/content/ice-breakingshattering
   - Kenney: Impact Sounds, Interface Sounds, RPG Audio, Music Jingles — https://kenney.nl
     (blade_hit_1..4 — Impact Sounds: impactMetal_heavy/medium; sword_swing_1..3 — «80 CC0 RPG SFX»: blade_01..03)
+    (proc_alert — Interface Sounds: glass_003)
 
 CC BY 3.0 (нужно указать автора — https://creativecommons.org/licenses/by/3.0/):
   - «3 Heal Spells» — DoKashiteru — https://opengameart.org/content/3-heal-spells  (heal_1..3; переведены из AIFF в WAV)

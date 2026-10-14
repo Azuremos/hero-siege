@@ -68,6 +68,12 @@ func _ready() -> void:
 	_check(v, "Панель заклинаний 2 — вертикально", bool(Settings.get_ui_opt("bar2_vertical", false)), func(on):
 		Settings.set_ui_opt("bar2_vertical", on)
 		_ui_changed(), false)
+	_check(v, "Прок: бегущая рамка на ячейке", bool(Settings.get_ui_opt("proc_border", true)), func(on):
+		Settings.set_ui_opt("proc_border", on)
+		_ui_changed(), false)
+	_check(v, "Прок: сигнал в центре экрана и звук", bool(Settings.get_ui_opt("proc_center", true)), func(on):
+		Settings.set_ui_opt("proc_center", on)
+		_ui_changed(), false)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	v.add_child(row)

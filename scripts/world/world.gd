@@ -444,6 +444,8 @@ func _process(delta: float) -> void:
 	if Net.cli.has("autotest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		var fwd := -local_hero.global_transform.basis.z
 		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())
+	if Net.cli.has("giveproc") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
+		local_hero.unit.add_buff(Net.cli["giveproc"], now() + 30.0, {})
 	if Net.cli.has("godmode") and is_server():
 		for gh in heroes.values():
 			gh.unit.hp = maxf(gh.unit.hp, gh.unit.max_hp * 0.35)   # не погибает, но лекарю есть кого лечить

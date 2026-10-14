@@ -13,6 +13,7 @@ const SLOT := 58.0
 const SLOT_GAP := 6.0
 const PORTRAIT_SHADER := preload("res://shaders/portrait.gdshader")
 const SWEEP_SHADER := preload("res://shaders/cooldown_sweep.gdshader")
+const PROC_SHADER := preload("res://shaders/proc_border.gdshader")
 
 var world: Node3D
 var hover_unit_id := 0
@@ -23,9 +24,9 @@ var _root: Control
 var _overlay: Control
 var _frames: Dictionary = {}           # id -> Control (подвижные рамки)
 var _frame_titles := {"player": "Мой герой", "target": "Цель", "party": "Группа", "bar1": "Панель 1",
-	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима"}
+	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима", "proc": "Сигнал прока"}
 var _layout_pos: Dictionary = {}       # id -> Vector2 (сохранённое)
-var _opts := {"party_horizontal": false, "bar2_vertical": false}
+var _opts := {"party_horizontal": false, "bar2_vertical": false, "proc_border": true, "proc_center": true}
 
 var _player: Dictionary
 var _target_frame: Dictionary
@@ -95,6 +96,7 @@ func setup(w: Node3D) -> void:
 	_build_bars()
 	_build_cast_bar()
 	_build_mode_panel()
+	_build_proc_alert()
 	_build_messages()
 	_build_menu()
 	_build_help()
@@ -544,6 +546,13 @@ func _make_slot(box: BoxContainer, b: int, i: int) -> void:
 		var icon := SpellIcon.make(sid, SLOT - 4)
 		icon.position = Vector2(2, 2)
 		slot.add_child(icon)
+		var proc := ColorRect.new()
+		proc.size = Vector2(SLOT, SLOT)
+		proc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var pmat := ShaderMaterial.new()
+		pmat.shader = PROC_SHADER
+		proc.material = pmat
+		proc.visible = false
 		var gcd := _sweep(slot, Color(0, 0, 0, 0.32), Color(1.0, 0.92, 0.55, 0.9))
 		var cd := _sweep(slot, Color(0, 0, 0, 0.68), Color(1.0, 0.92, 0.55, 0.5))
 		var cd_l := _label("", 18, Color(1, 0.95, 0.6))
@@ -562,7 +571,8 @@ func _make_slot(box: BoxContainer, b: int, i: int) -> void:
 		lock_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		lock_l.size = Vector2(SLOT - 4, SLOT - 4)
 		lock.add_child(lock_l)
-		entry.merge({"cd": cd, "gcd": gcd, "cd_l": cd_l, "icon": icon, "lock": lock})
+		slot.add_child(proc)
+		entry.merge({"cd": cd, "gcd": gcd, "cd_l": cd_l, "icon": icon, "lock": lock, "proc": proc})
 	var key := _label(Keys.short_label("bar%d_%d" % [b + 1, i]), 12, Color(1, 1, 1, 0.9))
 	key.position = Vector2(5, 1)
 	slot.add_child(key)
@@ -645,6 +655,72 @@ func _build_cast_bar() -> void:
 	cl.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cb.add_child(cl)
 	_cast_bar = {"panel": cast, "bar": cb, "label": cl}
+
+## Сигнал прока в центре экрана, как Spell Activation Overlay в WoW: крупные полупрозрачные иконки
+## усиленного заклинания по бокам от героя, пока прок активен. Двигается в режиме настройки интерфейса.
+const PROC_ICON := 92.0
+const PROC_GAP := 240.0
+var _proc_alert: Dictionary = {}
+var _proc_seen: Dictionary = {}
+
+func _build_proc_alert() -> void:
+	var root := Control.new()
+	root.custom_minimum_size = Vector2(PROC_ICON * 2.0 + PROC_GAP, PROC_ICON + 28.0)
+	_frame("proc", root)
+	var left := Control.new()
+	left.size = Vector2(PROC_ICON, PROC_ICON)
+	left.pivot_offset = left.size * 0.5
+	root.add_child(left)
+	var right := Control.new()
+	right.position = Vector2(PROC_ICON + PROC_GAP, 0)
+	right.size = Vector2(PROC_ICON, PROC_ICON)
+	right.pivot_offset = right.size * 0.5
+	root.add_child(right)
+	var label := _label("", 18, GOLD)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = Vector2(0, PROC_ICON + 2.0)
+	label.size = Vector2(root.custom_minimum_size.x, 24)
+	root.add_child(label)
+	root.visible = false
+	_proc_alert = {"root": root, "left": left, "right": right, "label": label, "sid": ""}
+
+func _update_proc_alert(lh, t: float) -> void:
+	var known: Array = lh.spell_list()
+	var active: Array = []       # [ключ прока, заклинание]
+	for b in lh.net_buffs:
+		if GameData.PROC_BUFFS.has(b[0]):
+			for s in GameData.PROC_BUFFS[b[0]]["spells"]:
+				if known.has(s):
+					active.append([b[0], s])
+					break
+	var keys := {}
+	for a in active:
+		keys[a[0]] = true
+		if not _proc_seen.has(a[0]) and _opts["proc_center"]:
+			Sfx.play("proc_alert")
+	_proc_seen = keys
+	var root: Control = _proc_alert["root"]
+	var editing := is_editing()
+	root.visible = editing or (_opts["proc_center"] and not active.is_empty())
+	if not root.visible or known.is_empty():
+		_proc_alert["sid"] = ""
+		return
+	var key: String = active[0][0] if not active.is_empty() else ""
+	var sid: String = active[0][1] if not active.is_empty() else known[0]
+	if _proc_alert["sid"] != sid:
+		_proc_alert["sid"] = sid
+		for side in ["left", "right"]:
+			var holder: Control = _proc_alert[side]
+			for c in holder.get_children():
+				c.queue_free()
+			holder.add_child(SpellIcon.make(sid, PROC_ICON))
+		var title: String = GameData.BUFF_INFO[key]["name"] if GameData.BUFF_INFO.has(key) else "Сигнал прока"
+		(_proc_alert["label"] as Label).text = "%s — %s" % [title, GameData.SPELLS[sid]["name"]]
+	var p := 0.5 + 0.5 * sin(t * 5.0)
+	for side in ["left", "right"]:
+		var holder: Control = _proc_alert[side]
+		holder.modulate = Color(1.15, 1.05, 0.8, 0.45 + 0.3 * p)
+		holder.scale = Vector2.ONE * (1.0 + 0.06 * p)
 
 ## Панель режима: у осады — номер волны, прочность замка, золото и кнопка «Начать волну сейчас».
 func _build_mode_panel() -> void:
@@ -823,6 +899,7 @@ func _default_pos(id: String, size: Vector2, vp: Vector2) -> Vector2:
 				return Vector2(vp.x - size.x - 16, (vp.y - size.y) * 0.5)
 			return Vector2((vp.x - BAR_SLOTS * (SLOT + SLOT_GAP)) * 0.5 + 80, bar1_y - size.y - 8)
 		"cast": return Vector2((vp.x - size.x) * 0.5, vp.y - 250)
+		"proc": return Vector2((vp.x - size.x) * 0.5, vp.y * 0.3)
 	return Vector2.ZERO
 
 func _apply_layout() -> void:
@@ -835,7 +912,8 @@ func _apply_layout() -> void:
 
 func reset_layout() -> void:
 	_layout_pos.clear()
-	_opts = {"party_horizontal": false, "bar2_vertical": false}
+	_opts["party_horizontal"] = false
+	_opts["bar2_vertical"] = false
 	_set_party_horizontal(false)
 	_set_bar2_vertical(false)
 	_save_layout()
@@ -1235,12 +1313,14 @@ func _process(delta: float) -> void:
 		(s["gcd"].material as ShaderMaterial).set_shader_parameter("progress", gcd_frac)
 		s["cd_l"].text = str(int(ceil(cd_left))) if cd_left > 1.6 else ""
 		var no_mana: bool = lh.unit.mana < GameData.eff_mana(lh.unit, sid)
+		s["proc"].visible = procs.has(sid) and _opts["proc_border"]
 		if procs.has(sid):
-			# прок: заклинание светится, как в WoW
-			s["slot"].modulate = Color(1.0 + 0.6 * pulse, 1.0 + 0.45 * pulse, 0.6)
+			# прок: бегущая рамка, а без неё — ячейка светится, как раньше
+			s["slot"].modulate = Color(1.0 + 0.2 * pulse, 1.0 + 0.15 * pulse, 0.95) if _opts["proc_border"] else Color(1.0 + 0.6 * pulse, 1.0 + 0.45 * pulse, 0.6)
 		else:
 			s["slot"].modulate = Color(0.55, 0.6, 1.0) if no_mana else (Color(1.25, 1.25, 1.0) if c.aim_spell == sid else Color.WHITE)
 
+	_update_proc_alert(lh, t)
 	_buff_t -= delta
 	if _buff_t <= 0.0:
 		_buff_t = 0.25
