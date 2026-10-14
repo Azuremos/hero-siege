@@ -363,6 +363,12 @@ func _town() -> void:
 
 # ---------------------------------------------------------------- кладбища (точки появления)
 
+## Логова фракций у точек появления: юг (полоса 2) — кладбище нежити, восток (1) — лагерь орков,
+## запад (3) — огненная яма демонов, север (0) — лагерь гоблинов и огров.
+## Случайные числа основного генератора расходуются как раньше (лес и камни не сдвигаются),
+## у логов свой генератор.
+const LAIR_BY_LANE := ["goblins", "orcs", "undead", "demons"]
+
 func _graveyards() -> void:
 	var gy := _add(mroot, Node3D.new(), "Graveyards")
 	for k in lanes.size():
@@ -370,17 +376,21 @@ func _graveyards() -> void:
 		var out_dir := spawn.normalized()
 		var rot := _face_center(spawn)
 		var crypt_p := spawn + out_dir * 12.0
-		_place(GRAVE + "crypt.gltf", Vector3(crypt_p.x, 0, crypt_p.y), rot, 1.3, gy)
-		_box(Vector3(crypt_p.x, 0, crypt_p.y), Vector3(7.8, 9, 10.4), rot)
 		var arch_p := spawn - out_dir * 6.0
-		_place(GRAVE + "arch_gate.gltf", Vector3(arch_p.x, 0, arch_p.y), rot, 1.6, gy)
 		var side := Vector2(-out_dir.y, out_dir.x)
-		for s in [-1.0, 1.0]:
-			var pillar: Vector2 = arch_p + side * s * 3.6
-			_cyl(Vector3(pillar.x, 0, pillar.y), 0.6, 6.0)
-			for f in 3:
-				var fp: Vector2 = arch_p + side * s * (6.0 + f * 3.6)
-				_place(GRAVE + ("fence.gltf" if f != 1 else "fence_broken.gltf"), Vector3(fp.x, 0, fp.y), rot, 1.6, gy)
+		var undead: bool = LAIR_BY_LANE[k] == "undead"
+		if undead:
+			_place(GRAVE + "crypt.gltf", Vector3(crypt_p.x, 0, crypt_p.y), rot, 1.3, gy)
+			_box(Vector3(crypt_p.x, 0, crypt_p.y), Vector3(7.8, 9, 10.4), rot)
+			_place(GRAVE + "arch_gate.gltf", Vector3(arch_p.x, 0, arch_p.y), rot, 1.6, gy)
+			for s in [-1.0, 1.0]:
+				var pillar: Vector2 = arch_p + side * s * 3.6
+				_cyl(Vector3(pillar.x, 0, pillar.y), 0.6, 6.0)
+				for f in 3:
+					var fp: Vector2 = arch_p + side * s * (6.0 + f * 3.6)
+					_place(GRAVE + ("fence.gltf" if f != 1 else "fence_broken.gltf"), Vector3(fp.x, 0, fp.y), rot, 1.6, gy)
+		else:
+			_lair(LAIR_BY_LANE[k], k, spawn, out_dir, side, rot)
 		var placed := 0
 		var tries := 0
 		while placed < 16 and tries < 200:
@@ -392,11 +402,13 @@ func _graveyards() -> void:
 				"grave_A_destroyed.gltf", "tree_dead_large.gltf", "tree_dead_medium.gltf", "post_lantern.gltf", "skull.gltf", "bone_A.gltf"]
 			var item: String = pick[rng.randi() % pick.size()]
 			var scl := 1.6 if item.begins_with("tree") else 1.3
-			_place(GRAVE + item, Vector3(p.x, 0, p.y), rot + rng.randf_range(-0.3, 0.3), scl, gy)
-			if item.begins_with("tree"):
-				_prop_collider(GRAVE + item, p, scl, 0.18, 6.0)
-			elif item.begins_with("grave"):
-				_prop_collider(GRAVE + item, p, scl, 0.4, 2.0)
+			var yaw_r := rng.randf_range(-0.3, 0.3)
+			if undead:
+				_place(GRAVE + item, Vector3(p.x, 0, p.y), rot + yaw_r, scl, gy)
+				if item.begins_with("tree"):
+					_prop_collider(GRAVE + item, p, scl, 0.18, 6.0)
+				elif item.begins_with("grave"):
+					_prop_collider(GRAVE + item, p, scl, 0.4, 2.0)
 			placed += 1
 		occupied.append([spawn, 24.0])
 
@@ -472,3 +484,161 @@ func _bounds() -> void:
 	for side in 4:
 		var p := _rot90(Vector2(0, -MAP_HALF - 2), side)
 		_box(Vector3(p.x, 0, p.y), Vector3(300, 20, 4), -PI * 0.5 * side)
+
+# ---------------------------------------------------------------- логова фракций
+
+const LAVA_SHADER := preload("res://shaders/lava.gdshader")
+
+## Ставит декор, если он не на дороге. Возвращает узел или null.
+func _lp(path: String, p: Vector2, yaw: float, scl: float, parent: Node, collider_frac: float = 0.0, h: float = 3.0) -> Node3D:
+	if _dist_to_lanes(p) < 5.5:
+		return null
+	var n := _place(path, Vector3(p.x, 0, p.y), yaw, scl, parent)
+	if collider_frac > 0.0:
+		_prop_collider(path, p, scl, collider_frac, h)
+	return n
+
+## Огонь костра: частицы на GPU, без источников света.
+func _campfire(parent: Node3D, p: Vector2, lrng: RandomNumberGenerator) -> void:
+	if _dist_to_lanes(p) < 6.0:
+		return
+	for i in 6:
+		var a := TAU * float(i) / 6.0
+		_place(NATURE + "rock_single_%s.gltf" % ["A", "B", "C"][i % 3], Vector3(p.x + cos(a) * 0.9, 0, p.y + sin(a) * 0.9), lrng.randf() * TAU, 1.6, parent)
+	var fire := Node3D.new()
+	fire.position = Vector3(p.x, 0.2, p.y)
+	_add(parent, fire, "Fire")
+	_glow_particles(fire, Color(1.0, 0.5, 0.12), 28, 0.9, 0.35, Vector3(0, 3.0, 0))
+	_cyl(Vector3(p.x, 0, p.y), 1.2, 1.0)
+
+func _darken(n: Node3D, col: Color) -> void:
+	if n == null:
+		return
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = col
+	mat.roughness = 0.95
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).material_override = mat
+
+func _lair(faction: String, k: int, spawn: Vector2, out_dir: Vector2, side: Vector2, rot: float) -> void:
+	var lair := _add(mroot, Node3D.new(), "Lair_" + faction)
+	var lrng := RandomNumberGenerator.new()
+	lrng.seed = 7700 + k
+	var back := spawn + out_dir * 10.0
+	match faction:
+		"orcs":
+			# военный лагерь: шатры, частокол, знамёна, тотемы, костры
+			for t in [[-9.0, 6.0], [9.0, 6.0], [-6.0, 15.0], [6.0, 15.0]]:
+				_lp(PROPS + "tent.gltf", spawn + side * t[0] + out_dir * t[1], rot + PI + lrng.randf_range(-0.3, 0.3), S * 1.5, lair, 0.45, 3.0)
+			for i in 9:
+				var a := lerpf(-1.25, 1.25, float(i) / 8.0)
+				var p := spawn + (out_dir * cos(a) + side * sin(a)) * 21.0
+				_lp(TOWN + "fence_wood_straight.gltf", p, rot + a + PI * 0.5, S * 0.9, lair, 0.0)
+				_box(Vector3(p.x, 0, p.y), Vector3(4.2, 3, 0.8), rot + a + PI * 0.5)
+			for t in [[-12.0, 2.0], [12.0, 2.0], [0.0, 19.0]]:
+				_lp(GRAVE + "post_skull.gltf", spawn + side * t[0] + out_dir * t[1], rot, 2.2, lair, 0.3, 4.0)
+				_lp(DUNGEON + "banner_thin_red.gltf.glb", spawn + side * (t[0] + 1.2) + out_dir * t[1], rot, 1.3, lair)
+			_lp(DUNGEON + "banner_triple_red.gltf.glb", spawn + side * -14.0 + out_dir * 9.0, rot, 1.4, lair)
+			_lp(DUNGEON + "banner_triple_red.gltf.glb", spawn + side * 14.0 + out_dir * 9.0, rot, 1.4, lair)
+			_lp(PROPS + "weaponrack.gltf", spawn + side * 13.0 + out_dir * 14.0, rot, S, lair, 0.4, 2.0)
+			_lp(PROPS + "target.gltf", spawn + side * -14.0 + out_dir * 15.0, rot, S, lair, 0.3, 2.0)
+			_lp(PROPS + "resource_lumber.gltf", spawn + side * 10.0 + out_dir * 19.0, rot, S, lair, 0.4, 2.0)
+			_campfire(lair, spawn + side * -8.0 + out_dir * 1.0, lrng)
+			_campfire(lair, spawn + side * 8.0 + out_dir * 11.0, lrng)
+		"demons":
+			# огненная яма: лава, обугленные камни, портал между колоннами
+			var pit := MeshInstance3D.new()
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(16, 16)
+			pit.mesh = pm
+			var lm := ShaderMaterial.new()
+			lm.shader = LAVA_SHADER
+			pit.material_override = lm
+			pit.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			pit.position = Vector3(back.x + out_dir.x * 4.0, 0.05, back.y + out_dir.y * 4.0)
+			_add(lair, pit, "LavaPit")
+			for i in 14:
+				var a := TAU * float(i) / 14.0
+				var p := back + out_dir * 4.0 + Vector2(cos(a), sin(a)) * lrng.randf_range(8.5, 11.0)
+				_darken(_lp(NATURE + "rock_single_%s.gltf" % ["A", "B", "C", "D", "E"][i % 5], p, lrng.randf() * TAU, lrng.randf_range(4.0, 7.0), lair, 0.6, 3.0), Color(0.12, 0.08, 0.08))
+			var portal_c := spawn + out_dir * 3.0
+			for s in [-1.0, 1.0]:
+				var cp: Vector2 = portal_c + side * s * 3.2
+				_darken(_lp(DUNGEON + "column.gltf.glb", cp, rot, 2.2, lair, 0.35, 6.0), Color(0.18, 0.08, 0.1))
+			if _dist_to_lanes(portal_c) >= 0.0:
+				var ring := MeshInstance3D.new()
+				var tm := TorusMesh.new()
+				tm.inner_radius = 2.2
+				tm.outer_radius = 2.6
+				ring.mesh = tm
+				var rm := StandardMaterial3D.new()
+				rm.albedo_color = Color(0.5, 1.0, 0.3)
+				rm.emission_enabled = true
+				rm.emission = Color(0.45, 1.0, 0.25)
+				rm.emission_energy_multiplier = 2.0
+				ring.material_override = rm
+				ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				ring.position = Vector3(portal_c.x, 3.0, portal_c.y)
+				ring.rotation = Vector3(PI * 0.5, rot, 0)
+				_add(lair, ring, "Portal")
+				var swirl := Node3D.new()
+				swirl.position = ring.position
+				_add(lair, swirl, "PortalSwirl")
+				_glow_particles(swirl, Color(0.5, 1.0, 0.3), 30, 1.2, 2.0, Vector3.ZERO)
+			for t in [[-12.0, 4.0], [12.0, 4.0], [-14.0, 14.0], [14.0, 14.0]]:
+				_lp(GRAVE + "tree_dead_large.gltf", spawn + side * t[0] + out_dir * t[1], lrng.randf() * TAU, 1.8, lair, 0.18, 6.0)
+			for i in 8:
+				var p := spawn + side * lrng.randf_range(-15, 15) + out_dir * lrng.randf_range(2, 18)
+				_lp(GRAVE + ["skull.gltf", "ribcage.gltf", "bone_A.gltf", "skull_candle.gltf"][i % 4], p, lrng.randf() * TAU, 1.5, lair)
+		"goblins":
+			# лагерь гоблинов из хлама: развалины, леса, ящики, бочки с порохом, флаги; огры — у шахты
+			_lp(TOWN + "building_mine_blue.gltf", spawn + out_dir * 18.0, rot + PI, S, lair, 0.0)
+			_box(Vector3((spawn + out_dir * 18.0).x, 0, (spawn + out_dir * 18.0).y), Vector3(8, 6, 8), rot)
+			_lp(TOWN + "building_destroyed.gltf", spawn + side * -13.0 + out_dir * 9.0, rot + PI, S, lair, 0.0)
+			_box(Vector3((spawn + side * -13.0 + out_dir * 9.0).x, 0, (spawn + side * -13.0 + out_dir * 9.0).y), Vector3(7, 4, 7), rot)
+			_lp(TOWN + "building_scaffolding.gltf", spawn + side * 13.0 + out_dir * 10.0, rot + PI, S, lair, 0.0)
+			_box(Vector3((spawn + side * 13.0 + out_dir * 10.0).x, 0, (spawn + side * 13.0 + out_dir * 10.0).y), Vector3(7, 6, 7), rot)
+			var junk := [DUNGEON + "crates_stacked.gltf.glb", DUNGEON + "barrel_small_stack.gltf.glb", DUNGEON + "barrel_large.gltf.glb",
+				DUNGEON + "keg.gltf.glb", PROPS + "crate_open.gltf", PROPS + "pallet.gltf", PROPS + "wheelbarrow.gltf", PROPS + "sack.gltf",
+				PROPS + "resource_stone.gltf", DUNGEON + "box_large.gltf.glb"]
+			for i in 16:
+				var p := spawn + side * lrng.randf_range(-16, 16) + out_dir * lrng.randf_range(1, 20)
+				var item: String = junk[i % junk.size()]
+				var scl: float = S if item.begins_with(PROPS) else 1.1
+				_lp(item, p, lrng.randf() * TAU, scl, lair, 0.45, 2.0)
+			for t in [[-7.0, 2.0], [7.0, 2.0], [0.0, 13.0]]:
+				_lp(PROPS + "flag_yellow.gltf", spawn + side * t[0] + out_dir * t[1], rot, S, lair)
+			_lp(PROPS + "tent.gltf", spawn + side * -6.0 + out_dir * 16.0, rot + PI, S * 1.5, lair, 0.45, 3.0)
+			_campfire(lair, spawn + side * 9.0 + out_dir * 3.0, lrng)
+
+## Светящиеся частицы (огонь костра, вихрь портала) — на GPU, сохраняются в карту.
+func _glow_particles(parent: Node3D, col: Color, amount: int, life: float, radius: float, gravity: Vector3) -> void:
+	var p := GPUParticles3D.new()
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = radius
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 25.0
+	pm.initial_velocity_min = 0.4
+	pm.initial_velocity_max = 1.6
+	pm.gravity = gravity
+	pm.scale_min = 0.5
+	pm.scale_max = 1.0
+	pm.color = col
+	p.process_material = pm
+	var q := QuadMesh.new()
+	q.size = Vector2(0.35, 0.35)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = col
+	q.material = m
+	p.draw_pass_1 = q
+	p.amount = amount
+	p.lifetime = life
+	p.visibility_aabb = AABB(Vector3(-4, -1, -4), Vector3(8, 8, 8))
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_add(parent, p, "Particles")
