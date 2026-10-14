@@ -22,6 +22,10 @@ func _ready() -> void:
 	for a in [["talents", "Окно талантов"], ["spellbook", "Книга заклинаний"], ["character", "Персонаж и сумка"], ["meter", "Счётчик урона и лечения"]]:
 		actions.append(a[0])
 		names[a[0]] = a[1]
+	for i in 8:
+		var ma := "mark_%d" % (i + 1)
+		actions.append(ma)
+		names[ma] = "Метка на цель: %s" % ["Звезда", "Круг", "Ромб", "Треугольник", "Луна", "Квадрат", "Крест", "Череп"][i]
 	reset_defaults(false)
 	_load()
 
@@ -34,6 +38,8 @@ func reset_defaults(save_now: bool = true) -> void:
 	binds["spellbook"] = {"key": KEY_P, "shift": false, "ctrl": false, "alt": false}
 	binds["character"] = {"key": KEY_C, "shift": false, "ctrl": false, "alt": false}
 	binds["meter"] = {"key": KEY_K, "shift": false, "ctrl": false, "alt": false}
+	for i in 8:
+		binds["mark_%d" % (i + 1)] = {"key": BAR_KEYS[i], "shift": false, "ctrl": true, "alt": false}
 	if save_now:
 		save()
 		changed.emit()

@@ -330,10 +330,24 @@ func _build_target_frame() -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 3)
 	p.add_child(v)
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 4)
+	v.add_child(name_row)
+	var mark_icon := TextureRect.new()
+	mark_icon.custom_minimum_size = Vector2(20, 20)
+	mark_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	mark_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	mark_icon.visible = false
+	name_row.add_child(mark_icon)
 	var name_l := _label("", 16, GOLD)
-	v.add_child(name_l)
+	name_row.add_child(name_l)
 	_target_frame = _hp_mp(v, 22, 12)
-	_target_frame.merge({"name": name_l, "panel": p})
+	_target_frame.merge({"name": name_l, "panel": p, "mark": mark_icon})
+	# ПКМ по рамке цели — меню рейдовых меток
+	p.mouse_filter = Control.MOUSE_FILTER_STOP
+	p.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
+			_open_mark_menu())
 	var fx_row := HBoxContainer.new()
 	fx_row.add_theme_constant_override("separation", 3)
 	v.add_child(fx_row)
@@ -1300,6 +1314,7 @@ func _process(delta: float) -> void:
 		_target_ring.visible = false
 		_target_arrow.visible = false
 	_update_target_effects(lh, c, tu, t)
+	_update_marks(c, tu)
 	# подсветка существа под курсором
 	var hov: int = c.pick_unit(get_viewport().get_mouse_position()) if not c._dragged else 0
 	if hover_unit_id != 0:
@@ -1681,3 +1696,65 @@ func _fill_fx_row(row: HBoxContainer, list: Array, my_id: int, detailed: bool) -
 				var left: float = known[i][1]
 				(ch.get_meta("time") as Label).text = ("%d" % ceil(left)) if left < 600.0 else ""
 			i += 1
+
+# ---------------------------------------------------------------- рейдовые метки
+
+var _mark_icons: Array = []        # 8 значков над головами
+var _mark_menu: PopupMenu
+
+func _open_mark_menu() -> void:
+	var c = world.local_hero.controller if world.local_hero else null
+	if c == null or c.target_id == 0:
+		return
+	if _mark_menu == null:
+		_mark_menu = PopupMenu.new()
+		for i in world.marks.MARKS.size():
+			var tex: Texture2D = world.marks.texture(i + 1)
+			_mark_menu.add_icon_item(tex, "%s   (Ctrl+%d)" % [world.marks.MARKS[i]["name"], i + 1], i + 1)
+			_mark_menu.set_item_icon_max_width(i, 20)
+		_mark_menu.add_separator()
+		_mark_menu.add_item("Снять метку", 0)
+		_mark_menu.id_pressed.connect(func(idx: int):
+			var cc = world.local_hero.controller
+			if cc.target_id != 0:
+				world.marks.send("request_mark", [cc.target_id, idx]))
+		_root.add_child(_mark_menu)
+	_mark_menu.position = Vector2i(get_viewport().get_mouse_position())
+	_mark_menu.popup()
+
+## Метки над головами всех помеченных существ и значок в рамке цели.
+func _update_marks(c, tu: Unit) -> void:
+	if _mark_icons.is_empty():
+		for i in 8:
+			var tr := TextureRect.new()
+			tr.texture = world.marks.texture(i + 1)
+			tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tr.size = Vector2(30, 30)
+			tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			tr.visible = false
+			_root.add_child(tr)
+			_mark_icons.append(tr)
+	var cam := get_viewport().get_camera_3d()
+	for i in 8:
+		var tr: TextureRect = _mark_icons[i]
+		var uid := int(world.marks.marks.get(i + 1, 0))
+		var u: Unit = world.get_unit(uid) if uid != 0 else null
+		tr.visible = false
+		if u == null or not u.alive or cam == null:
+			continue
+		var p := u.pos
+		if u.node and is_instance_valid(u.node):
+			p = u.node.global_position
+		var head := 2.9 * (u.radius / 0.6 if u.kind == "mob" else 1.15) + 1.5
+		var wp := p + Vector3(0, head, 0)
+		if cam.is_position_behind(wp) or cam.global_position.distance_to(wp) > 90.0:
+			continue
+		var sp := cam.unproject_position(wp)
+		tr.position = sp - tr.size * 0.5
+		tr.visible = true
+	var tm: TextureRect = _target_frame["mark"]
+	var midx: int = world.marks.mark_of(tu.id) if tu else 0
+	tm.visible = midx != 0
+	if midx != 0:
+		tm.texture = world.marks.texture(midx)

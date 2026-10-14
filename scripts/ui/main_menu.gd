@@ -24,6 +24,7 @@ var _race_desc: Label
 var _waves_option: OptionButton
 var _lanes_option: OptionButton
 var _break_option: OptionButton
+var _marks_check: CheckBox
 var _ip_edit: LineEdit
 var _status: Label
 var _solo_box: Control
@@ -248,6 +249,10 @@ func _build_ui() -> void:
 	net.add_theme_constant_override("separation", 6)
 	h.add_child(net)
 	_net_box = net
+	_marks_check = CheckBox.new()
+	_marks_check.text = "Метки целей ставит только хост"
+	_marks_check.tooltip_text = "Иначе метки (Ctrl+1…8) может ставить любой игрок"
+	net.add_child(_marks_check)
 	var host := Button.new()
 	host.text = "Создать игру (хост)"
 	host.custom_minimum_size = Vector2(0, 42)
@@ -414,7 +419,8 @@ func _apply_local_info() -> void:
 	var n := _name_edit.text.strip_edges()
 	Net.local_info = {"name": n if n != "" else "Герой", "class": _selected_class(), "race": _selected_race()}
 	Net.settings = {"waves": int(_waves_option.get_item_metadata(_waves_option.selected)), "lanes": _lanes_option.selected + 1,
-		"break": int(_break_option.get_item_metadata(_break_option.selected))}
+		"break": int(_break_option.get_item_metadata(_break_option.selected)),
+		"marks_host_only": _marks_check.button_pressed or _cli.has("markshost")}
 	_save_settings()
 
 # ---------------------------------------------------------------- сеть

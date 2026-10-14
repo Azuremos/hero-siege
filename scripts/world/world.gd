@@ -8,6 +8,7 @@ const SpellSystemScript := preload("res://scripts/world/spell_system.gd")
 const HudScript := preload("res://scripts/ui/hud.gd")
 const EconomyScript := preload("res://scripts/world/economy.gd")
 const MeterScript := preload("res://scripts/world/meter.gd")
+const MarksScript := preload("res://scripts/world/marks.gd")
 
 var map: Node3D
 var heroes_root: Node3D
@@ -17,6 +18,7 @@ var spells: Node          # SpellSystem
 var mode: GameMode        # режим игры (осада, позже подземелья): волны, цели, победа и поражение
 var economy: Node         # Economy: торговцы, предметы, добыча
 var meter: Node           # счётчик урона и лечения
+var marks: Node           # рейдовые метки и пинги
 var hud: CanvasLayer
 
 var units: Dictionary = {}        # id -> Unit
@@ -63,6 +65,9 @@ func _ready() -> void:
 	meter = MeterScript.new()
 	meter.name = "Meter"
 	add_child(meter)
+	marks = MarksScript.new()
+	marks.name = "Marks"
+	add_child(marks)
 
 	_read_map()
 
@@ -468,6 +473,17 @@ func _process(delta: float) -> void:
 			spells.apply_effects(lu, best, [{"type": "slow", "pct": 0.4, "dur": 20.0}, {"type": "chill", "stacks": 3, "dur": 3.0}, {"type": "chill", "stacks": 3, "dur": 3.0},
 				{"type": "dot", "total": 6.0, "dur": 20.0, "tick": 2.0, "key": "ignite"}], "frostbolt", "frost")
 			spells.apply_effects(null, best, [{"type": "dot", "total": 6.0, "dur": 20.0, "tick": 2.0, "key": "burn"}], "fire_wall", "fire")
+	if Net.cli.has("marktest") and _test_t >= float(Net.cli["marktest"]) and _test_t - delta < float(Net.cli["marktest"]):
+		var near: Array = units.values().filter(func(mu): return mu.kind == "mob" and mu.alive)
+		near.sort_custom(func(a, b): return a.pos.distance_to(local_hero.unit.pos) < b.pos.distance_to(local_hero.unit.pos))
+		if near.size() >= 2:
+			local_hero.controller.target_id = near[0].id
+			marks.send("request_mark", [near[0].id, 8])
+			marks.send("request_mark", [near[1].id, 1])
+			marks.send("request_ping", [near[1].pos, near[1].id])
+		var fwd := -local_hero.global_transform.basis.z
+		get_tree().create_timer(1.1).timeout.connect(func(): marks.send("request_ping", [local_hero.global_position + fwd * 6.0, 0]))
+		print("MARKS ", marks.marks)
 	if Net.cli.has("godmode") and is_server():
 		for gh in heroes.values():
 			gh.unit.hp = maxf(gh.unit.hp, gh.unit.max_hp * 0.35)   # не погибает, но лекарю есть кого лечить
@@ -494,6 +510,8 @@ func _process(delta: float) -> void:
 			_manalog_summary()
 		if Net.cli.has("lootsim"):
 			print(economy.lootsim_report())
+		if Net.cli.has("marktest"):
+			print("MARKS END ", marks.marks)
 		if Net.cli.has("meterlog"):
 			meter.request_detail("total", local_hero.hero_id, "dmg")
 			print("METER total=", meter.view["total"]["rows"], " current=", meter.view["current"]["name"], " last=", meter.view["last"]["name"])

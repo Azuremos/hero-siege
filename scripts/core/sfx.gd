@@ -41,6 +41,7 @@ const SOUNDS := {
 	"book_close": [["book_close.ogg"], -6.0, 1, 0.05],
 	"coins": [["coins.ogg"], -14.0, 1, 0.3],
 	"proc_alert": [["proc_alert.ogg"], -6.0, 1, 0.3],
+	"ping": [["ping.ogg"], -4.0, 2, 0.2],
 }
 
 const POOL_2D := 8

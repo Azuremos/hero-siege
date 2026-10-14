@@ -157,6 +157,17 @@ func _mouse_button(mb: InputEventMouseButton) -> void:
 			_dragged = false
 
 func _click(pos: Vector2, is_left: bool) -> void:
+	# Alt+ЛКМ — пинг: по врагу «бить сюда», по земле — метка на 4 с
+	if is_left and Input.is_key_pressed(KEY_ALT):
+		var pid := pick_unit(pos)
+		var pu: Unit = world.get_unit(pid)
+		if pu and pu.alive and pu.team == Unit.Team.ENEMIES:
+			world.marks.send("request_ping", [pu.pos, pid])
+		else:
+			var gp = ground_point(pos)
+			if gp != null:
+				world.marks.send("request_ping", [gp, 0])
+		return
 	if not is_left:
 		var vid: String = world.economy.pick_vendor(camera, pos)
 		if vid != "":
@@ -185,6 +196,9 @@ func _key(k: InputEventKey) -> void:
 		world.hud.toggle_character()
 	elif action == "meter":
 		world.hud.toggle_meter()
+	elif action.begins_with("mark_"):
+		if target_id != 0:
+			world.marks.send("request_mark", [target_id, int(action.trim_prefix("mark_"))])
 	elif action == "spellbook":
 		world.hud.toggle_spellbook()
 	elif code >= KEY_F1 and code <= KEY_F6:

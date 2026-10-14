@@ -854,6 +854,7 @@ func heal(src: Unit, dst: Unit, amount: float, crit: bool, sid: String = "") -> 
 func _on_death(dst: Unit, src: Unit) -> void:
 	dst.alive = false
 	world.meter.on_death(dst, src)
+	world.marks.on_unit_died(dst.id)
 	var bombs: Array = dst.auras.filter(func(a): return a.has("explode"))
 	dst.auras.clear()
 	dst.buffs.clear()
