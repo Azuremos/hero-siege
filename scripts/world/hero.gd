@@ -383,7 +383,11 @@ func play_action(key: String) -> void:
 		_play(n, 0.08, true)
 		_action_left = minf(anim.get_animation(n).length, 1.0) * 0.85
 	if key == "melee" or key == "melee2":
-		Sfx.play_at("sword", global_position + Vector3(0, 1.2, 0))
+		# свист клинка, а в момент удара — металл
+		var at := global_position + Vector3(0, 1.2, 0)
+		Sfx.play_at("sword", at)
+		if key == "melee2":
+			get_tree().create_timer(0.16).timeout.connect(func(): Sfx.play_at("blade_hit", at))
 
 func _update_anim(delta: float) -> void:
 	if not alive_visual or anim == null:

@@ -338,7 +338,7 @@ const SPAWN_SOUNDS := {
 	"rooted": "ice_shatter", "ice_block": "frost_big", "aura_arcane": "arcane", "aura_holy": "shield",
 	"explosion_fire": "fire_big", "chain_arcane": "arcane", "chain_holy": "holy",
 	"frozen": "ice_shatter", "nova_arcane": "arcane", "blink": "arcane",
-	"hit_phys": "sword", "hit_blood": "sword", "nova_phys": "bones_fall", "whirl": "sword", "taunt": "horde",
+	"hit_phys": "blade_hit", "hit_blood": "blade_hit", "nova_phys": "bones_fall", "whirl": "sword", "taunt": "horde",
 	"taunt_aoe": "horde", "aura_war": "bell", "meteor": "fire", "holy_star": "holy", "proc": "ui_learn",
 }
 
