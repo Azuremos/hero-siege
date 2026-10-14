@@ -44,7 +44,27 @@ func my_id() -> int:
 func game_version() -> String:
 	if cli.has("fakeversion"):
 		return str(cli["fakeversion"])
-	return str(ProjectSettings.get_setting("application/config/version", "?"))
+	return str(ProjectSettings.get_setting("application/config/version", "?")) + "+" + net_fingerprint()
+
+## Отпечаток сетевого кода: хэш списка RPC всех сетевых скриптов. Между релизами версия одна
+## («0.7-dev»), а набор RPC меняется — разные сборки нумеруют вызовы по-разному, и движение
+## уходит не туда. Отпечаток не даёт подключиться с несовместимой сборкой.
+const NET_SCRIPTS := ["res://scripts/net/network.gd", "res://scripts/world/economy.gd", "res://scripts/world/hero.gd",
+	"res://scripts/world/marks.gd", "res://scripts/world/meter.gd", "res://scripts/world/mob_manager.gd",
+	"res://scripts/world/spell_system.gd", "res://scripts/world/world.gd"]
+var _fp := ""
+
+func net_fingerprint() -> String:
+	if _fp == "":
+		var parts: Array = []
+		for p in NET_SCRIPTS:
+			var s: Script = load(p)
+			var cfg = s.get_rpc_config()
+			var names: Array = cfg.keys() if cfg is Dictionary else []
+			names.sort()
+			parts.append(p.get_file() + ":" + ",".join(names))
+		_fp = ("|".join(parts)).md5_text().substr(0, 6)
+	return _fp
 
 ## Адреса этого компьютера — подсказка для хоста (Radmin VPN выдаёт 26.x.x.x).
 func local_addresses() -> Array:

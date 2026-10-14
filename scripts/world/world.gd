@@ -483,6 +483,10 @@ func _process(delta: float) -> void:
 			hud.toggle_talents()
 		else:
 			hud.toggle_spellbook()
+	# --poslog — раз в 5 сек. позиции всех героев глазами этого процесса (проверка сетевого движения)
+	if Net.cli.has("poslog") and fmod(_test_t, 5.0) < delta:
+		for h in heroes.values():
+			print("POS me=%d hero=%d local=%s pos=(%.1f, %.1f) alive=%s stun=%.1f spd=%.2f fwd=%.1f" % [Net.my_id(), h.peer_id, h.is_local, h.global_position.x, h.global_position.z, h.unit.alive, h.net_stun_left, h.net_speed, h.controller.move_forward if h.controller else 0.0])
 	# --testcast=fire_dash — герой произносит заклинание на 9-й секунде (точка — 9 м перед ним)
 	if Net.cli.has("testcast") and is_server() and _test_t >= 9.0 and _test_t - delta < 9.0:
 		var fwd3 := -local_hero.global_transform.basis.z
