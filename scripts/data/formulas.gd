@@ -9,28 +9,81 @@ static func xp_to_next(level: int) -> int:
 static func level_power(level: int) -> float:
 	return 1.0 + 0.05 * float(level - 1)
 
-## Состав волны: список [тип_моба, полоса].
-static func wave_composition(wave: int, lanes: int, final_boss: bool = false) -> Array:
-	var result: Array = []
-	var per_lane := 3 + int(wave * 0.8)
-	for lane in lanes:
-		for i in per_lane:
-			var t := "minion"
-			var roll := float((i * 7 + wave * 3 + lane * 5) % 10) / 10.0
-			if wave >= 3 and roll < 0.25:
-				t = "warrior"
-			elif wave >= 4 and roll < 0.45:
-				t = "rogue"
-			elif wave >= 5 and roll < 0.6:
-				t = "mage"
-			result.append([t, lane])
+## Бюджет волны на одну полосу: растёт с номером волны и (немного) с числом игроков.
+static func wave_budget(wave: int, players: int) -> float:
+	return (3.0 + 1.25 * float(wave)) * (1.0 + 0.15 * float(maxi(players, 1) - 1))
+
+## Состав волны из бюджета. lane_factions — фракция для каждой открытой полосы (по индексу).
+## Возвращает {"list": [[тип, индекс полосы, "" | "champion"], …], "special": "" | "scout" | "siege" | "arcane"}.
+## Случайность — от зерна волны и полосы: хост и тесты получают одну и ту же волну.
+static func wave_plan(wave: int, lane_factions: Array, players: int, final_boss: bool = false) -> Dictionary:
+	var Factions = load("res://scripts/data/factions.gd")
+	var Mobs = load("res://scripts/data/mob_data.gd")
+	var wrng := RandomNumberGenerator.new()
+	wrng.seed = wave * 7919 + 17
+	var special := ""
+	if wave >= 6 and wrng.randf() < 0.2:
+		special = ["scout", "siege", "arcane"][wrng.randi() % 3]
+	var list: Array = []
+	for li in lane_factions.size():
+		var f: String = lane_factions[li]
+		var rng := RandomNumberGenerator.new()
+		rng.seed = wave * 7919 + li * 104729 + f.hash()
+		var roster: Array = []
+		for id in Mobs.MOBS:
+			var d: Dictionary = Mobs.MOBS[id]
+			if d.get("faction", "") == f and not d["role"] in ["boss", "test"] and int(d["min_wave"]) <= wave:
+				roster.append(id)
+		var budget := wave_budget(wave, players)
+		var support_cap := 1 + wave / 6
+		var supports := 0
+		var guard := 0
+		while budget >= 0.8 and guard < 200:
+			guard += 1
+			# роль по весам (особая волна усиливает свои роли)
+			var weights: Dictionary = {}
+			var total := 0.0
+			for id in roster:
+				var d: Dictionary = Mobs.MOBS[id]
+				var role: String = d["role"]
+				if float(d["cost"]) > budget or (role == "support" and supports >= support_cap):
+					continue
+				var w: float = float(Factions.ROLE_WEIGHTS.get(role, 1.0))
+				if special != "":
+					w *= float(Factions.SPECIAL_WAVES[special]["roles"].get(role, 0.4))
+				# внутри роли — поровну между видами
+				var same := roster.filter(func(o): return Mobs.MOBS[o]["role"] == role).size()
+				weights[id] = w / float(maxi(same, 1))
+				total += weights[id]
+			if weights.is_empty():
+				break
+			var roll := rng.randf() * total
+			var pick: String = weights.keys()[0]
+			for id in weights:
+				roll -= weights[id]
+				if roll <= 0.0:
+					pick = id
+					break
+			budget -= float(Mobs.MOBS[pick]["cost"])
+			if Mobs.MOBS[pick]["role"] == "support":
+				supports += 1
+			list.append([pick, li, ""])
+	# «босс-волна»: у нежити — босс, у остальных фракций — чемпион (элитный с тремя аффиксами)
 	if wave % 5 == 0 or final_boss:
-		var boss := "boss_lich" if wave % 10 == 0 else "boss_warlord"
-		result.append([boss, wave % lanes])
-	return result
+		var boss_given := false
+		for li in lane_factions.size():
+			var fd: Dictionary = Factions.FACTIONS[lane_factions[li]]
+			if not fd["bosses"].is_empty():
+				if not boss_given:
+					list.append([fd["bosses"][1 if wave % 10 == 0 else 0], li, ""])
+					boss_given = true
+			elif fd["champion"] != "":
+				list.append([fd["champion"], li, "champion"])
+	return {"list": list, "special": special}
 
 static func mob_hp_mult(wave: int, players: int) -> float:
-	return (1.0 + 0.17 * float(wave - 1)) * (1.0 + 0.4 * float(max(players, 1) - 1))
+	# число игроков частично учтено в бюджете волны (больше врагов), остальное — в здоровье
+	return (1.0 + 0.17 * float(wave - 1)) * (1.0 + 0.32 * float(max(players, 1) - 1))
 
 static func mob_dmg_mult(wave: int) -> float:
 	return 1.0 + 0.09 * float(wave - 1)

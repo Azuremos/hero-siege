@@ -17,6 +17,8 @@ var next_wave_in := 0.0
 var wave_count := 20               # сколько волн в этой партии; 0 — бесконечная осада
 var active_lanes: Array = [0, 1, 2, 3]
 var break_time := DEFAULT_BREAK_TIME
+## Какая фракция идёт по какой полосе (полоса -> id фракции). Выбор хоста: по сторонам, случайно, одна везде.
+var lane_faction: Dictionary = {}
 
 var castle: Unit
 var castle_radius := 6.5
@@ -34,6 +36,7 @@ func setup(w: Node3D) -> void:
 	wave_count = clampi(int(Net.settings.get("waves", GameData.WAVE_COUNT)), 0, GameData.MAX_WAVES)
 	active_lanes = LANE_ORDER.slice(0, clampi(int(Net.settings.get("lanes", 4)), 1, 4))
 	break_time = clampf(float(Net.settings.get("break", DEFAULT_BREAK_TIME)), 10.0, 300.0)
+	_assign_factions()
 
 func read_map(map: Node3D) -> void:
 	for lane_node in map.get_node("Lanes").get_children():
@@ -62,6 +65,11 @@ func begin() -> void:
 	_next_wave_at = world.now() + delay
 	var mode: String = "  (бесконечная осада)" if wave_count == 0 else ("" if wave_count == GameData.WAVE_COUNT else "  (волн: %d)" % wave_count)
 	world.announce_all("Защитите замок! Первая волна через %d сек.%s" % [int(delay), mode])
+	var parts: Array = []
+	for l in active_lanes:
+		var fd: Dictionary = GameData.FACTIONS[lane_faction[l]]
+		parts.append("с %s — %s" % [["севера", "востока", "юга", "запада"][l], fd["name"].to_lower()])
+	world.announce_all("Идут: %s." % ", ".join(parts), Color(1, 0.75, 0.5))
 
 func is_resting() -> bool:
 	return state == "break"
@@ -76,7 +84,7 @@ func server_tick(_delta: float, t: float) -> void:
 		return
 	while not _queue.is_empty() and t >= _queue[0][0]:
 		var e: Array = _queue.pop_front()
-		world.mobs.spawn(e[1], e[2], wave, world.heroes.size(), e[3])
+		world.mobs.spawn(e[1], e[2], wave, world.heroes.size(), e[3], {"champion": e[4] == "champion"})
 	if _all_spawned:
 		next_wave_in = 0.0
 		if _queue.is_empty() and world.mobs.alive_count() == 0:
@@ -107,20 +115,26 @@ func _start_wave(t: float) -> void:
 	var w: int = wave
 	# В короткой партии (меньше 5 волн) последняя волна заканчивается боссом
 	var short_final: bool = wave_count > 0 and wave_count < 5 and w == wave_count
-	var comp: Array = GameData.wave_composition(w, active_lanes.size(), short_final)
+	var factions_by_index: Array = active_lanes.map(func(l): return lane_faction[l])
+	var plan: Dictionary = GameData.wave_plan(w, factions_by_index, world.heroes.size(), short_final)
+	var comp: Array = plan["list"]
 	var per_lane_time: Dictionary = {}
+	var headliners: Array = []
 	for e in comp:
 		var lane: int = active_lanes[int(e[1]) % active_lanes.size()]
 		var at: float = t + float(per_lane_time.get(lane, 0.0))
 		per_lane_time[lane] = float(per_lane_time.get(lane, 0.0)) + 0.8
 		var hp_scale: float = 0.35 if short_final and GameData.MOBS[e[0]].get("boss", false) else 1.0
-		if GameData.MOBS[e[0]].get("boss", false):
+		if GameData.MOBS[e[0]].get("boss", false) or e[2] == "champion":
 			at += 3.0
-		_queue.append([at, e[0], lane, hp_scale])
+			headliners.append(("чемпион %s" % GameData.MOBS[e[0]]["name"].to_lower()) if e[2] == "champion" else GameData.MOBS[e[0]]["name"])
+		_queue.append([at, e[0], lane, hp_scale, e[2]])
 	_queue.sort_custom(func(a, b): return a[0] < b[0])
 	var boss := ""
-	if w % 5 == 0 or short_final:
-		boss = " Идёт %s!" % GameData.MOBS["boss_lich" if w % 10 == 0 else "boss_warlord"]["name"]
+	if not headliners.is_empty():
+		boss = " Идёт %s!" % ", ".join(headliners)
+	if plan["special"] != "":
+		boss += "  %s!" % GameData.FactionData.SPECIAL_WAVES[plan["special"]]["name"]
 	world.sound_all("bell")
 	world.sound_all("horde")
 	var last: bool = wave_count > 0 and w >= wave_count
@@ -230,3 +244,34 @@ func game_over_details(victory: bool) -> String:
 	if victory:
 		return "Все волны отбиты (%d). Замок выстоял!" % wave_count
 	return "Замок пал на волне %d." % wave
+
+## Фракции по полосам. «По сторонам» (по умолчанию): юг — нежить, восток — орки, запад — демоны,
+## север — гоблины и огры; направления открываются в том же порядке, поэтому при 1 направлении — нежить.
+## «Случайно» — фракции перемешаны (зерно партии); «одна» — все полосы одной фракции (--faction=).
+func _assign_factions() -> void:
+	var mode_f := str(Net.settings.get("factions", "sides"))
+	var single := str(Net.settings.get("faction", "undead"))
+	if Net.cli.has("faction"):
+		mode_f = "single"
+		single = str(Net.cli["faction"])
+	if not GameData.FACTIONS.has(single):
+		single = "undead"
+	var order: Array = GameData.FactionData.ORDER.duplicate()
+	if mode_f == "random":
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(Net.settings.get("seed", 1))
+		for i in range(order.size() - 1, 0, -1):
+			var j := rng.randi() % (i + 1)
+			var tmp = order[i]
+			order[i] = order[j]
+			order[j] = tmp
+	for i in LANE_ORDER.size():
+		var lane: int = LANE_ORDER[i]
+		if mode_f == "single":
+			lane_faction[lane] = single
+		elif mode_f == "random":
+			lane_faction[lane] = order[i]
+		else:
+			for f in GameData.FACTIONS:
+				if int(GameData.FACTIONS[f]["lane"]) == lane:
+					lane_faction[lane] = f

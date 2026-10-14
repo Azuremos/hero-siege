@@ -25,6 +25,11 @@ var _waves_option: OptionButton
 var _lanes_option: OptionButton
 var _break_option: OptionButton
 var _marks_check: CheckBox
+var _faction_option: OptionButton
+## Фракции: [режим, подпись, фракция для «одной везде»]
+const FACTION_CHOICES := [["sides", "По сторонам света", ""], ["random", "Случайно по сторонам", ""],
+	["single", "Только нежить", "undead"], ["single", "Только орки", "orcs"], ["single", "Только демоны", "demons"],
+	["single", "Только гоблины и огры", "goblins"]]
 var _ip_edit: LineEdit
 var _status: Label
 var _solo_box: Control
@@ -235,6 +240,15 @@ func _build_ui() -> void:
 	_break_option.select(BREAK_CHOICES.find(60))
 	_break_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	opts.add_child(_break_option)
+	var l_f := _label("Фракции", 14, GOLD)
+	l_f.autowrap_mode = TextServer.AUTOWRAP_OFF
+	opts.add_child(l_f)
+	_faction_option = OptionButton.new()
+	for fo in FACTION_CHOICES:
+		_faction_option.add_item(fo[1])
+	_faction_option.tooltip_text = "По сторонам: юг — нежить, восток — орки, запад — демоны, север — гоблины и огры"
+	_faction_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opts.add_child(_faction_option)
 	# действия: одиночная
 	_solo_box = HBoxContainer.new()
 	_solo_box.add_theme_constant_override("separation", 6)
@@ -421,7 +435,9 @@ func _apply_local_info() -> void:
 	Net.local_info = {"name": n if n != "" else "Герой", "class": _selected_class(), "race": _selected_race()}
 	Net.settings = {"waves": int(_waves_option.get_item_metadata(_waves_option.selected)), "lanes": _lanes_option.selected + 1,
 		"break": int(_break_option.get_item_metadata(_break_option.selected)),
-		"marks_host_only": _marks_check.button_pressed or _cli.has("markshost")}
+		"marks_host_only": _marks_check.button_pressed or _cli.has("markshost"),
+		"factions": FACTION_CHOICES[_faction_option.selected][0], "faction": FACTION_CHOICES[_faction_option.selected][2],
+		"seed": randi()}
 	_save_settings()
 
 # ---------------------------------------------------------------- сеть

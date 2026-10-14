@@ -484,6 +484,20 @@ func _process(delta: float) -> void:
 		var fwd := -local_hero.global_transform.basis.z
 		get_tree().create_timer(1.1).timeout.connect(func(): marks.send("request_ping", [local_hero.global_position + fwd * 6.0, 0]))
 		print("MARKS ", marks.marks)
+	if Net.cli.has("mobtest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
+		var want: String = Net.cli["mobtest"]
+		var types: Array = []
+		for mid in GameData.MOBS:
+			if mid == want or (GameData.MOBS[mid].get("faction", "") == want and not GameData.MOBS[mid]["role"] in ["boss", "test"]):
+				types.append(mid)
+		var fwd := -local_hero.global_transform.basis.z
+		var side := fwd.cross(Vector3.UP)
+		for i in types.size():
+			var p3: Vector3 = local_hero.global_position + fwd * 9.0 + side * (float(i) - float(types.size() - 1) * 0.5) * 2.6
+			var uid: int = mobs.spawn(types[i], 2, 5, 1, 1.0, {"pos": Vector2(p3.x, p3.z)})
+			var mu: Unit = get_unit(uid)
+			mu.root_until = now() + 1e6     # стоят на месте для осмотра
+		print("MOBTEST ", types)
 	if Net.cli.has("godmode") and is_server():
 		for gh in heroes.values():
 			gh.unit.hp = maxf(gh.unit.hp, gh.unit.max_hp * 0.35)   # не погибает, но лекарю есть кого лечить

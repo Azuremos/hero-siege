@@ -132,7 +132,8 @@ func _remove_wall(id: int) -> void:
 
 # ---------------------------------------------------------------- появление и смерть
 
-func spawn(type: String, source: int, wave: int, players: int, hp_scale: float = 1.0) -> void:
+## opts: champion — чемпион фракции (сильнее, позже — 3 аффикса); pos — место появления (призыв).
+func spawn(type: String, source: int, wave: int, players: int, hp_scale: float = 1.0, opts: Dictionary = {}) -> int:
 	var def: Dictionary = GameData.MOBS[type]
 	var m := Mob.new()
 	var u := Unit.new()
@@ -143,6 +144,8 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	u.type_id = type
 	u.display_name = def["name"]
 	u.max_hp = float(def["hp"]) * GameData.mob_hp_mult(wave, players) * hp_scale
+	if opts.get("champion", false):
+		u.max_hp *= 4.0
 	if Net.cli.has("mobhp"):
 		u.max_hp *= float(Net.cli["mobhp"])    # тест: враги живут дольше, бой без пауз
 	u.hp = u.max_hp
@@ -157,6 +160,8 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	var ends: Array = world.mode.mob_start(source)
 	var start: Vector2 = ends[0]
 	m.pos2 = start + Vector2(randf_range(-2.5, 2.5), randf_range(-2.5, 2.5))
+	if opts.has("pos"):
+		m.pos2 = opts["pos"]
 	var t: float = world.now()
 	m.spawn_until = t + 1.3
 	m.next_think = t + 1.3 + randf() * 0.4
@@ -168,6 +173,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	world.units[u.id] = u
 	_make_visual(m)
 	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave])
+	return u.id
 
 func kill(u: Unit, killer: Unit) -> void:
 	var m: Mob = mobs.get(u.id, null)
@@ -434,9 +440,11 @@ func _attack(m: Mob, tu: Unit, t: float) -> void:
 	m.attack_ready = t + float(m.def["atk_speed"])
 	m.swing = (m.swing + 1) % 32
 	m.anim_state = AN.ATTACK
-	var fx := [{"type": "damage", "min": m.def["min"], "max": m.def["max"]}]
+	var fx: Array = [{"type": "damage", "min": m.def["min"], "max": m.def["max"]}]
+	fx.append_array(m.def.get("on_hit", []))     # выжигание маны, кража золота…
 	if m.def.get("ranged", false):
-		world.spells._launch_projectile(m.unit, tu, fx, "mob", "shadow", 20.0, "bolt_shadow", t)
+		var school: String = m.def.get("school", "shadow")
+		world.spells._launch_projectile(m.unit, tu, fx, "mob", school, 20.0, m.def.get("proj", "bolt_shadow"), t)
 	else:
 		world.spells.apply_effects(m.unit, tu, fx, "mob", "physical")
 		if m.def.has("cleave"):
@@ -563,7 +571,10 @@ func _make_visual(m: Mob) -> void:
 	m.anim_lock = 0.0
 	if m.ice:
 		m.ice.visible = false
-	_play(m, "Spawn_Ground_Skeletons", 0.0)
+	if m.def.get("src", "enemy") == "hero":
+		_play(m, "Cheer", 0.0)          # у моделей героев нет подъёма из земли — боевой клич
+	else:
+		_play(m, "Spawn_Ground_Skeletons", 0.0)
 	m.anim_lock = 1.2
 	if m.def.get("boss", false):
 		Sfx.play_at("boss_roar", m.node.position + Vector3(0, 2, 0), 6.0)
@@ -588,10 +599,11 @@ func _set_ice(m: Mob, on: bool) -> void:
 
 func _begin_dying(m: Mob) -> void:
 	_set_ice(m, false)
-	Sfx.play_at("bones_fall", m.node.position + Vector3(0, 0.5, 0))
+	var fs: Dictionary = GameData.FACTIONS.get(m.def.get("faction", "undead"), GameData.FACTIONS["undead"])["sounds"]
+	Sfx.play_at(fs["death"], m.node.position + Vector3(0, 0.5, 0))
 	m.death_time = 2.6
 	m.unit.alive = false
-	_play(m, "Death_C_Skeletons", 0.1)
+	_play(m, "Death_A" if m.def.get("src", "enemy") == "hero" else "Death_C_Skeletons", 0.1)
 	dying.append(m)
 
 func _process(delta: float) -> void:
@@ -632,13 +644,7 @@ func _choose_anim(m: Mob, delta: float) -> void:
 			return
 	if m.swing != m.last_swing:
 		m.last_swing = m.swing
-		var atk := "1H_Melee_Attack_Chop"
-		if m.def.get("ranged", false):
-			atk = "Spellcast_Shoot"
-		elif m.unit.type_id == "rogue":
-			atk = "Dualwield_Melee_Attack_Slice"
-		elif m.def.get("boss", false):
-			atk = "2H_Melee_Attack_Chop"
+		var atk: String = m.def.get("attack_anim", "Spellcast_Shoot" if m.def.get("ranged", false) else "1H_Melee_Attack_Chop")
 		_play(m, atk, 0.08, true)
 		m.anim_lock = 0.7
 		Sfx.play_at("mob_swing", m.node.position + Vector3(0, 1.2, 0))
@@ -676,7 +682,14 @@ func _advance_anim(m: Mob, delta: float, cam_pos: Vector3) -> void:
 		m.anim.advance(m.anim_acc * (m.anim_speed if m.anim_state == AN.MOVE else 1.0))
 		m.anim_acc = 0.0
 
+## Если у модели нет анимации (модели героев и скелетов немного различаются) — похожая.
+const ANIM_FALLBACK := {"Idle_Combat": "Idle", "Unarmed_Melee_Attack_Punch_A": "1H_Melee_Attack_Chop",
+	"Unarmed_Melee_Attack_Punch_B": "1H_Melee_Attack_Chop", "Spellcast_Summon": "Spellcast_Raise", "Interact": "Spellcasting",
+	"2H_Melee_Attack_Spinning": "2H_Melee_Attack_Chop", "Dualwield_Melee_Attack_Stab": "1H_Melee_Attack_Stab"}
+
 func _play(m: Mob, n: String, blend: float, force: bool = false) -> void:
+	if m.anim and not m.anim.has_animation(n) and ANIM_FALLBACK.has(n):
+		n = ANIM_FALLBACK[n]
 	if m.anim == null or (m.cur_anim == n and not force):
 		return
 	if m.anim.has_animation(n):

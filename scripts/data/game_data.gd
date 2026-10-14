@@ -24,13 +24,15 @@ const WAVE_INTERVAL := 42.0
 ## classes_data.gd    — классы, расы, школы магии, атрибуты
 ## spells/<класс>.gd  — заклинания класса (вместе с заклинаниями из его талантов)
 ## spell_effects.gd   — уровни открытия заклинаний, баффы, проки, автозаклинания
-## mob_data.gd        — враги
+## mob_data.gd        — враги четырёх фракций; factions.gd — фракции и стороны; mob_abilities.gd — способности врагов
 ## formulas.gd        — опыт, рост силы, состав волн, сила врагов
 ## talent_data.gd, item_data.gd — таланты и предметы
 
 const ClassData := preload("res://scripts/data/classes_data.gd")
 const SpellEffects := preload("res://scripts/data/spell_effects.gd")
 const MobData := preload("res://scripts/data/mob_data.gd")
+const FactionData := preload("res://scripts/data/factions.gd")
+const MobAbilities := preload("res://scripts/data/mob_abilities.gd")
 const Formulas := preload("res://scripts/data/formulas.gd")
 const SPELL_FILES := [
 	preload("res://scripts/data/spells/mage.gd"),
@@ -48,6 +50,8 @@ const BUFF_INFO := SpellEffects.BUFF_INFO
 const PROC_BUFFS := SpellEffects.PROC_BUFFS
 const AUTO_SPELLS := SpellEffects.AUTO_SPELLS
 const MOBS := MobData.MOBS
+const FACTIONS := FactionData.FACTIONS
+const MOB_ABILITIES := MobAbilities.ABILITIES
 
 # ---------------------------------------------------------------- Заклинания
 # target: enemy | ally | self | ground | wall
@@ -75,9 +79,9 @@ func xp_to_next(level: int) -> int:
 func level_power(level: int) -> float:
 	return Formulas.level_power(level)
 
-## Состав волны: список [тип_моба, полоса].
-func wave_composition(wave: int, lanes: int, final_boss: bool = false) -> Array:
-	return Formulas.wave_composition(wave, lanes, final_boss)
+## Состав волны из бюджета (formulas.gd): {"list": [[тип, индекс полосы, флаг], …], "special": …}.
+func wave_plan(wave: int, lane_factions: Array, players: int, final_boss: bool = false) -> Dictionary:
+	return Formulas.wave_plan(wave, lane_factions, players, final_boss)
 
 func mob_hp_mult(wave: int, players: int) -> float:
 	return Formulas.mob_hp_mult(wave, players)

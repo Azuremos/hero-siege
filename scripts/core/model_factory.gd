@@ -45,11 +45,14 @@ static func build_hero(class_id: String, race_id: String) -> Node3D:
 	_setup_anims(inst)
 	return holder
 
-## Враг: модель скелета с оружием в руках.
+## Враг: модель скелета с оружием в руках или (src «hero») модель героя KayKit на той же схеме костей —
+## с перекраской под фракцию, своим оружием в руках и масштабом.
 static func build_mob(mob_id: String) -> Node3D:
 	var def: Dictionary = GameData.MOBS[mob_id]
 	var holder := Node3D.new()
-	var inst := _scene("res://assets/enemies/%s.glb" % def["model"]).instantiate() as Node3D
+	var from_hero: bool = def.get("src", "enemy") == "hero"
+	var path := ("res://assets/heroes/%s.glb" if from_hero else "res://assets/enemies/%s.glb") % def["model"]
+	var inst := _scene(path).instantiate() as Node3D
 	inst.rotation.y = PI
 	holder.add_child(inst)
 	holder.scale = Vector3.ONE * float(def.get("scale", 1.0))
@@ -63,6 +66,13 @@ static func build_mob(mob_id: String) -> Node3D:
 			att.bone_name = "handslot.%s" % side
 			skel.add_child(att)
 			att.add_child(_scene("res://assets/enemies/weapons/%s.gltf" % weapons[side]).instantiate())
+		for att in skel.get_children():
+			if att is BoneAttachment3D and from_hero:
+				for item in att.get_children():
+					var hand: bool = att.bone_name.begins_with("handslot")
+					(item as Node3D).visible = def.get("show", []).has(item.name) if hand else not def.get("hide", []).has(item.name)
+		if def.get("recolor", "") != "":
+			_apply_recolor(inst, "%s|%s|" % [def["model"], def["recolor"]], def["recolor"], "")
 	_setup_anims(inst)
 	return holder
 
@@ -158,6 +168,11 @@ static func _apply_recolor(inst: Node, key: String, scheme: String, skin: String
 			if not _material_cache.has(mkey):
 				var mat := src.duplicate() as StandardMaterial3D
 				mat.albedo_texture = _recolor_texture(src.albedo_texture, scheme, skin)
+				if FACTION_SCHEMES.has(scheme) and FACTION_SCHEMES[scheme].has("glow"):
+					# тлеющее свечение (инфернал, бесы): своя подсветка, без источников света
+					mat.emission_enabled = true
+					mat.emission = FACTION_SCHEMES[scheme]["glow"]
+					mat.emission_energy_multiplier = 0.12
 				_material_cache[mkey] = mat
 			m.set_surface_override_material(s, _material_cache[mkey])
 
@@ -186,6 +201,8 @@ static func _recolor_texture(tex: Texture2D, scheme: String, skin: String) -> Te
 				elif s > 0.45 and (h > 0.85 or h < 0.02):
 					# малиновые вставки -> золото
 					out = Color.from_hsv(0.12, 0.7, clampf(v * 0.9 + 0.25, 0.0, 1.0))
+			if FACTION_SCHEMES.has(scheme):
+				out = _faction_pixel(FACTION_SCHEMES[scheme], c, h, s, v, is_skin)
 			if is_skin:
 				if skin == "pale":
 					out = Color.from_hsv(0.08, s * 0.55, clampf(v * 1.05, 0.0, 1.0))
@@ -198,3 +215,45 @@ static func _recolor_texture(tex: Texture2D, scheme: String, skin: String) -> Te
 ## Перекрасить готовую модель по схеме (например, «smith» — кузнец в кожаном фартуке).
 static func recolor_model(inst: Node, model_name: String, scheme: String) -> void:
 	_apply_recolor(inst, "%s|%s|" % [model_name, scheme], scheme, "")
+
+# ---------------------------------------------------------------- облики фракций
+## Временные облики орков, демонов, гоблинов и огров — перекраска моделей KayKit.
+## Группы пикселей атласа: skin — кожа, blue / purple / red — ткань этих оттенков, bone — светлые
+## ненасыщенные (кости скелетов, белая ткань), metal — серые средней яркости.
+## Правило: [оттенок, насыщенность, множитель яркости]; glow — свечение материала.
+const FACTION_SCHEMES := {
+	"orc": {"skin": [0.27, 0.5, 0.8], "blue": [0.01, 0.6, 0.55]},
+	"orc_chief": {"skin": [0.27, 0.5, 0.78], "blue": [0.0, 0.75, 0.6], "metal": [0.08, 0.35, 0.8]},
+	"orc_shaman": {"skin": [0.27, 0.5, 0.8], "purple": [0.08, 0.55, 0.55], "red": [0.33, 0.6, 0.6]},
+	"imp": {"skin": [0.02, 0.8, 0.9], "blue": [0.0, 0.6, 0.3], "bone": [0.05, 0.5, 0.5], "glow": Color(1.0, 0.3, 0.05)},
+	"demon": {"skin": [0.0, 0.75, 0.7], "metal": [0.98, 0.45, 0.45], "blue": [0.0, 0.8, 0.35], "bone": [0.02, 0.4, 0.45], "red": [0.06, 0.9, 0.9]},
+	"succubus": {"skin": [0.9, 0.35, 0.95], "blue": [0.82, 0.6, 0.35], "purple": [0.82, 0.6, 0.4], "red": [0.85, 0.7, 0.7]},
+	"goblin": {"skin": [0.2, 0.6, 0.9], "blue": [0.08, 0.5, 0.5], "purple": [0.08, 0.5, 0.5]},
+	"goblin_tinker": {"skin": [0.2, 0.6, 0.9], "blue": [0.07, 0.8, 0.8], "purple": [0.07, 0.8, 0.8]},
+	"ogre": {"skin": [0.55, 0.2, 0.75], "blue": [0.07, 0.45, 0.45], "purple": [0.07, 0.45, 0.45], "red": [0.07, 0.5, 0.5]},
+	"necro": {"purple": [0.36, 0.65, 0.45], "blue": [0.36, 0.65, 0.45], "red": [0.36, 0.7, 0.6]},
+	"ghoul": {"bone": [0.22, 0.32, 0.72], "metal": [0.22, 0.3, 0.6]},
+	"banshee": {"bone": [0.52, 0.3, 1.05], "purple": [0.55, 0.4, 0.9], "blue": [0.55, 0.4, 0.9], "metal": [0.55, 0.3, 0.9]},
+	"felhound": {"bone": [0.0, 0.75, 0.55], "metal": [0.98, 0.6, 0.4]},
+	"infernal": {"bone": [0.04, 0.35, 0.32], "metal": [0.05, 0.5, 0.4], "glow": Color(1.0, 0.35, 0.05)},
+}
+
+static func _faction_pixel(rules: Dictionary, c: Color, h: float, s: float, v: float, is_skin: bool) -> Color:
+	var key := ""
+	# у скелетов кожи нет: тёплые светлые пиксели — это кости
+	if is_skin and rules.has("skin"):
+		key = "skin"
+	elif s < (0.3 if not rules.has("skin") else 0.16) and v > 0.55:
+		key = "bone"
+	elif s < 0.16 and v > 0.22:
+		key = "metal"
+	elif s > 0.2 and h > 0.42 and h < 0.72:
+		key = "blue"
+	elif s > 0.2 and h >= 0.72 and h < 0.92:
+		key = "purple"
+	elif s > 0.35 and (h >= 0.92 or h < 0.03):
+		key = "red"
+	if key == "" or not rules.has(key):
+		return c
+	var r: Array = rules[key]
+	return Color.from_hsv(float(r[0]), float(r[1]), clampf(v * float(r[2]), 0.0, 1.0), c.a)

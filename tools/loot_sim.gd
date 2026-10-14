@@ -23,7 +23,7 @@ func _run(title: String, players: int, kill_frac: float) -> void:
 	var rows: Array = []
 	for wave in range(1, 31):
 		var levels: Array = [lvl] if players == 1 else [lvl, lvl, maxi(1, lvl - 2)]
-		var comp: Array = Formulas.wave_composition(wave, 4)
+		var comp: Array = Formulas.wave_plan(wave, ["undead", "orcs", "demons", "goblins"], players)["list"]
 		var gear_drops := 0.0
 		for e in comp:
 			var def: Dictionary = MobData.MOBS[e[0]]
