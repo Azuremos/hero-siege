@@ -46,3 +46,27 @@ static func mana_scale(cls: Dictionary, level: int) -> float:
 	var base0: float = float(cls["base_mana"]) + 15.0 * int0
 	var base_l: float = float(cls["base_mana"]) + 15.0 * (int0 + grow * float(level - 1))
 	return base_l / maxf(base0, 1.0)
+
+const ItemData := preload("res://scripts/data/item_data.gd")
+
+## Ступень выпавшей вещи (1..6) для героев с уровнями levels на волне wave:
+## самая высокая, которую «типичный» герой рядом наденет сейчас или через 1–2 уровня.
+## Типичный — медиана, но не выше самого младшего + 3, чтобы в группе вещь не ждала его долго.
+## Волна ограничивает сверху, как раньше: на первых волнах не падают драконьи вещи.
+static func gear_tier(wave: int, levels: Array) -> int:
+	var tiers: Array = ItemData.TIERS
+	var sorted := levels.duplicate()
+	sorted.sort()
+	var lvl: int = 1
+	if not sorted.is_empty():
+		lvl = mini(int(sorted[sorted.size() / 2]), int(sorted[0]) + 3)
+	var by_level := 1
+	for i in tiers.size():
+		if int(tiers[i]["level"]) <= lvl + 2:
+			by_level = i + 1
+	var by_wave := clampi(1 + int((wave - 1) / 4), 1, tiers.size())
+	return mini(by_level, by_wave)
+
+## Прежняя ступень — только по волне (для сравнения в --lootsim и tools/loot_sim.gd).
+static func old_gear_tier(wave: int) -> int:
+	return clampi(1 + int((wave - 1) / 4) - randi() % 2, 1, ItemData.TIERS.size())

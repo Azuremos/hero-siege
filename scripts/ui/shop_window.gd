@@ -100,6 +100,8 @@ func refresh() -> void:
 		var sub := Label.new()
 		sub.add_theme_font_size_override("font_size", 12)
 		var low: bool = hero.unit.level < int(it["level"])
+		if low:
+			row.modulate = Color(1, 1, 1, 0.5)   # не по уровню: видно, но приглушено
 		sub.add_theme_color_override("font_color", Color(1, 0.4, 0.35) if low else Color(0.75, 0.75, 0.75))
 		sub.text = "ур. %d   •   %s" % [it["level"], _short(it)]
 		text.add_child(sub)
@@ -111,6 +113,8 @@ func refresh() -> void:
 		var buy := Button.new()
 		buy.text = "Купить"
 		buy.disabled = low or hero.gold < int(it["price"])
+		if low:
+			buy.tooltip_text = "Нужен %d уровень — у вас %d" % [it["level"], hero.unit.level]
 		var item_id: String = id
 		buy.pressed.connect(func(): world.economy.send("request_buy", [vendor, item_id]))
 		row.add_child(buy)

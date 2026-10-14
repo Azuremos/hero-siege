@@ -312,6 +312,9 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99) -> 
 		if it["desc"] != "":
 			lines.append(it["desc"])
 		lines.append("Общая перезарядка зелий: %d сек." % int(POTION_CD))
-	lines.append(("Требуется уровень %d" if hero_level >= it["level"] else "✗ Требуется уровень %d") % it["level"])
+	if hero_level >= int(it["level"]):
+		lines.append("Требуется уровень %d" % it["level"])
+	else:
+		lines.append("✗ Требуется уровень %d — у вас %d" % [it["level"], hero_level])
 	lines.append("Цена: %d золота" % it["price"])
 	return "\n".join(lines)

@@ -289,11 +289,11 @@ func _sound(hero, snd: String) -> void:
 func roll_loot(pos: Vector3, wave: int, boss: bool) -> void:
 	var drops: Array = []
 	if boss:
-		drops.append(_random_gear(wave + 4))
-		drops.append(_random_gear(wave + 4))
+		drops.append(_random_gear(wave + 4, pos))
+		drops.append(_random_gear(wave + 4, pos))
 		drops.append(_random_consumable(wave))
 	elif randf() < (float(Net.cli["lootrate"]) if Net.cli.has("lootrate") else 0.06):
-		drops.append(_random_gear(wave) if randf() < 0.5 else _random_consumable(wave))
+		drops.append(_random_gear(wave, pos) if randf() < 0.5 else _random_consumable(wave))
 	for id in drops:
 		var lid := _next_loot
 		_next_loot += 1
@@ -301,8 +301,16 @@ func roll_loot(pos: Vector3, wave: int, boss: bool) -> void:
 		_loot[lid] = {"item": id, "pos": p, "until": world.now() + LOOT_TIME}
 		ev_loot_spawn.rpc(lid, id, p)
 
-func _random_gear(wave: int) -> String:
-	var tier := clampi(1 + int((wave - 1) / 4) - randi() % 2, 1, GameData.ItemData.TIERS.size())
+## Ступень выпавшей вещи: по уровню героев рядом, номер волны ограничивает сверху.
+## Раньше ступень зависела только от волны, и в одиночной игре, где уровень героя отстаёт,
+## падали вещи, которые нельзя надеть.
+func _random_gear(wave: int, pos: Vector3) -> String:
+	var levels := _levels_near(pos)
+	var tier := GameData.Formulas.gear_tier(wave, levels)
+	if randf() < 0.25:
+		tier = maxi(1, tier - 1)    # иногда попроще — для разнообразия, надеть всё равно можно
+	if Net.cli.has("lootsim"):
+		_lootsim_record(tier, GameData.Formulas.old_gear_tier(wave), levels)
 	var keys: Array = GameData.ItemData.TEMPLATES.keys()
 	return "%s_%d" % [keys[randi() % keys.size()], tier]
 
@@ -395,3 +403,32 @@ func ev_appearance(hero_id: int, dual: bool) -> void:
 	var h = world.heroes.get(hero_id, null)
 	if h:
 		h.update_weapon_visual(dual)
+# ---------------------------------------------------------------- уровень добычи
+
+## Уровни живых героев рядом с местом выпадения (если рядом никого — всех героев).
+func _levels_near(pos: Vector3) -> Array:
+	var near: Array = []
+	var all: Array = []
+	for h in world.heroes.values():
+		all.append(h.unit.level)
+		if h.unit.alive and Vector2(h.unit.pos.x - pos.x, h.unit.pos.z - pos.z).length() <= GameData.XP_SHARE_RADIUS:
+			near.append(h.unit.level)
+	return near if not near.is_empty() else all
+
+## --lootsim: копим, сколько выпавших вещей герои рядом могут надеть сразу или через 1–2 уровня.
+var _ls: Dictionary = {"n": 0, "new_now": 0, "new_soon": 0, "old_now": 0, "old_soon": 0}
+
+func _lootsim_record(tier: int, old_tier: int, levels: Array) -> void:
+	var need_new := int(GameData.ItemData.TIERS[tier - 1]["level"])
+	var need_old := int(GameData.ItemData.TIERS[old_tier - 1]["level"])
+	for l in levels:
+		_ls["n"] += 1
+		_ls["new_now"] += 1 if l >= need_new else 0
+		_ls["new_soon"] += 1 if l + 2 >= need_new else 0
+		_ls["old_now"] += 1 if l >= need_old else 0
+		_ls["old_soon"] += 1 if l + 2 >= need_old else 0
+
+func lootsim_report() -> String:
+	var n := maxf(1.0, float(_ls["n"]))
+	return "LOOTSIM героев×вещей=%d | было: сразу %d%%, через ≤2 ур. %d%% | стало: сразу %d%%, через ≤2 ур. %d%%" % [_ls["n"],
+		int(_ls["old_now"] / n * 100.0), int(_ls["old_soon"] / n * 100.0), int(_ls["new_now"] / n * 100.0), int(_ls["new_soon"] / n * 100.0)]

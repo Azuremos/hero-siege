@@ -468,6 +468,8 @@ func _process(delta: float) -> void:
 			_save_shot(Net.cli["shot"].get_basename() + "_end.png")
 		if Net.cli.has("manalog"):
 			_manalog_summary()
+		if Net.cli.has("lootsim"):
+			print(economy.lootsim_report())
 		print("TEST END: wave=%d state=%s castle=%d" % [siege.wave if siege else 0, mode.state, int(siege.castle.hp) if siege else 0])
 		Sfx.quit_game()
 
