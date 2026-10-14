@@ -72,6 +72,14 @@ func _ready() -> void:
 		add_child(p)
 		_p3d.append(p)
 
+## При выходе из игры останавливаем всё, иначе аудиосервер держит потоки и Godot пишет об утечке.
+func _exit_tree() -> void:
+	for p in _p2d + _p3d + _music:
+		p.stop()
+		p.stream = null
+	_streams.clear()
+	_active.clear()
+
 func _stream(file: String) -> AudioStream:
 	if not _streams.has(file):
 		_streams[file] = load(DIR + file)
