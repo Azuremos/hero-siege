@@ -48,7 +48,7 @@ class Mob:
 var world: Node3D
 var mobs: Dictionary = {}          # id -> Mob (живые)
 var dying: Array = []              # Mob — проигрывают смерть
-var walls: Dictionary = {}         # id -> {a, b, hp, until}
+var walls: Dictionary = {}         # id -> {a, b, hp, max, stage, until}
 var client_alive_count := 0
 
 var _grid: Dictionary = {}
@@ -114,7 +114,7 @@ func _add_static(a: Vector2, b: Vector2, r: float) -> void:
 func add_wall(a: Vector2, b: Vector2, hp: float, until: float) -> int:
 	var id := _next_wall
 	_next_wall += 1
-	walls[id] = {"a": a, "b": b, "hp": hp, "until": until}
+	walls[id] = {"a": a, "b": b, "hp": hp, "max": maxf(hp, 1.0), "stage": 0, "until": until}
 	return id
 
 func _remove_wall(id: int) -> void:
@@ -431,8 +431,19 @@ func _attack_wall(m: Mob, w: Dictionary, t: float) -> void:
 	w["hp"] -= randf_range(m.def["min"], m.def["max"]) * m.unit.power
 	if w["hp"] <= 0.0:
 		_remove_wall(m.wall)
+		return
+	# стадии повреждения видны всем: меньше половины и меньше четверти прочности
+	var frac: float = w["hp"] / w["max"]
+	var stage := 2 if frac <= 0.25 else (1 if frac <= 0.5 else 0)
+	if stage > int(w["stage"]):
+		w["stage"] = stage
+		ev_wall_damage.rpc(m.wall, stage)
 
 # ---------------------------------------------------------------- сеть
+
+@rpc("authority", "call_local", "reliable")
+func ev_wall_damage(id: int, stage: int) -> void:
+	Vfx.damage_wall(id, stage)
 
 func _encode_snapshot() -> PackedByteArray:
 	var buf := PackedByteArray()

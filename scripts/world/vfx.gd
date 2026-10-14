@@ -17,6 +17,7 @@ static var _dot_tex: Texture2D
 static var _fade_ramp: GradientTexture1D
 static var _draw_mats: Dictionary = {}
 static var _ice_mat: StandardMaterial3D
+static var _ice_cracked: Dictionary = {}   # стадия повреждения -> материал
 static var zones: Dictionary = {}
 
 # ---------------------------------------------------------------- материалы
@@ -59,6 +60,16 @@ static func ice_material() -> StandardMaterial3D:
 		_ice_mat.emission = Color(0.25, 0.55, 0.9)
 		_ice_mat.emission_energy_multiplier = 0.6
 	return _ice_mat
+
+## Потрескавшийся лёд: 1 — меньше половины прочности, 2 — меньше четверти. Тусклее и мутнее.
+static func cracked_ice_material(stage: int) -> StandardMaterial3D:
+	if not _ice_cracked.has(stage):
+		var m := ice_material().duplicate() as StandardMaterial3D
+		m.albedo_color = Color(0.6, 0.76, 0.88, 0.78) if stage == 1 else Color(0.5, 0.6, 0.7, 0.72)
+		m.roughness = 0.35 if stage == 1 else 0.6
+		m.emission_energy_multiplier = 0.35 if stage == 1 else 0.15
+		_ice_cracked[stage] = m
+	return _ice_cracked[stage]
 
 static func _dot() -> Texture2D:
 	if _dot_tex == null:
@@ -638,6 +649,36 @@ static func _build_ice_wall(n: TimedFx, length: float) -> void:
 		shard.create_tween().tween_property(shard, "scale", Vector3.ONE, 0.25 + rng.randf() * 0.15).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
 	particles(n, COL_FROST, 50, 0.8, {"shape": "box", "extents": Vector3(length * 0.5, 0.2, 0.6), "vmin": 2.0, "vmax": 4.0,
 		"spread": 40.0, "one_shot": true, "explosive": 0.8, "gravity": Vector3(0, -6, 0), "aabb": length})
+
+## Стена льда повреждена (stage 1 — меньше половины прочности, 2 — меньше четверти):
+## лёд тускнеет, часть осколков откалывается, на 2-й стадии оставшиеся проседают.
+static func damage_wall(id: int, stage: int) -> void:
+	var n: TimedFx = zones.get(id, null)
+	if n == null or not is_instance_valid(n):
+		return
+	var shards: Array = []
+	var half := 1.0
+	for c in n.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).visible:
+			shards.append(c)
+			half = maxf(half, absf((c as MeshInstance3D).position.x))
+	if shards.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = id * 31 + stage
+	var mat := cracked_ice_material(stage)
+	var knock := 0.2 if stage == 1 else 0.3
+	for s: MeshInstance3D in shards:
+		s.material_override = mat
+		if rng.randf() < knock:
+			var tw := s.create_tween()
+			tw.tween_property(s, "scale", Vector3(0.6, 0.05, 0.6), 0.2).set_ease(Tween.EASE_IN)
+			tw.tween_callback(s.hide)
+		elif stage >= 2:
+			s.create_tween().tween_property(s, "scale", Vector3(1, 0.75, 1), 0.25)
+	Sfx.play_at("ice_shatter", n.global_position + Vector3(0, 1, 0), -2.0)
+	particles(n, COL_FROST, 20 * stage, 0.7, {"shape": "box", "extents": Vector3(half, 0.6, 0.5), "pos": Vector3(0, 1.0, 0),
+		"vmin": 2.0, "vmax": 4.0, "spread": 120.0, "one_shot": true, "explosive": 0.9, "gravity": Vector3(0, -10, 0), "aabb": half + 3.0})
 
 static func end_zone(world: Node3D, id: int) -> void:
 	var n: TimedFx = zones.get(id, null)
