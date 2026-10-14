@@ -120,4 +120,13 @@ const SPELLS := {
 		"effects": [{"type": "damage", "min": 55.0, "max": 65.0, "frozen_bonus": 1.0}, {"type": "freeze", "dur": 4.0}],
 		"vfx": "ice_block", "anim": "shoot",
 	},
+	# --- прерывание (сессия 02)
+	"counterspell": {
+		"name": "Антимагия", "school": "arcane", "icon": "АМ", "no_gcd": true,
+		"desc": "Сбивает заклинание врага. 4 сек. он не может произносить заклинания этой школы. Не тратит общую перезарядку.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 20.0, "mana": 12.0, "range": 30.0,
+		"effects": [{"type": "interrupt", "lock": 4.0}],
+		"vfx": "hit_arcane", "anim": "shoot",
+	},
 }

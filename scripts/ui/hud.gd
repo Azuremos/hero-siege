@@ -348,6 +348,8 @@ func _build_target_frame() -> void:
 	p.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
 			_open_mark_menu())
+	_target_frame["ecast"] = _make_enemy_cast_bar(266.0, 16.0, 13)
+	v.add_child(_target_frame["ecast"])
 	var fx_row := HBoxContainer.new()
 	fx_row.add_theme_constant_override("separation", 3)
 	v.add_child(fx_row)
@@ -1335,6 +1337,7 @@ func _process(delta: float) -> void:
 		_target_arrow.visible = false
 	_update_target_effects(lh, c, tu, t)
 	_update_marks(c, tu)
+	_update_enemy_casts(tu, t)
 	# подсветка существа под курсором
 	var hov: int = c.pick_unit(get_viewport().get_mouse_position()) if not c._dragged else 0
 	if hover_unit_id != 0:
@@ -1404,7 +1407,7 @@ func _process(delta: float) -> void:
 		var cd_left := float(c.cd_until.get(sid, 0.0)) - t
 		var gcd_left: float = c.gcd_until - t
 		var cd_frac := clampf(cd_left / maxf(GameData.eff_cd(lh.unit, sid), 0.01), 0.0, 1.0) if cd_left > 0.0 else 0.0
-		var gcd_frac := clampf(gcd_left / GameData.GCD, 0.0, 1.0) if gcd_left > 0.0 and gcd_left >= cd_left else 0.0
+		var gcd_frac := clampf(gcd_left / GameData.GCD, 0.0, 1.0) if gcd_left > 0.0 and gcd_left >= cd_left and not GameData.SPELLS[sid].get("no_gcd", false) else 0.0
 		(s["cd"].material as ShaderMaterial).set_shader_parameter("progress", cd_frac)
 		(s["gcd"].material as ShaderMaterial).set_shader_parameter("progress", gcd_frac)
 		s["cd_l"].text = str(int(ceil(cd_left))) if cd_left > 1.6 else ""
@@ -1778,3 +1781,86 @@ func _update_marks(c, tu: Unit) -> void:
 	tm.visible = midx != 0
 	if midx != 0:
 		tm.texture = world.marks.texture(midx)
+
+# ---------------------------------------------------------------- касты врагов
+## Полоса произнесения врага: жёлтая — можно сбить, серая со щитом — нельзя (как в WoW).
+## В рамке цели и компактно над головами ближайших кастующих мобов.
+
+var _head_casts: Array = []
+
+func _make_enemy_cast_bar(w: float, h: float, font: int) -> Control:
+	var root := Control.new()
+	root.custom_minimum_size = Vector2(w, h)
+	root.size = Vector2(w, h)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.visible = false
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.6)
+	bg.size = Vector2(w, h)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(bg)
+	var fill := ColorRect.new()
+	fill.size = Vector2(0, h)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fill)
+	var l := _label("", font, Color.WHITE)
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 4)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.size = Vector2(w, h)
+	root.add_child(l)
+	root.set_meta("fill", fill)
+	root.set_meta("label", l)
+	root.set_meta("w", w)
+	return root
+
+func _fill_enemy_cast(bar: Control, cdata: Dictionary, t: float, with_time: bool) -> void:
+	var ab: Dictionary = GameData.MOB_ABILITIES.get(cdata["ab"], {})
+	var frac := clampf((t - float(cdata["start"])) / maxf(float(cdata["dur"]), 0.01), 0.0, 1.0)
+	var fill: ColorRect = bar.get_meta("fill")
+	var can: bool = cdata["interrupt"]
+	fill.color = Color(1.0, 0.78, 0.15, 0.9) if can else Color(0.55, 0.55, 0.6, 0.9)
+	fill.size.x = float(bar.get_meta("w")) * frac
+	var text: String = ab.get("name", "?")
+	if not can:
+		text = "🛡 " + text
+	if with_time:
+		text += "   %.1f" % maxf(0.0, float(cdata["dur"]) - (t - float(cdata["start"])))
+	(bar.get_meta("label") as Label).text = text
+	bar.visible = true
+
+func _update_enemy_casts(tu: Unit, t: float) -> void:
+	var casts: Dictionary = world.mobs.casts
+	var tbar: Control = _target_frame["ecast"]
+	if tu and casts.has(tu.id):
+		_fill_enemy_cast(tbar, casts[tu.id], t, true)
+	else:
+		tbar.visible = false
+	if _head_casts.is_empty():
+		for i in 6:
+			var b := _make_enemy_cast_bar(120.0, 12.0, 10)
+			_root.add_child(b)
+			_head_casts.append(b)
+	var cam := get_viewport().get_camera_3d()
+	var list: Array = []
+	if cam:
+		for id in casts:
+			var u: Unit = world.get_unit(id)
+			if u == null or not u.alive:
+				continue
+			var p := u.pos
+			if u.node and is_instance_valid(u.node):
+				p = u.node.global_position
+			var wp := p + Vector3(0, 2.9 * (u.radius / 0.6) + 0.6, 0)
+			var d := cam.global_position.distance_to(wp)
+			if d < 50.0 and not cam.is_position_behind(wp):
+				list.append([d, id, wp])
+	list.sort_custom(func(a, b): return a[0] < b[0])
+	for i in _head_casts.size():
+		var b: Control = _head_casts[i]
+		if i >= list.size():
+			b.visible = false
+			continue
+		_fill_enemy_cast(b, casts[list[i][1]], t, false)
+		b.position = cam.unproject_position(list[i][2]) - Vector2(60, 6)

@@ -68,7 +68,7 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 	var proc := GameData.active_proc(u, sid)
 	if t < float(st["cds"].get(sid, 0.0)) and not (not proc.is_empty() and proc["data"].get("reset_cd", false)):
 		return _feedback(peer, sid, "Заклинание ещё не готово")
-	if t < st["gcd"] - 0.15:
+	if t < st["gcd"] - 0.15 and not sp.get("no_gcd", false):
 		return
 	if u.mana < GameData.eff_mana(u, sid):
 		return _feedback(peer, sid, "Недостаточно ярости" if u.resource == "rage" else "Недостаточно маны")
@@ -103,7 +103,8 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 		var lk: Dictionary = sp["target_lockout"]
 		if lu and lu.has_buff(lk["key"]):
 			return _feedback(peer, sid, "На цели ещё действует «%s»" % GameData.BUFF_INFO[lk["key"]]["name"])
-	st["gcd"] = t + GameData.GCD
+	if not sp.get("no_gcd", false):     # прерывания, как в WoW, не тратят общую перезарядку
+		st["gcd"] = t + GameData.GCD
 	var cast_time := GameData.eff_cast(u, sid)
 	if sp["delivery"] == "channel":
 		# поток: мана и восстановление сразу, снаряды — по ходу произнесения

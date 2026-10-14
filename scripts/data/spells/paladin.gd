@@ -126,4 +126,13 @@ const SPELLS := {
 		"ally_fx": [{"type": "heal", "min": 22.0, "max": 26.0}],
 		"vfx": "nova_holy", "anim": "melee",
 	},
+	# --- прерывание (сессия 02)
+	"rebuke": {
+		"name": "Укор", "school": "holy", "icon": "УК", "no_gcd": true, "melee": true,
+		"desc": "Сбивает заклинание врага, 4 сек. он не может произносить заклинания этой школы. Не тратит общую перезарядку.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 15.0, "mana": 10.0, "range": 5.0,
+		"effects": [{"type": "interrupt", "lock": 4.0}],
+		"vfx": "hit_holy", "anim": "melee",
+	},
 }

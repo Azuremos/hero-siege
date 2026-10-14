@@ -33,7 +33,7 @@ const CLASSES := {
 		"resource": "mana", "base_hp": 260.0, "base_mana": 160.0, "armor": 0.0, "dmg_mult": 1.2,
 		"attrs": {"str": 6, "agi": 8, "sta": 12, "int": 24, "spi": 18}, "grow": {"str": 0.5, "agi": 0.6, "sta": 2.2, "int": 2.9, "spi": 1.6},
 		"auto": {"range": 24.0, "min": 12.0, "max": 17.0, "speed": 1.8, "school": "arcane", "ranged": true},
-		"spells": ["frostbolt", "fireball", "arcane_missiles", "frost_nova", "arcane_explosion", "blizzard", "blink", "ice_wall", "arcane_barrage", "fire_wall", "flamestrike"],
+		"spells": ["frostbolt", "fireball", "arcane_missiles", "frost_nova", "arcane_explosion", "blizzard", "blink", "ice_wall", "arcane_barrage", "fire_wall", "flamestrike", "counterspell"],
 	},
 	"paladin": {
 		"name": "Паладин", "color": Color(0.96, 0.55, 0.73),
@@ -42,7 +42,7 @@ const CLASSES := {
 		"resource": "mana", "base_hp": 440.0, "base_mana": 150.0, "armor": 0.25, "dmg_mult": 1.0,
 		"attrs": {"str": 20, "agi": 10, "sta": 20, "int": 14, "spi": 12}, "grow": {"str": 2.0, "agi": 0.8, "sta": 3.4, "int": 1.3, "spi": 0.9},
 		"auto": {"range": 4.0, "min": 24.0, "max": 32.0, "speed": 2.2, "school": "physical", "ranged": false},
-		"spells": ["crusader_strike", "holy_light", "judgement", "consecration", "blessing_of_kings", "hammer_of_justice", "avenging_wrath", "holy_wrath", "divine_guardian", "divine_shield", "lay_on_hands"],
+		"spells": ["crusader_strike", "holy_light", "judgement", "consecration", "blessing_of_kings", "hammer_of_justice", "avenging_wrath", "holy_wrath", "divine_guardian", "divine_shield", "lay_on_hands", "rebuke"],
 	},
 	"priest": {
 		"name": "Жрец", "color": Color(1.0, 1.0, 1.0),
@@ -51,7 +51,7 @@ const CLASSES := {
 		"resource": "mana", "base_hp": 280.0, "base_mana": 230.0, "armor": 0.0, "dmg_mult": 1.05,
 		"attrs": {"str": 6, "agi": 8, "sta": 14, "int": 22, "spi": 22}, "grow": {"str": 0.5, "agi": 0.5, "sta": 2.4, "int": 2.5, "spi": 2.0},
 		"auto": {"range": 24.0, "min": 11.0, "max": 15.0, "speed": 1.8, "school": "holy", "ranged": true},
-		"spells": ["smite", "flash_heal", "renew", "pw_shield", "pw_fortitude", "holy_fire", "divine_spirit", "circle_of_healing", "prayer_of_healing", "light_barrier", "holy_nova"],
+		"spells": ["smite", "flash_heal", "renew", "pw_shield", "pw_fortitude", "holy_fire", "divine_spirit", "circle_of_healing", "prayer_of_healing", "light_barrier", "holy_nova", "silence"],
 	},
 	"warrior": {
 		"name": "Воин", "color": Color(0.78, 0.61, 0.43),
@@ -60,7 +60,7 @@ const CLASSES := {
 		"resource": "rage", "base_hp": 480.0, "base_mana": 100.0, "armor": 0.3, "dmg_mult": 1.0,
 		"attrs": {"str": 24, "agi": 14, "sta": 22, "int": 4, "spi": 6}, "grow": {"str": 2.6, "agi": 1.2, "sta": 3.8, "int": 0.2, "spi": 0.4},
 		"auto": {"range": 4.0, "min": 26.0, "max": 34.0, "speed": 2.4, "school": "physical", "ranged": false},
-		"spells": ["heroic_strike", "charge", "battle_shout", "thunder_clap", "taunt", "bloodthirst", "whirlwind", "demoralizing_shout", "execute", "shield_wall", "recklessness"],
+		"spells": ["heroic_strike", "charge", "battle_shout", "thunder_clap", "taunt", "bloodthirst", "whirlwind", "demoralizing_shout", "execute", "shield_wall", "recklessness", "pummel"],
 	},
 }
 

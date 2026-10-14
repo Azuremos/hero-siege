@@ -124,4 +124,13 @@ const SPELLS := {
 		"enemy_fx": [{"type": "taunt", "dur": 6.0}],
 		"vfx": "taunt_aoe", "anim": "raise",
 	},
+	# --- прерывание (сессия 02)
+	"pummel": {
+		"name": "Зуботычина", "school": "physical", "icon": "ЗТ", "no_gcd": true, "melee": true,
+		"desc": "Удар рукоятью: сбивает заклинание врага, 4 сек. он не может произносить заклинания этой школы. Не тратит общую перезарядку.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 12.0, "mana": 10.0, "range": 5.0,
+		"effects": [{"type": "interrupt", "lock": 4.0}, {"type": "damage", "min": 6.0, "max": 8.0}],
+		"vfx": "hit_phys", "anim": "melee",
+	},
 }

@@ -3,6 +3,7 @@ extends RefCounted
 
 ## Уровень, на котором открывается заклинание (заклинания талантов — по таланту).
 const SPELL_LEVELS := {
+	"counterspell": 3, "pummel": 3, "rebuke": 3, "silence": 3,    # прерывания — по одному на класс
 	"frostbolt": 1, "fireball": 1, "arcane_missiles": 2, "frost_nova": 3, "arcane_explosion": 4, "blizzard": 5, "blink": 6, "ice_wall": 7, "arcane_barrage": 8, "fire_wall": 9, "flamestrike": 11,
 	"crusader_strike": 1, "holy_light": 1, "judgement": 2, "consecration": 3, "blessing_of_kings": 4, "hammer_of_justice": 5, "avenging_wrath": 6, "holy_wrath": 7, "divine_guardian": 8, "divine_shield": 9, "lay_on_hands": 11,
 	"smite": 1, "flash_heal": 1, "renew": 2, "pw_shield": 3, "pw_fortitude": 4, "holy_fire": 5, "divine_spirit": 6, "circle_of_healing": 7, "prayer_of_healing": 8, "light_barrier": 9, "holy_nova": 11,

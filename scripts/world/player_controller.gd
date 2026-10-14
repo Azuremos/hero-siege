@@ -458,7 +458,7 @@ func try_cast(sid: String) -> void:
 	if now() < float(cd_until.get(sid, 0.0)):
 		hud.error("Заклинание ещё не готово")
 		return
-	if now() < gcd_until:
+	if now() < gcd_until and not GameData.SPELLS[sid].get("no_gcd", false):
 		return
 	if hero.unit.mana < GameData.eff_mana(hero.unit, sid):
 		hud.error("Недостаточно маны")
@@ -673,6 +673,9 @@ func bot_tick(delta: float) -> void:
 	else:
 		move_forward = 0.0
 	_bot_t -= delta
+	if _bot_t <= 0.0 and hero.unit.alive and _bot_try_interrupt():
+		_bot_t = 0.25
+		return
 	if _bot_t > 0.0 or cast_spell != "" or not hero.unit.alive:
 		return
 	_bot_t = 0.25
@@ -797,3 +800,23 @@ func _bot_rank(sid: String) -> float:
 		return 1000.0 + cd
 	var aoe: bool = sp["target"] == "ground" or sp["delivery"] == "self_aoe" or sp["delivery"] == "party"
 	return 500.0 if aoe else 100.0 + float(sp.get("cast", 0.0))
+
+## Бот сбивает опасный каст рядом, если прерывание готово; ради этого бросает свой каст.
+func _bot_try_interrupt() -> bool:
+	for isid in spell_ids():
+		var isp: Dictionary = GameData.SPELLS[isid]
+		if not isp.get("effects", []).any(func(e): return e["type"] == "interrupt"):
+			continue
+		if hero.unit.level < GameData.spell_level(isid) or now() < float(cd_until.get(isid, 0.0)) or hero.unit.mana < GameData.eff_mana(hero.unit, isid):
+			return false
+		for cid in world.mobs.casts:
+			var cu: Unit = world.get_unit(cid)
+			if cu and cu.alive and world.mobs.casts[cid]["interrupt"] and _dist_to(cu) <= float(isp["range"]) + cu.radius:
+				if cast_spell != "":
+					_send_server("request_cancel", [])
+					return true
+				_face(cu.pos)
+				_send_server("request_cast", [isid, cid, Vector3.ZERO, 0.0])
+				return true
+		return false
+	return false

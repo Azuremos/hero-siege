@@ -118,4 +118,13 @@ const SPELLS := {
 		"ally_fx": [{"type": "heal", "min": 45.0, "max": 55.0}],
 		"vfx": "nova_holy", "anim": "raise",
 	},
+	# --- прерывание (сессия 02)
+	"silence": {
+		"name": "Безмолвие", "school": "shadow", "icon": "БМ", "no_gcd": true,
+		"desc": "Сбивает заклинание врага и 3 сек. не даёт ему колдовать; школа сбитого заклинания заблокирована на 4 сек. Не тратит общую перезарядку.",
+		"target": "enemy", "delivery": "instant",
+		"cast": 0.0, "cd": 30.0, "mana": 15.0, "range": 30.0,
+		"effects": [{"type": "interrupt", "lock": 4.0}, {"type": "silence", "dur": 3.0}],
+		"vfx": "hit_shadow", "anim": "shoot",
+	},
 }

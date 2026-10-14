@@ -506,6 +506,12 @@ func _process(delta: float) -> void:
 			if not Net.cli.has("near"):
 				mu.root_until = now() + 1e6     # стоят на месте для осмотра
 		print("MOBTEST ", types)
+	if Net.cli.has("casttest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
+		var cfwd := -local_hero.global_transform.basis.z
+		var cp := local_hero.global_position + cfwd * 8.0
+		var cid: int = mobs.spawn("cast_dummy", 2, 5, 1, 1.0, {"pos": Vector2(cp.x, cp.z)})
+		get_unit(cid).root_until = now() + 1e6
+		local_hero.controller.target_id = cid
 	if Net.cli.has("godmode") and is_server():
 		for gh in heroes.values():
 			gh.unit.hp = maxf(gh.unit.hp, gh.unit.max_hp * 0.35)   # не погибает, но лекарю есть кого лечить
