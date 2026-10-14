@@ -759,6 +759,11 @@ func _build_meter() -> void:
 	_meter_win.setup(world, world.meter)
 	_meter_win.visible = bool(Settings.get_ui_opt("meter_visible", true))
 
+## Предпросмотр из главного меню: счётчик показывает пример.
+func set_meter_preview(on: bool) -> void:
+	_meter_win.preview = on
+	_meter_win.visible = true
+
 func toggle_meter() -> void:
 	_meter_win.visible = not _meter_win.visible
 	Settings.set_ui_opt("meter_visible", _meter_win.visible)
@@ -929,6 +934,8 @@ func _load_layout() -> void:
 		_opts[k] = cfg.get_value("opt", k, _opts[k])
 
 func _save_layout() -> void:
+	if not Net.cli.is_empty():
+		return   # тестовые запуски не трогают раскладку игрока
 	var cfg := ConfigFile.new()
 	for id in _layout_pos:
 		cfg.set_value("pos", id, _layout_pos[id])
@@ -985,6 +992,8 @@ func set_edit_mode(on: bool) -> void:
 		_movers.clear()
 	if not on:
 		_save_layout()
+		if world.mode.is_preview():
+			Net.back_to_menu.call_deferred()
 		return
 	_edit_layer = Control.new()
 	_edit_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1037,7 +1046,7 @@ func set_edit_mode(on: bool) -> void:
 		set_edit_mode(true))
 	h.add_child(b_reset)
 	var b_done := Button.new()
-	b_done.text = "Готово"
+	b_done.text = "Готово — в главное меню" if world.mode.is_preview() else "Готово"
 	b_done.pressed.connect(func(): set_edit_mode(false))
 	h.add_child(b_done)
 
@@ -1551,7 +1560,7 @@ func _update_buff_row(buffs: Array) -> void:
 			continue
 		var left: float = list[i][1]
 		var tl: Label = c.get_child(1)
-		if left <= 0.0:
+		if left <= 0.0 or left > 3600.0:
 			tl.text = ""
 		elif left >= 60.0:
 			tl.text = "%dм" % int(ceil(left / 60.0))

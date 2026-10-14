@@ -25,8 +25,8 @@ var units: Dictionary = {}        # id -> Unit
 var heroes: Dictionary = {}       # hero_id -> Hero
 var local_hero: CharacterBody3D = null
 
-## Режимы игры. Выбор режима — Net.settings["mode"]; пока есть только осада.
-const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd")}
+## Режимы игры. Выбор режима — Net.settings["mode"]: осада и предпросмотр интерфейса из главного меню.
+const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd"), "preview": preload("res://scripts/modes/preview_mode.gd")}
 
 var _snap_accum := 0.0
 var _state_accum := 0.0

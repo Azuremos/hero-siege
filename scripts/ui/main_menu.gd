@@ -153,6 +153,7 @@ func _build_ui() -> void:
 	_big_button(m, "Сетевая игра", func(): _open_hero("net"))
 	_big_button(m, "Таланты классов", func(): _show("talents"))
 	_big_button(m, "Настройки", _toggle_settings)
+	_big_button(m, "Настроить интерфейс", _start_ui_preview)
 	_big_button(m, "Об игре", func(): _show("about"))
 	_big_button(m, "Выход", func(): Sfx.quit_game())
 
@@ -425,6 +426,19 @@ func _apply_local_info() -> void:
 
 # ---------------------------------------------------------------- сеть
 
+## Предпросмотр интерфейса: облегчённая одиночная сцена (режим preview) с группой из 6 героев,
+## врагом в цели и примером данных — рамки двигаются так же, как в игре, и сохраняются туда же.
+func _start_ui_preview() -> void:
+	_apply_local_info()
+	Net.settings = {"mode": "preview", "waves": 20, "lanes": 4, "break": 60}
+	if Net.host_game(true) != OK:
+		_status.text = "Не удалось открыть предпросмотр"
+		return
+	var fake := [["Торин", "warrior"], ["Лира", "priest"], ["Утер", "paladin"], ["Кель", "mage"], ["Мира", "priest"]]
+	for i in fake.size():
+		Net.players[100 + i] = {"name": fake[i][0], "class": fake[i][1], "race": "human", "version": Net.game_version()}
+	Net.start_game()
+
 func _on_solo() -> void:
 	_apply_local_info()
 	if Net.host_game(true) != OK:
@@ -561,6 +575,9 @@ func _run_cli() -> void:
 		if bi >= 0:
 			_break_option.select(bi)
 	_update_preview()
+	if _cli.has("uipreview"):
+		_start_ui_preview()
+		return
 	if _cli.has("solo"):
 		_on_solo()
 	elif _cli.has("host"):

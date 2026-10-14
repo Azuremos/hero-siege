@@ -33,6 +33,10 @@ func is_over() -> bool:
 func is_resting() -> bool:
 	return false
 
+## Предпросмотр интерфейса из главного меню (PreviewMode).
+func is_preview() -> bool:
+	return false
+
 ## Идёт бой — играет боевая музыка.
 func is_combat() -> bool:
 	return state == "running"
