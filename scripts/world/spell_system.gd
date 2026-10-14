@@ -579,6 +579,11 @@ func _update_zones(t: float) -> void:
 		for m in world.mobs.query_radius(Vector2(center.x, center.z), float(z["reach"]) + 1.5):
 			if _in_zone(z, m):
 				apply_effects(caster, m, sp.get("enemy_fx", []), z["sid"], sp["school"])
+		if sp.has("ally_fx"):
+			# зона лечения (Святое слово: Святилище)
+			for h in world.heroes.values():
+				if h.unit.alive and _in_zone(z, h.unit):
+					apply_effects(caster, h.unit, sp["ally_fx"], z["sid"], sp["school"])
 	for id in dead:
 		zones.erase(id)
 

@@ -85,6 +85,8 @@ const PROC_BUFFS := {
 
 ## Заклинания, которые срабатывают сами (от проков талантов).
 const AUTO_SPELLS := {
+	"purgatory_flash": {"name": "Чистилище", "school": "holy", "radius": 6.0, "delay": 0.0, "vfx": "nova_holy",
+		"enemy_fx": [{"type": "damage", "min": 12.0, "max": 15.0}], "ally_fx": [{"type": "heal", "min": 14.0, "max": 18.0}]},
 	"consecrated_strike": {"name": "Освящённое оружие", "school": "holy", "radius": 4.0, "delay": 0.0, "vfx": "nova_holy",
 		"enemy_fx": [{"type": "damage", "min": 14.0, "max": 18.0}]},
 	"scorch_pool": {"name": "Опаление", "school": "fire", "radius": 3.0, "delay": 0.1, "vfx": "explosion_fire",
