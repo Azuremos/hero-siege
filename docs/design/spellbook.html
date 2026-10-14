@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Книга заклинаний</title>
+<style>
+:root{--text-primary:#1f1e1d;--text-secondary:#5f5e5a;--text-muted:#888780;--text-accent:#185fa5;--surface-1:#f5f4ef;--surface-2:#fff;--page:#faf9f5;--border:rgba(0,0,0,.12);--border-strong:rgba(0,0,0,.25);--border-accent:#378add;--bg-accent:#e6f1fb;--radius:8px}
+@media (prefers-color-scheme:dark){:root{--text-primary:#ecebe6;--text-secondary:#b4b2a9;--text-muted:#888780;--text-accent:#85b7eb;--surface-1:#2a2a28;--surface-2:#323230;--page:#1f1f1e;--border:rgba(255,255,255,.12);--border-strong:rgba(255,255,255,.28);--border-accent:#378add;--bg-accent:#0c447c}}
+body{margin:0;background:var(--page);color:var(--text-primary);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;font-weight:500;margin:0 0 4px}
+p.sub{color:var(--text-secondary);margin:0 0 16px;font-size:14px}
+button{font:inherit;font-size:14px;background:transparent;color:var(--text-primary);border:.5px solid var(--border-strong);border-radius:var(--radius);padding:6px 14px;cursor:pointer;margin:0 6px 6px 0}
+button.on{border:1.5px solid var(--border-accent);color:var(--text-accent)}
+.row,.hd{display:grid;grid-template-columns:72px repeat(3,minmax(0,1fr));gap:8px}
+.row{margin-bottom:8px}
+.hd{font-size:12px;color:var(--text-secondary);margin:4px 0 6px}
+.lv{font-size:12px;color:var(--text-secondary);padding-top:6px;line-height:1.35}
+.mob .lv{color:var(--text-accent)}
+.opt{border:.5px solid var(--border);border-radius:var(--radius);padding:7px 9px;cursor:pointer;background:var(--surface-2);min-height:54px}
+.opt:hover{border-color:var(--border-strong)}
+.opt.sel{border:1.5px solid var(--border-accent);background:var(--bg-accent)}
+.opt.sel .nm{color:var(--text-accent)}
+.opt.lock{cursor:default;background:var(--surface-1)}
+.opt.lock .nm,.opt.lock .ds{color:var(--text-muted)}
+.nm{font-size:13px;font-weight:500;line-height:1.3}
+.ds{font-size:12px;color:var(--text-secondary);line-height:1.35;margin-top:2px}
+.tg{font-size:11px;padding:0 5px;border-radius:4px;background:var(--surface-1);color:var(--text-secondary);margin-left:4px;font-weight:400}
+#sum{margin-top:12px;padding:10px 12px;background:var(--surface-1);border-radius:var(--radius);font-size:13px;line-height:1.6}
+@media (max-width:560px){.row,.hd{grid-template-columns:52px repeat(3,minmax(0,1fr));gap:5px}.opt{padding:6px}.ds{display:none}}
+</style>
+</head>
+<body>
+<main>
+<h1>Книга заклинаний</h1>
+<p class="sub">Заготовка для сессии 04 (docs/design/spellbook.md): 9 рядов по уровням, в каждом выбор 1 из 3. Колонки — ветки талантов.</p>
+<div id="cls"></div>
+<div style="display:flex;align-items:center;gap:12px;margin:6px 0 10px">
+<label for="lvl" style="font-size:13px;color:var(--text-secondary)">Уровень героя</label>
+<input type="range" id="lvl" min="1" max="30" step="1" value="30" style="flex:1">
+<span id="lvlo" style="font-size:14px;font-weight:500;min-width:22px">30</span>
+</div>
+<div id="base" style="font-size:13px;color:var(--text-secondary);margin-bottom:8px"></div>
+<div class="hd" id="hd"></div>
+<div id="rows"></div>
+<div id="sum"></div>
+<div style="font-size:12px;color:var(--text-muted);margin-top:6px"><span class="tg" style="margin:0">есть</span> уже в игре · <span class="tg" style="margin:0">П</span> пассивная · клик по карточке — выбрать, ещё раз — снять</div>
+</main>
+<script>
+const L=[2,3,5,7,9,11,14,18,22];
+const R=["Удар по готовности","Мобильность","Площадь","Контроль","Площадь / группа","Особый ряд","Защита","Большая","Мастерство"];
+const D={
+mage:{n:"Маг",t:["Тайная магия","Огонь","Лёд"],b:"Ледяная стрела, Огненный шар, Чародейские стрелы, Антимагия",
+r:[[["Чародейский обстрел","мгновенно, перескоки, 5 с",1],["Огненный взрыв","мгновенный урон огнём, 8 с"],["Ледяное копьё","×2 по замороженным, 6 с"]],
+[["Скачок","15 м вперёд, 15 с",1],["Огненный рывок","10 м, огненный след, 18 с"],["Смещение","10 м назад + кольцо льда, 20 с"]],
+[["Чародейский взрыв","волна 8 м, без перезарядки",1],["Дыхание дракона","конус, дезориентация, 15 с"],["Конус холода","конус, замедление 60%, 10 с"]],
+[["Превращение","овца на 8 с, 15 с"],["Взрывная волна","отбросить всех в 8 м, 25 с"],["Кольцо льда","заморозка 9 м, 25 с",1]],
+[["Чародейская сфера","шар летит на 30 м, 12 с"],["Огненный столб","столб + горящая земля, 14 с",1],["Снежная буря","шторм 7 м, 15 с",1]],
+[["Искажение времени","зона замедления 50%, 30 с"],["Стена огня","полоса пламени, 20 с",1],["Ледяная стена","стена 18 с, 30 с",1]],
+[["Зеркальные копии","3 копии отвлекают, 60 с"],["Опаляющая преграда","щит, поджигает атакующих, 30 с"],["Ледяная глыба","8 с неуязвимости, 180 с"]],
+[["Стремительность","+30% скорости каста, 120 с"],["Возгорание","3 гарантированных крита, 120 с"],["Стылая кровь","+скорость и крит льда, 120 с"]],
+[["Замедление","враги в 5 м −60% скорости"],["Опаление","криты оставляют лужу огня",0,1],["Хрупкий лёд","+30% урона по замороженным",0,1]]]},
+paladin:{n:"Паладин",t:["Свет","Защита","Воздаяние"],b:"Удар воина Света, Свет небес, Правосудие, Благословение королей, Укор",
+r:[[["Вспышка Света","малое быстрое лечение"],["Щит праведности","удар + 30% блока, 6 с"],["Удар печати","заполнитель без перезарядки"]],
+[["Длань свободы","снять замедление, +40%, 25 с"],["Рывок Света","12 м + щит, 20 с"],["Божественный скакун","+100% скорости 3 с, 20 с"]],
+[["Свет зари","конус лечения 12 м, 10 с"],["Освящение","освящённая земля, 12 с",1],["Гнев небес","волна 9 м, оглушение, 30 с",1]],
+[["Ослепляющий свет","дезориентация 10 м, 45 с"],["Молот правосудия","оглушение 3 с, 35 с",1],["Изгнание зла","страх нежити и демонов, 15 с"]],
+[["Длань защиты","иммунитет к физ. урону, 120 с"],["Божественный защитник","−20% урона группе, 120 с",1],["Аура воздаяния","отражение 10% урона",0,1]],
+[["Шок небес","лечит или бьёт, 6 с"],["Молот праведника","цель + 2 соседа, 6 с"],["Молот гнева","добивание ниже 20%, 6 с"]],
+[["Щит Света","щит союзнику 20%, 20 с"],["Божественный щит","8 с неуязвимости, 180 с",1],["Божественная защита","−50% урона 10 с, 120 с"]],
+[["Божественное одобрение","+50% лечения 15 с, 120 с"],["Ревностный защитник","не умереть один раз, 180 с"],["Гнев карателя","крылья, +25% урона, 120 с",1]],
+[["Возложение рук","полное лечение, 300 с",1],["Длань жертвенности","берёт 30% урона союзника"],["Освящённое оружие","автоатаки бьют Светом",0,1]]]},
+priest:{n:"Жрец",t:["Послушание","Свет","Кара"],b:"Кара, Быстрое исцеление, Обновление, Слово силы: Щит, Слово силы: Стойкость, Безмолвие",
+r:[[["Покаяние","3 залпа: урон или лечение, 10 с"],["Исцеление","большое экономное лечение"],["Священный огонь","урон + горение, 8 с",1]],
+[["Тело и душа","Щит даёт +60% скорости"],["Прыжок веры","притянуть союзника, 60 с"],["Ангельское перо","перо ускоряет, 2 заряда"]],
+[["Сияние","лечение группы + щит, 15 с"],["Круг исцеления","лечит 5 рядом, 8 с",1],["Кольцо Света","урон и лечение вокруг, 8 с",1]],
+[["Ментальный крик","страх всех в 8 м, 30 с"],["Цепи Света","обездвижить на 6 с, 20 с"],["Святое слово: Наказание","оглушение 4 с, 45 с"]],
+[["Молитва восстановления","прыгает по 5 союзникам, 10 с"],["Молитва исцеления","лечение группы, 2,5 с",1],["Искупление","урон Кары лечит союзников",0,1]],
+[["Божественный дух","бафф восполнения маны",1],["Связующее исцеление","лечит цель и себя"],["Слово Тьмы: Боль","урон тьмой 18 с"]],
+[["Барьер Света","защитный купол, 90 с",1],["Святилище","зона лечения 10 м, 30 с"],["Божественная звезда","туда и обратно: урон и лечение, 15 с"]],
+[["Мощь духа","щиты +40% 15 с, 90 с"],["Божественный гимн","мощное лечение группы, 120 с"],["Апофеоз","+50% урона Кары 15 с, 120 с"]],
+[["Слово силы: Утешение","удар + 2% маны, 8 с"],["Дух воздаяния","10 с лечить после смерти",0,1],["Чистилище","Кара продлевает эффекты",0,1]]]},
+warrior:{n:"Воин",t:["Оружие","Неистовство","Защита"],b:"Удар героя, Рывок, Боевой крик, Провокация, Зуботычина",
+r:[[["Кровопускание","кровотечение 15 с"],["Жажда крови","удар + лечение, 5 с",1],["Мощный удар щитом","урон + 50% блока, 6 с"]],
+[["Героический прыжок","на точку 20 м, оглушение, 25 с"],["Ярость берсерка","без контроля, +60% скорости, 20 с"],["Вмешательство","рывок к союзнику, 20 с"]],
+[["Рассекающий удар","3 удара по 2 соседям, 8 с"],["Вихрь","удар по всем вокруг, 8 с",1],["Удар грома","волна + замедление, 6 с",1]],
+[["Подрезать сухожилия","замедление цели 50%"],["Пронзительный вой","замедление всех в 10 м, 15 с"],["Деморализующий крик","враги бьют слабее",1]],
+[["Казнь","добивание ниже 25%",1],["Победный раж","после убийства: удар + 20% здоровья"],["Реванш","после блока: удар по 3, 5 с"]],
+[["Раскол брони","+20% физ. урона по цели, 20 с"],["Кровавая ярость","сразу 30 ярости, 60 с"],["Отражение заклинаний","отразить следующий снаряд, 25 с"]],
+[["Бой насмерть","6 с парирования, 90 с"],["Безудержное восстановление","30% здоровья за 10 с, 120 с"],["Глухая оборона","−60% урона, 120 с",1]],
+[["Сокрушение колосса","враги рядом +25% урона, 90 с"],["Безрассудство","окно силы, 180 с",1],["Последний рубеж","+30% здоровья 20 с, 180 с"]],
+[["Вихрь клинков","6 с вращения, 90 с"],["Кровожадность","убийства дают ярость",0,1],["Щит и меч","сбросы Удара щитом",0,1]]]}};
+let cur="mage";const pick={};for(const k in D)pick[k]=L.map(()=>-1);
+const $=id=>document.getElementById(id);
+function cls(){$("cls").innerHTML=Object.keys(D).map(k=>`<button class="${k==cur?'on':''}" data-k="${k}">${D[k].n}</button>`).join("");
+$("cls").querySelectorAll("button").forEach(b=>b.onclick=()=>{cur=b.dataset.k;draw()});}
+function draw(){cls();const c=D[cur],lv=+$("lvl").value;$("lvlo").textContent=lv;
+$("base").innerHTML=`<span style="color:var(--text-primary);font-weight:500">Базовые (1 ур.):</span> ${c.b}`;
+$("hd").innerHTML="<span></span>"+c.t.map(t=>`<span>${t}</span>`).join("");
+$("rows").innerHTML=c.r.map((row,i)=>{const open=lv>=L[i];
+return `<div class="row ${i==1?'mob':''}"><div class="lv">${L[i]} ур.<br>${R[i]}</div>`+row.map((o,j)=>{
+const s=pick[cur][i]==j&&open;return `<div class="opt ${s?'sel':''} ${open?'':'lock'}" data-i="${i}" data-j="${j}"><div class="nm">${open?'':'🔒 '}${o[0]}${o[2]?'<span class="tg">есть</span>':''}${o[3]?'<span class="tg">П</span>':''}</div><div class="ds">${o[1]}</div></div>`}).join("")+"</div>"}).join("");
+$("rows").querySelectorAll(".opt").forEach(e=>e.onclick=()=>{const i=+e.dataset.i,j=+e.dataset.j;if(lv<L[i])return;pick[cur][i]=pick[cur][i]==j?-1:j;draw()});
+const ch=c.r.map((row,i)=>pick[cur][i]>=0&&lv>=L[i]?row[pick[cur][i]][0]:null).filter(Boolean);
+const tree=[0,0,0];c.r.forEach((row,i)=>{if(pick[cur][i]>=0&&lv>=L[i])tree[pick[cur][i]]++});
+const open=L.filter(x=>lv>=x).length;
+$("sum").innerHTML=`<b style="font-weight:500">Билд: ${c.n}, ${lv} ур.</b> — выбрано ${ch.length} из ${open} открытых рядов${ch.length?`<br>${ch.join(" · ")}<br><span style="color:var(--text-secondary)">По веткам: ${c.t.map((t,k)=>t+" "+tree[k]).join(", ")}</span>`:""}`;}
+$("lvl").oninput=draw;draw();
+</script>
+</body>
+</html>
