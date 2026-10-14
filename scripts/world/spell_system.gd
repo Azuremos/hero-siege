@@ -420,10 +420,14 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 				for m in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), float(sp.get("start_radius", 5.0))):
 					apply_effects(u, m, sp["start_fx"], sid, school)
 			if sp.has("trail"):
-				# Огненный рывок: горящая земля на месте старта
-				_add_zone({"sid": sid, "kind": "circle", "pos": Vector3(u.pos.x, 0, u.pos.z), "radius": float(sp["trail"]["radius"]),
-					"reach": float(sp["trail"]["radius"]), "caster": u.id, "until": t + float(sp["trail"]["dur"]), "tick": float(sp["tick"]),
-					"next": t + 0.05, "ally_dr": 0.0}, sp["trail"]["vfx"], 0.0, float(sp["trail"]["radius"]), float(sp["trail"]["dur"]))
+				# Огненный рывок: полоса огня по всему пути, как Стена огня
+				var f: float = hero.rotation.y
+				var a3 := Vector3(u.pos.x, 0, u.pos.z)
+				var b3 := a3 + Vector3(-sin(f), 0, -cos(f)) * dist
+				var tw := float(sp["trail"]["radius"])
+				_add_zone({"sid": sid, "kind": "line", "pos": (a3 + b3) * 0.5, "a": a3, "b": b3, "width": tw,
+					"reach": dist * 0.5 + tw, "caster": u.id, "until": t + float(sp["trail"]["dur"]), "tick": float(sp["tick"]),
+					"next": t + 0.05, "ally_dr": 0.0}, sp["trail"]["vfx"], f + PI * 0.5, dist, float(sp["trail"]["dur"]))
 			if sp.get("back", false):
 				dist = -dist
 			if sp.has("effects"):

@@ -483,6 +483,10 @@ func _process(delta: float) -> void:
 			hud.toggle_talents()
 		else:
 			hud.toggle_spellbook()
+	# --testcast=fire_dash — герой произносит заклинание на 9-й секунде (точка — 9 м перед ним)
+	if Net.cli.has("testcast") and is_server() and _test_t >= 9.0 and _test_t - delta < 9.0:
+		var fwd3 := -local_hero.global_transform.basis.z
+		spells._complete_cast(local_hero, Net.cli["testcast"], local_hero.unit.id, local_hero.global_position + fwd3 * 9.0, local_hero.rotation.y)
 	if Net.cli.has("autotest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		var fwd := -local_hero.global_transform.basis.z
 		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())

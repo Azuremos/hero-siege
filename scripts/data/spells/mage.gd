@@ -164,9 +164,9 @@ const SPELLS := {
 	},
 	"fire_dash": {
 		"name": "Огненный рывок", "school": "fire", "icon": "ОР", "no_gcd": true,
-		"desc": "Рывок на 10 м вперёд. Позади на 4 сек. остаётся горящая земля.",
+		"desc": "Рывок на 10 м вперёд. По пути на 4 сек. остаётся полоса огня: 6–8 урона каждые 0.5 сек.",
 		"target": "self", "delivery": "blink", "distance": 10.0, "tick": 0.5,
-		"trail": {"radius": 3.0, "dur": 4.0, "vfx": "zone_flamestrike"},
+		"trail": {"radius": 2.2, "dur": 4.0, "vfx": "wall_fire"},
 		"enemy_fx": [{"type": "damage", "min": 6.0, "max": 8.0}],
 		"cast": 0.0, "cd": 18.0, "mana": 20.0, "range": 0.0,
 		"vfx": "blink", "anim": "raise",

@@ -361,6 +361,6 @@ Godot_v4.7.2-stable_win64_console.exe --path . -- --solo --class=mage --bot --fa
 ## Авторы ассетов
 
 - **3D-модели — KayKit** (Kay Lousberg, CC0): Adventurers, Skeletons, Medieval Hexagon, Dungeon Remastered, Halloween Bits. Лицензии в `assets/licenses/`.
-- **Иконки — game-icons.net** (Lorc, Delapouite, Willdabeast, Caro Asercion), лицензия CC BY 3.0. Иконки рейдовых меток нарисованы для игры (CC0). Подробнее в `assets/icons/LICENSE.txt`.
+- **Иконки — game-icons.net** (Lorc, Delapouite, Willdabeast, Caro Asercion, sbed, Skoll, Zeromancer), лицензия CC BY 3.0. Иконки рейдовых меток нарисованы для игры (CC0). Подробнее в `assets/icons/LICENSE.txt`.
 - **Звуки** — см. `assets/sounds/LICENSE.txt`.
 - **Музыка** (CC0): cynicmusic — «Battle Theme A», «Town Theme RPG»; RandomMind — «Medieval: The Old Tower Inn». Подробнее в `assets/music/LICENSE.txt`.

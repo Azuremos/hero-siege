@@ -7,6 +7,7 @@
   Willdabeast    — http://wjbstories.blogspot.com   (кольчуга)
   Caro Asercion  — https://game-icons.net            (эликсир мудрости)
   game-icons.net, набор «Badges»                    (талант «Специализация на щите»)
+  sbed, Skoll, Zeromancer — https://game-icons.net   (заклинания книги, сессия 04)
 
 Изменения: удалён чёрный фон, иконки перекрашиваются в цвет школы магии / качества предмета в игре.
 
