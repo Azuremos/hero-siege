@@ -28,6 +28,21 @@ func _ready() -> void:
 	add_child(sun)
 	var n := 0
 	var cols := classes.size() * races.size()
+	if cli.has("mobs"):
+		# --mobs=id,id: вместо героев — враги (проверить оружие в руках)
+		classes = []
+		var ids: Array = Array(str(cli["mobs"]).split(","))
+		cols = ids.size()
+		for mid: String in ids:
+			var mm := ModelFactory.build_mob(mid)
+			add_child(mm)
+			mm.position = Vector3((n - (cols - 1) * 0.5) * 2.4, 0, 0)
+			mm.rotation_degrees.y = yaw
+			var map := ModelFactory.find_anim(mm)
+			if map:
+				var an: String = cli.get("anim", "idle")
+				map.play(ModelFactory.monster_anim(mid, "Idle") if an == "idle" else an)
+			n += 1
 	var hi: int = int(op[2]) if op[2].is_valid_int() else 0
 	for cid: String in classes:
 		for rid: String in races:
