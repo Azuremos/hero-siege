@@ -69,17 +69,24 @@ var mods: Dictionary = {}
 var last_attacker: int = 0
 var node: Node3D = null              # визуальный узел (если есть)
 
-## Сумма модификатора по всем источникам: таланты (общие, школа, заклинание) + баффы.
+## Модификаторы от характеристик снаряжения (сопротивление магии, восполнение маны, скорость) — hero.apply_level_stats.
+var gear_mods: Dictionary = {}
+
+## Сумма модификатора по всем источникам: таланты (общие, школа, заклинание) + снаряжение + баффы.
+## Бафф может усиливать одну школу: ключ «amount@fire».
 func mod(key: String, sid: String = "", school: String = "") -> float:
-	var v := 0.0
+	var v := float(gear_mods.get(key, 0.0))
 	if not mods.is_empty():
 		v += float(mods["global"].get(key, 0.0))
 		if school != "":
 			v += float(mods["school"].get(school, {}).get(key, 0.0))
 		if sid != "":
 			v += float(mods["spell"].get(sid, {}).get(key, 0.0))
+	var sk := key + "@" + school if school != "" else ""
 	for b in buffs:
 		v += float(b["mods"].get(key, 0.0))
+		if sk != "":
+			v += float(b["mods"].get(sk, 0.0))
 	return v
 
 func flag(name: String) -> float:

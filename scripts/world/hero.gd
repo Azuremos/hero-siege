@@ -90,6 +90,9 @@ var equip: Dictionary = {}
 var bag: Array = []
 const BAG_SIZE := 20
 var potion_ready_at := 0.0        # сервер: общее восстановление зелий
+## Перезарядки используемых аксессуаров: id эффекта (ITEM_PROCS, on == "use") -> время готовности (сервер — истина,
+## владелец получает копию). Только строки и числа — сохраняется вместе с героем (сессия 07).
+var use_ready: Dictionary = {}
 
 func gear_stats() -> Dictionary:
 	var s := {}
@@ -139,6 +142,11 @@ func apply_level_stats(full_restore: bool) -> void:
 	var hp_frac := unit.hp / unit.max_hp if unit.max_hp > 0.0 else 1.0
 	var mana_frac := unit.mana / unit.max_mana if unit.max_mana > 0.0 else 1.0
 	var gear := gear_stats()
+	unit.gear_mods = {}
+	for k in GameData.ItemData.MOD_STATS:
+		if gear.has(k):
+			var ms: Array = GameData.ItemData.MOD_STATS[k]
+			unit.gear_mods[ms[0]] = float(gear[k]) * float(ms[1])
 	_sync_gear_procs()
 	attrs = {}
 	for k in cls["attrs"]:

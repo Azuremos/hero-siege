@@ -54,7 +54,7 @@ func setup(w: Node3D) -> void:
 	bag_v.add_child(_bag_grid)
 	_gold = _lbl("", 15, GOLD)
 	bag_v.add_child(_gold)
-	var hint := _lbl("ЛКМ — надеть / выпить.  ПКМ у торговца — продать.\nЗелья можно перетащить на панель заклинаний.", 12, Color(1, 1, 1, 0.6))
+	var hint := _lbl("ЛКМ — надеть / выпить.  ПКМ — меню (выбросить); у торговца — продать, при обмене — в обмен.\nЗелья и используемые аксессуары перетаскиваются на панель заклинаний.\nУтащите вещь за пределы окна — она упадёт на землю.", 12, Color(1, 1, 1, 0.6))
 	v.add_child(hint)
 
 func _lbl(text: String, size: int, col: Color) -> Label:
@@ -100,6 +100,12 @@ func refresh() -> void:
 		cell.gui_input.connect(func(ev: InputEvent):
 			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
 				world.economy.send("request_unequip", [s]))
+		if id != null and GameData.ItemData.use_of(id) != "":
+			# используемый аксессуар: кнопку ячейки можно перетащить на панель заклинаний
+			cell.tooltip_text += "\nПеретащите на панель заклинаний — кнопка «Использовать»"
+			cell.set_drag_forwarding(func(_at: Vector2) -> Variant:
+				cell.set_drag_preview(SpellIcon.make_item(id, 44))
+				return {"type": "spell", "sid": "use:" + s, "from": -1}, Callable(), Callable())
 		row.add_child(cell)
 		var name_l := _lbl(GameData.item(id)["name"] if id != null else GameData.ItemData.SLOTS[slot], 13,
 			GameData.item_color(id) if id != null else Color(0.55, 0.55, 0.55))
@@ -153,8 +159,10 @@ func refresh() -> void:
 				if ev.button_index == MOUSE_BUTTON_RIGHT:
 					if world.hud.shop_open():
 						world.economy.send("request_sell", [idx])
-					else:
-						world.economy.send("request_use", [idx])
+					elif world.hud.trade_open():
+						world.trade.toggle_slot(idx)
+					elif hero.bag[idx] != null:
+						_bag_menu(idx)
 			elif ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 				if hero.bag[idx] != null:
 					world.economy.send("request_use", [idx]))
@@ -168,6 +176,7 @@ func _bag_drag(_at: Vector2, idx: int, cell: Control) -> Variant:
 	if s == null:
 		return null
 	cell.set_drag_preview(SpellIcon.make_item(s["id"], 44))
+	_drag_bag = idx
 	var it := GameData.item(s["id"])
 	if it["kind"] == "consumable":
 		return {"type": "spell", "sid": "item:" + s["id"], "from": -1, "bag": idx}
@@ -178,3 +187,38 @@ func _bag_can_drop(_at: Vector2, data: Variant) -> bool:
 
 func _bag_drop(_at: Vector2, data: Variant, idx: int) -> void:
 	world.economy.send("request_swap", [int(data["bag"]), idx])
+
+# ---------------------------------------------------------------- меню вещи и выбрасывание
+
+var _menu: PopupMenu
+var _menu_idx := -1
+var _drag_bag := -1
+
+## ПКМ по вещи (лавка и обмен закрыты): надеть / выпить, выбросить.
+func _bag_menu(idx: int) -> void:
+	var hero = world.local_hero
+	if _menu == null:
+		_menu = PopupMenu.new()
+		_menu.id_pressed.connect(func(mid: int):
+			if mid == 1:
+				world.economy.send("request_use", [_menu_idx])
+			elif mid == 2:
+				world.economy.send("request_drop", [_menu_idx]))
+		add_child(_menu)
+	_menu.clear()
+	var it := GameData.item(hero.bag[idx]["id"])
+	_menu.add_item("Надеть" if it["kind"] == "gear" else "Использовать", 1)
+	_menu.add_item("Выбросить", 2)
+	_menu_idx = idx
+	_menu.position = Vector2i(get_viewport().get_mouse_position())
+	_menu.popup()
+
+## Вещь утащили из сумки и бросили не на окно — выбросить её на землю (как в WoW).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAG_END and _drag_bag >= 0:
+		var idx := _drag_bag
+		_drag_bag = -1
+		if visible and not get_viewport().gui_is_drag_successful() and not get_global_rect().has_point(get_global_mouse_position()):
+			var hud = world.hud
+			if not (hud.trade_open() and hud._trade_win.get_global_rect().has_point(get_global_mouse_position())):
+				world.economy.send("request_drop", [idx])

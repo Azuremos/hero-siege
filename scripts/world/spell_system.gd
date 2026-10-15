@@ -854,6 +854,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				# сбить каст врага; школа заклинания заблокирована на lock сек.
 				if target.kind == "mob" and world.mobs.interrupt(target, float(e.get("lock", 4.0))) and caster:
 					world.meter.on_interrupt(caster, target)
+					_trigger_procs(caster, target, "interrupt", sid, school, false, t)
 			"buff":
 				target.add_buff(e["key"], t + float(e["dur"]), e.get("mods", {}))
 				if e.get("from_caster", false) and caster:
@@ -947,8 +948,10 @@ func gain_rage(u: Unit, amount: float, t: float) -> void:
 	u.combat_until = t + GameData.COMBAT_TIME
 
 var _proc_cd: Dictionary = {}
+var _proc_count: Dictionary = {}     # «каждое N-е событие»: ключ прока -> счётчик
 
-## Проверка проков талантов: on = spell_hit | heal | auto | cast | hit_taken.
+## Проверка проков талантов и вещей: on = spell_hit | heal | auto | cast | hit_taken | interrupt.
+## Условия: school, spells, crit, magic (урон не физический), below (здоровье ниже доли), every (каждое N-е событие).
 func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: String, crit: bool, t: float) -> void:
 	if u == null or u.kind != "hero" or u.mods.is_empty() or GameData.AUTO_SPELLS.has(sid):
 		return
@@ -961,8 +964,19 @@ func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: Stri
 			continue
 		if p.get("crit", false) and not crit:
 			continue
+		if p.get("magic", false) and school == "physical":
+			continue
+		if p.has("below") and u.hp_frac() >= float(p["below"]):
+			continue
 		var key := "%d:%s" % [u.id, p["id"]]
-		if t < float(_proc_cd.get(key, 0.0)) or (randf() >= float(p["chance"]) and not Net.cli.has("procall")):
+		if t < float(_proc_cd.get(key, 0.0)):
+			continue
+		if p.has("every"):
+			_proc_count[key] = int(_proc_count.get(key, 0)) + 1
+			if int(_proc_count[key]) < int(p["every"]) and not Net.cli.has("procall"):
+				continue
+			_proc_count[key] = 0
+		elif randf() >= float(p["chance"]) and not Net.cli.has("procall"):
 			continue
 		_proc_cd[key] = t + float(p.get("icd", 1.0))
 		if Net.cli.has("proclog"):
@@ -976,12 +990,43 @@ func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: Stri
 				_feedback(rh.peer_id, p["reset"], "", -1.0, 0.0)
 			fx_at("proc", u.pos, u.pos, 0.0, u.id)
 			continue
-		if p.has("buff"):
-			# у проков вещей свои длительность и модификаторы (item_data.ITEM_PROCS)
-			u.add_buff(p["buff"], t + float(p.get("dur", 15.0)), p.get("mods", {}))
+		apply_item_effect(u, p, target, t)
+
+## Действие прока или используемого аксессуара (item_data.ITEM_PROCS, проки талантов с buff/spell):
+## buff (party — ещё и союзникам в радиусе), spell — автозаклинание у цели, absorb_pct — щит от запаса здоровья,
+## heal_pct — лечение, mana_pct — мана (воину — ярость).
+func apply_item_effect(u: Unit, p: Dictionary, target: Unit, t: float) -> void:
+	var shown := false
+	if p.has("buff"):
+		# у проков вещей свои длительность и модификаторы (item_data.ITEM_PROCS)
+		var who: Array = [u]
+		if p.has("party"):
+			who = []
+			for h in world.heroes.values():
+				if h.unit.alive and _dist(u, h.unit) <= float(p["party"]):
+					who.append(h.unit)
+		for w: Unit in who:
+			w.add_buff(p["buff"], t + float(p.get("dur", 15.0)), p.get("mods", {}))
+			_refresh_stats(w)
+			fx_at("proc", w.pos, w.pos, 0.0, w.id)
+		shown = true
+	if p.has("absorb_pct"):
+		u.absorb = maxf(u.absorb if t < u.absorb_until else 0.0, u.max_hp * float(p["absorb_pct"]))
+		u.absorb_until = t + float(p.get("dur", 10.0))
+		fx_at("shield", u.pos, u.pos, 0.0, u.id)
+		shown = true
+	if p.has("heal_pct"):
+		heal(u, u, u.max_hp * float(p["heal_pct"]), false, "proc:" + str(p.get("id", "")))
+		fx_at("heal_small", u.pos, u.pos, 0.0, u.id)
+		shown = true
+	if p.has("mana_pct"):
+		u.mana = minf(u.max_mana, u.mana + u.max_mana * float(p["mana_pct"]))
+		if not shown:
 			fx_at("proc", u.pos, u.pos, 0.0, u.id)
-		elif p.has("spell") and target:
-			cast_auto_spell(u, p["spell"], target.pos, t)
+	if p.has("spell"):
+		var a: Dictionary = GameData.AUTO_SPELLS[p["spell"]]
+		if target or a.get("around_caster", false):
+			cast_auto_spell(u, p["spell"], target.pos if target else u.pos, t)
 
 var _bursts: Array = []
 

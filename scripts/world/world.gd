@@ -7,6 +7,7 @@ const MobManagerScript := preload("res://scripts/world/mob_manager.gd")
 const SpellSystemScript := preload("res://scripts/world/spell_system.gd")
 const HudScript := preload("res://scripts/ui/hud.gd")
 const EconomyScript := preload("res://scripts/world/economy.gd")
+const TradeScript := preload("res://scripts/world/trade.gd")
 const MeterScript := preload("res://scripts/world/meter.gd")
 const MarksScript := preload("res://scripts/world/marks.gd")
 
@@ -17,6 +18,7 @@ var mobs: Node            # MobManager
 var spells: Node          # SpellSystem
 var mode: GameMode        # режим игры (осада, позже подземелья): волны, цели, победа и поражение
 var economy: Node         # Economy: торговцы, предметы, добыча
+var trade: Node           # обмен предметами между героями
 var meter: Node           # счётчик урона и лечения
 var marks: Node           # рейдовые метки и пинги
 var hud: CanvasLayer
@@ -64,6 +66,9 @@ func _ready() -> void:
 	economy = EconomyScript.new()
 	economy.name = "Economy"
 	add_child(economy)
+	trade = TradeScript.new()
+	trade.name = "Trade"
+	add_child(trade)
 	meter = MeterScript.new()
 	meter.name = "Meter"
 	add_child(meter)
@@ -139,6 +144,7 @@ func _physics_process(delta: float) -> void:
 	mobs.server_tick(delta, t)
 	mode.server_tick(delta, t)
 	economy.server_tick(delta, t)
+	trade.server_tick(t)
 	meter.server_tick(delta)
 
 	_snap_accum += delta
@@ -449,7 +455,35 @@ func _process(delta: float) -> void:
 			h.bag_add(GameData.make_gear("plate", 10, 3))
 			h.bag_add(GameData.make_gear("staff", 12, 4))
 			h.bag_add(GameData.make_gear("robe", 12, 3))
+			# аксессуары: фиолетовый, синий и зелёный
+			h.bag_add(GameData.make_gear("tr_thunder", 10, 3))
+			h.bag_add(GameData.make_gear("tr_guard" if h.class_id in ["warrior", "paladin"] else "tr_ember", 10, 2))
+			h.bag_add(GameData.make_gear("tr_seal", 8, 1))
 			economy._sync(h)
+	# --trinkets=a_thunder,u_berserk: надеть аксессуары с этими проками / используемыми эффектами (фиолетовые)
+	if Net.cli.has("trinkets") and is_server() and _test_t >= 1.2 and _test_t - delta < 1.2:
+		for h in heroes.values():
+			var pids: PackedStringArray = str(Net.cli["trinkets"]).split(",", false)
+			for k in mini(pids.size(), 2):
+				var pid: String = pids[k]
+				var base := ""
+				for tb in GameData.ItemData.TRINKETS:
+					if GameData.ItemData.TRINKETS[tb]["procs"].has(pid):
+						base = tb
+						break
+				if base == "":
+					push_warning("--trinkets: нет аксессуара с %s" % pid)
+					continue
+				var d: Dictionary = GameData.ItemData.roll(base, h.unit.level, 3, randi() % 1000000)
+				d["proc"] = pid
+				var tid: String = GameData.ItemData.encode(d)
+				var slot: String = GameData.ItemData.TRINKET_SLOTS[k]
+				h.equip[slot] = tid
+				if GameData.ItemData.use_of(tid) != "":
+					h.use_ready.erase(GameData.ItemData.use_of(tid))
+			h.apply_level_stats(false)
+			economy._sync(h)
+			print("TRINKETS ", h.class_id, " ", h.equip, " procs=", h.unit.mods.get("procs", []).map(func(p): return p["id"]))
 	# --outfit=<уровень>:<качество>: надеть оружие класса (у каждого героя — своё по порядку шаблонов) и броню
 	if Net.cli.has("outfit") and is_server() and _test_t >= 1.5 and _test_t - delta < 1.5:
 		var op: PackedStringArray = (Net.cli["outfit"] + ":").split(":")

@@ -409,7 +409,9 @@ func rebuild_party() -> void:
 		frame.gui_input.connect(func(ev: InputEvent):
 			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 				if world.local_hero:
-					world.local_hero.controller.target_id = hid)
+					world.local_hero.controller.target_id = hid
+			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
+				hero_menu(hid))
 		_party_box.add_child(frame)
 		var hp := _bar(GameData.CLASSES[h.class_id]["color"].darkened(0.15), 28)
 		hp.position = Vector2(4, 4)
@@ -574,6 +576,22 @@ func _make_slot(box: BoxContainer, b: int, i: int) -> void:
 		cnt.position = Vector2(SLOT - 24, SLOT - 20)
 		slot.add_child(cnt)
 		entry.merge({"cd": cd, "icon": icon, "count": cnt, "item": iid})
+	elif sid.begins_with("use:"):
+		# используемый аксессуар: кнопка ячейки снаряжения, иконка — надетой вещи
+		var tslot := sid.trim_prefix("use:")
+		var eid := str(world.local_hero.equip.get(tslot, ""))
+		st.bg_color = Color(0.1, 0.1, 0.1, 0.8)
+		st.border_color = GameData.item_color(eid) if eid != "" else Color(0.4, 0.4, 0.4)
+		var icon: Control = SpellIcon.make_item(eid, SLOT - 4) if eid != "" else _label("Акс.", 13, Color(0.6, 0.6, 0.6))
+		icon.position = Vector2(2, 2)
+		slot.add_child(icon)
+		var cd := _sweep(slot, Color(0, 0, 0, 0.68), Color(1.0, 0.92, 0.55, 0.5))
+		var cd_l := _label("", 18, Color(1, 0.95, 0.6))
+		cd_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cd_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cd_l.size = Vector2(SLOT, SLOT)
+		slot.add_child(cd_l)
+		entry.merge({"cd": cd, "cd_l": cd_l, "use": tslot, "use_id": eid})
 	else:
 		var sp: Dictionary = GameData.SPELLS[sid]
 		var col: Color = GameData.SCHOOLS[sp["school"]]["color"]
@@ -619,7 +637,7 @@ func _slot_drag(_at: Vector2, b: int, i: int, slot: Control) -> Variant:
 	if sid == "":
 		return null
 	_drag_from = Vector2i(b, i)
-	slot.set_drag_preview(SpellIcon.make(sid, 50))
+	slot.set_drag_preview(SpellIcon.make_item(str(world.local_hero.equip.get(sid.trim_prefix("use:"), "")), 50) if sid.begins_with("use:") else SpellIcon.make(sid, 50))
 	return {"type": "spell", "sid": sid, "bar": b, "from": i}
 
 func _slot_can_drop(_at: Vector2, data: Variant) -> bool:
@@ -654,6 +672,10 @@ func on_level_changed() -> void:
 			continue
 		if s.has("item"):
 			s["slot"].tooltip_text = GameData.item_tooltip(s["item"])
+			continue
+		if s.has("use"):
+			var ueid2 := str(lh.equip.get(s["use"], ""))
+			s["slot"].tooltip_text = GameData.item_tooltip(ueid2) if ueid2 != "" else "Аксессуар не надет"
 			continue
 		var open: bool = lh.unit.level >= GameData.spell_level(s["sid"])
 		s["lock"].visible = not open
@@ -1171,7 +1193,71 @@ func open_shop(vid: String) -> void:
 func shop_open() -> bool:
 	return _shop != null and _shop.visible
 
+# ---------------------------------------------------------------- обмен
+
+var _trade_win: Control
+var _hero_menu: PopupMenu
+var _hero_menu_id := 0
+
+func trade_open() -> bool:
+	return _trade_win != null and _trade_win.visible
+
+## ПКМ по союзнику (в мире, по рамке группы или цели): меню с «Обменом».
+func hero_menu(hid: int, _at: Vector2 = Vector2.ZERO) -> void:
+	if world.local_hero == null or hid == world.local_hero.hero_id or not world.heroes.has(hid):
+		return
+	if _hero_menu == null:
+		_hero_menu = PopupMenu.new()
+		_hero_menu.add_item("Обмен", 1)
+		_hero_menu.add_item("Выбрать целью", 2)
+		_hero_menu.add_item("Рейдовая метка…", 3)
+		_hero_menu.id_pressed.connect(func(mid: int):
+			if mid == 1:
+				world.trade.send("request_open", [_hero_menu_id])
+			elif mid == 2 and world.local_hero:
+				world.local_hero.controller.target_id = _hero_menu_id
+			elif mid == 3 and world.local_hero:
+				world.local_hero.controller.target_id = _hero_menu_id
+				_open_mark_menu.call_deferred(true))
+		_root.add_child(_hero_menu)
+	_hero_menu_id = hid
+	_hero_menu.title = world.heroes[hid].player_name
+	_hero_menu.position = Vector2i(get_viewport().get_mouse_position())
+	_hero_menu.popup()
+
+func on_trade_state(st: Dictionary) -> void:
+	if _trade_win == null:
+		_trade_win = preload("res://scripts/ui/trade_window.gd").new()
+		_trade_win.setup(world)
+		_root.add_child(_trade_win)
+	var first: bool = not _trade_win.visible
+	_trade_win.visible = true
+	_trade_win.refresh(st)
+	if first:
+		_trade_win.reset_size()
+		var vp := get_viewport().get_visible_rect().size
+		_trade_win.position = Vector2(40, (vp.y - _trade_win.size.y) * 0.5 - 40)
+		Sfx.play("ui_open")
+		if _char_window == null or not _char_window.visible:
+			toggle_character()
+	if _char_window and _char_window.visible:
+		_char_window.refresh()
+
+func on_trade_closed(text: String, success: bool) -> void:
+	if _trade_win:
+		_trade_win.visible = false
+	if success:
+		error_info(text)
+	else:
+		error(text)
+	if _char_window and _char_window.visible:
+		_char_window.refresh()
+
 func on_inventory_changed() -> void:
+	# иконки кнопок аксессуаров на панели — по надетой вещи
+	var lh = world.local_hero
+	if lh and lh.controller and _slots.any(func(s): return s.has("use") and str(lh.equip.get(s["use"], "")) != str(s.get("use_id", ""))):
+		rebuild_action_bar()
 	if _char_window and _char_window.visible:
 		_char_window.refresh()
 	if _shop and _shop.visible:
@@ -1413,6 +1499,15 @@ func _process(delta: float) -> void:
 	for s in _slots:
 		var sid: String = s["sid"]
 		if sid == "":
+			continue
+		if s.has("use"):
+			var ueid := str(lh.equip.get(s["use"], ""))
+			var use := GameData.ItemData.use_of(ueid)
+			var uleft: float = float(lh.use_ready.get(use, 0.0)) - t if use != "" else 0.0
+			var ucd: float = float(GameData.ItemData.ITEM_PROCS[use]["cd"]) if use != "" else 1.0
+			(s["cd"].material as ShaderMaterial).set_shader_parameter("progress", clampf(uleft / ucd, 0.0, 1.0))
+			s["cd_l"].text = str(int(ceil(uleft))) if uleft > 1.6 else ""
+			s["slot"].modulate = Color(0.5, 0.5, 0.5) if use == "" else Color.WHITE
 			continue
 		if s.has("item"):
 			var pleft: float = c.potion_until - t
@@ -1745,9 +1840,12 @@ func _fill_fx_row(row: HBoxContainer, list: Array, my_id: int, detailed: bool) -
 var _mark_icons: Array = []        # 8 значков над головами
 var _mark_menu: PopupMenu
 
-func _open_mark_menu() -> void:
+func _open_mark_menu(marks_only: bool = false) -> void:
 	var c = world.local_hero.controller if world.local_hero else null
 	if c == null or c.target_id == 0:
+		return
+	if not marks_only and world.heroes.has(c.target_id) and c.target_id != world.local_hero.hero_id:
+		hero_menu(c.target_id)      # в цели союзник — меню с «Обменом»
 		return
 	if _mark_menu == null:
 		_mark_menu = PopupMenu.new()

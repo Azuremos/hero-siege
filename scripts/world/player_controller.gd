@@ -176,11 +176,18 @@ func _click(pos: Vector2, is_left: bool) -> void:
 			else:
 				world.hud.error("Подойдите ближе к торговцу")
 			return
+		var lid: int = world.economy.pick_loot(camera, pos)
+		if lid != 0:
+			world.economy.send("request_pickup", [lid])
+			return
 	var id := pick_unit(pos)
 	if id == 0:
 		return
 	target_id = id
 	var u: Unit = world.get_unit(id)
+	if not is_left and u and u.kind == "hero" and id != hero.hero_id:
+		world.hud.hero_menu(id, pos)      # ПКМ по союзнику: «Обмен»
+		return
 	if not is_left and u and u.team == Unit.Team.ENEMIES:
 		_send_server("request_auto", [id])
 
@@ -367,7 +374,7 @@ func load_bar() -> void:
 		var arr: Array = bars[b] if b < bars.size() else []
 		arr.resize(BAR_SIZE)
 		for i in BAR_SIZE:
-			if arr[i] == null or not (GameData.SPELLS.has(str(arr[i])) or (str(arr[i]).begins_with("item:") and not GameData.item(str(arr[i]).trim_prefix("item:")).is_empty())):
+			if arr[i] == null or not (GameData.SPELLS.has(str(arr[i])) or GameData.ItemData.TRINKET_SLOTS.has(str(arr[i]).trim_prefix("use:")) or (str(arr[i]).begins_with("item:") and not GameData.item(str(arr[i]).trim_prefix("item:")).is_empty())):
 				arr[i] = ""
 		if b < bars.size():
 			bars[b] = arr
@@ -396,7 +403,7 @@ func sync_bar() -> void:
 	var known := spell_ids()
 	for b in BAR_COUNT:
 		for i in BAR_SIZE:
-			if bars[b][i] != "" and not str(bars[b][i]).begins_with("item:") and not known.has(bars[b][i]):
+			if bars[b][i] != "" and not str(bars[b][i]).begins_with("item:") and not str(bars[b][i]).begins_with("use:") and not known.has(bars[b][i]):
 				bars[b][i] = ""
 	for sid in known:
 		if _seen.has(sid):
@@ -431,6 +438,19 @@ var potion_until := 0.0
 
 func try_cast(sid: String) -> void:
 	var hud = world.hud
+	if sid.begins_with("use:"):
+		# используемый аксессуар из ячейки снаряжения
+		var use := GameData.ItemData.use_of(str(hero.equip.get(sid.trim_prefix("use:"), "")))
+		if not hero.unit.alive:
+			return
+		if use == "":
+			hud.error("Нет аксессуара с используемым эффектом")
+			return
+		if now() < float(hero.use_ready.get(use, 0.0)):
+			hud.error("Ещё не готово")
+			return
+		world.economy.send("request_use_slot", [sid.trim_prefix("use:")])
+		return
 	if sid.begins_with("item:"):
 		# предмет на панели: выпить зелье (первая стопка в сумке)
 		if not hero.unit.alive:
@@ -720,6 +740,16 @@ func bot_tick(delta: float) -> void:
 	for u: Unit in world.units.values():
 		if u.team == Unit.Team.ENEMIES and u.alive and _dist_to(u) < 8.0:
 			near_enemies += 1
+	# используемые аксессуары — в бою, как только готовы (лечащие — когда ранен)
+	if tu and tu.alive and _dist_to(tu) < 30.0:
+		for ts in GameData.ItemData.TRINKET_SLOTS:
+			var use := GameData.ItemData.use_of(str(hero.equip.get(ts, "")))
+			if use == "" or now() < float(hero.use_ready.get(use, 0.0)):
+				continue
+			if GameData.ItemData.ITEM_PROCS[use].has("heal_pct") and hero.unit.hp_frac() > 0.5:
+				continue
+			hero.use_ready[use] = now() + 1.0       # не слать повторно, пока сервер не ответит
+			world.economy.send("request_use_slot", [ts])
 	for sid in _bot_priority():
 		var sp: Dictionary = GameData.SPELLS[sid]
 		if hero.unit.level < GameData.spell_level(sid):

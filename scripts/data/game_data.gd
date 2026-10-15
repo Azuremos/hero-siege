@@ -401,6 +401,11 @@ func vendor_stock(kind: String, level: int, rotation: int) -> Array:
 				var id := make_gear(base, lv, q, (rng.randi() % 1000000) if q > 0 else 0)
 				if not out.has(id):
 					out.append(id)
+	# аксессуары: четыре шаблона по очереди (rotation), белые и зелёные на уровне героя
+	var tr: Array = ItemData.TRINKETS.keys()
+	for i in 4:
+		var base: String = tr[(rotation * 4 + i) % tr.size()]
+		out.append(make_gear(base, level, i % 2, rng.randi() % 1000000))
 	# синее — не каждый раз: с 5-го уровня, одна-две вещи
 	if level >= 5 and rng.randf() < 0.6:
 		for i in 1 + int(rng.randf() < 0.3):
@@ -432,6 +437,10 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99, pri
 					lines.append("+%.1f%% %s" % [it["stats"][k] * 100.0, ItemData.STAT_NAMES[k]])
 				else:
 					lines.append("+%d %s" % [int(it["stats"][k]), ItemData.STAT_NAMES[k]])
+		if it.get("use", "") != "":
+			var ud: Dictionary = ItemData.ITEM_PROCS[it["use"]]
+			lines.append("%s. %s" % [ud["name"], ud["desc"]])
+			lines.append("Перетащите на панель заклинаний.")
 		if it["proc"] != "":
 			var pr: Dictionary = ItemData.ITEM_PROCS[it["proc"]]
 			lines.append("%s: %s" % [pr["name"], pr["desc"]])

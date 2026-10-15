@@ -14,6 +14,9 @@ const VENDORS := {
 const VENDOR_RANGE := 9.0
 const PICKUP_RANGE := 2.6
 const LOOT_TIME := 90.0
+## Доля аксессуаров среди выпавших вещей.
+const TRINKET_SHARE := 0.2
+const TRINKET_SHARE_ELITE := 0.35
 
 var world: Node3D
 var vendor_pos: Dictionary = {}       # id -> Vector3
@@ -165,6 +168,8 @@ func request_sell(idx: int) -> void:
 	var hero = _sender_hero()
 	if hero == null or idx < 0 or idx >= hero.bag.size() or hero.bag[idx] == null:
 		return
+	if world.trade.is_offered(hero, idx):
+		return _say(hero, "Вещь лежит в окне обмена")
 	if nearest_vendor(hero.unit.pos) == "":
 		return _say(hero, "Продать можно только у торговца")
 	var s: Dictionary = hero.bag[idx]
@@ -214,6 +219,49 @@ func request_use(idx: int) -> void:
 	else:
 		ev_potion_cd.rpc_id(hero.peer_id, GameData.POTION_CD)
 
+## Используемый аксессуар (кнопка на панели «use:trinket1»): сервер проверяет, что вещь надета, эффект есть
+## и перезарядка прошла. Перезарядка у каждого эффекта своя, с зельями не делится.
+const EQUIP_USE_CD := 30.0
+
+@rpc("any_peer", "reliable")
+func request_use_slot(slot: String) -> void:
+	if not Net.is_server():
+		return
+	var hero = _sender_hero()
+	if hero == null or not GameData.ItemData.TRINKET_SLOTS.has(slot) or not hero.unit.alive:
+		return
+	var use := GameData.ItemData.use_of(str(hero.equip.get(slot, "")))
+	if use == "":
+		return _say(hero, "Этот аксессуар нельзя использовать")
+	var t: float = world.now()
+	if t < float(hero.use_ready.get(use, 0.0)):
+		return _say(hero, "Ещё не готово")
+	if hero.unit.is_stunned(t):
+		return _say(hero, "Вы оглушены")
+	var pd: Dictionary = GameData.ItemData.ITEM_PROCS[use]
+	hero.use_ready[use] = t + float(pd["cd"])
+	world.spells.apply_item_effect(hero.unit, pd, hero.unit, t)
+	if Net.cli.has("proclog"):
+		print("USE ", use, " t=%.1f" % t)
+	_send_use_cd(hero)
+
+## Владельцу — перезарядки используемых аксессуаров (сколько секунд осталось).
+func _send_use_cd(hero) -> void:
+	var left := {}
+	for k in hero.use_ready:
+		left[k] = maxf(0.0, float(hero.use_ready[k]) - world.now())
+	if hero.peer_id == multiplayer.get_unique_id():
+		ev_use_cd(left)
+	else:
+		ev_use_cd.rpc_id(hero.peer_id, left)
+
+@rpc("authority", "reliable")
+func ev_use_cd(left: Dictionary) -> void:
+	if world.local_hero == null:
+		return
+	for k in left:
+		world.local_hero.use_ready[k] = world.now() + float(left[k])
+
 ## Использовать расходник по id (с панели заклинаний).
 @rpc("any_peer", "reliable")
 func request_use_id(item_id: String) -> void:
@@ -239,6 +287,16 @@ func _equip(hero, idx: int) -> void:
 	if hero.unit.level < int(it["level"]):
 		return _say(hero, "Нужен %d уровень" % it["level"])
 	var slot: String = it["slot"]
+	if slot == "trinket":
+		# аксессуар — в свободную из двух ячеек, иначе вместо первого
+		slot = "trinket1"
+		if hero.equip.has("trinket1") and not hero.equip.has("trinket2"):
+			slot = "trinket2"
+		# используемый эффект после надевания готов не раньше чем через 30 сек. (как в WoW) — нельзя сбросить перезарядку переодеванием
+		var use: String = it.get("use", "")
+		if use != "":
+			hero.use_ready[use] = maxf(float(hero.use_ready.get(use, 0.0)), world.now() + EQUIP_USE_CD)
+			_send_use_cd(hero)
 	# воин с «Боем двумя руками»: второе оружие идёт в левую руку
 	# двуручное оружие во вторую руку не берётся и само занимает обе руки
 	var two: bool = slot == "weapon" and GameData.ItemData.is_two_handed(it["id"])
@@ -344,11 +402,7 @@ func roll_loot(pos: Vector3, wave: int, source: String) -> void:
 			if randf() < (float(Net.cli["lootrate"]) if Net.cli.has("lootrate") else 0.06):
 				drops.append(_random_gear(wave, pos, source) if randf() < 0.4 else _random_consumable(pos))
 	for id in drops:
-		var lid := _next_loot
-		_next_loot += 1
-		var p := pos + Vector3(randf_range(-1.2, 1.2), 0, randf_range(-1.2, 1.2))
-		_loot[lid] = {"item": id, "pos": p, "until": world.now() + LOOT_TIME}
-		ev_loot_spawn.rpc(lid, id, p)
+		_spawn_loot(id, pos + Vector3(randf_range(-1.2, 1.2), 0, randf_range(-1.2, 1.2)))
 
 ## Сервер: добыча с босса — одна именная вещь из его списка (главный — эпическая, лейтенант — редкая и выше)
 ## плюс обычная добыча босса (две вещи и два зелья).
@@ -364,11 +418,7 @@ func roll_boss_loot(pos: Vector3, wave: int, uniques: Array, rank: String) -> vo
 	var d: Dictionary = GameData.ItemData.roll(ud["base"], GameData.Formulas.gear_ilvl(wave, _levels_near(pos), "boss") + 1, q, randi() % 1000000)
 	d["unique_id"] = uid
 	var id: String = GameData.ItemData.encode(d)
-	var lid := _next_loot
-	_next_loot += 1
-	var p := pos + Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8))
-	_loot[lid] = {"item": id, "pos": p, "until": world.now() + LOOT_TIME}
-	ev_loot_spawn.rpc(lid, id, p)
+	_spawn_loot(id, pos + Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8)))
 	world.announce_all("Добыча: %s" % GameData.item(id)["name"], GameData.ItemData.QUALITY[q])
 
 ## Вещь: уровень — по уровню героев рядом (номер волны ограничивает сверху), качество — отдельным броском
@@ -379,7 +429,10 @@ func _random_gear(wave: int, pos: Vector3, source: String) -> String:
 	var q := GameData.ItemData.roll_quality(GameData.Formulas.typical_level(levels), source, randf())
 	if Net.cli.has("lootsim"):
 		_lootsim_record(ilvl, q, levels)
+	# аксессуар — каждая пятая вещь, с элитных и боссов — каждая третья (их носят ради проков)
 	var keys: Array = GameData.ItemData.TEMPLATES.keys()
+	if randf() < (TRINKET_SHARE_ELITE if source != "mob" else TRINKET_SHARE):
+		keys = GameData.ItemData.TRINKETS.keys()
 	return GameData.make_gear(keys[randi() % keys.size()], ilvl, q)
 
 ## Зелье (ступень — по уровню героев рядом) или эликсир.
@@ -397,6 +450,87 @@ func _random_consumable(pos: Vector3) -> String:
 			best = c
 	return best
 
+func _spawn_loot(id: String, p: Vector3, n: int = 1, owner: int = 0) -> int:
+	var lid := _next_loot
+	_next_loot += 1
+	var l := {"item": id, "n": n, "pos": p, "until": world.now() + LOOT_TIME}
+	if owner != 0:
+		# выброшенное: лежит дольше, поднимается только кликом, выбросивший — не раньше чем через DROP_LOCK сек.
+		l["owner"] = owner
+		l["lock_until"] = world.now() + DROP_LOCK
+		l["until"] = world.now() + LOOT_TIME * 2.0
+	_loot[lid] = l
+	ev_loot_spawn.rpc(lid, id, p, n, owner != 0)
+	return lid
+
+# ---------------------------------------------------------------- выбросить и поднять
+
+## Выброшенное поднимается кликом ПКМ (не подходом — чтобы не схватить случайно), не дальше этого.
+const CLICK_PICKUP_RANGE := 4.5
+const DROP_LOCK := 5.0
+
+## Выбросить вещь из сумки на землю (перетащить за пределы сумки или ПКМ → «Выбросить»).
+@rpc("any_peer", "reliable")
+func request_drop(idx: int) -> void:
+	if not Net.is_server():
+		return
+	var hero = _sender_hero()
+	if hero == null or idx < 0 or idx >= hero.bag.size() or hero.bag[idx] == null:
+		return
+	if world.trade.is_offered(hero, idx):
+		return _say(hero, "Вещь лежит в окне обмена")
+	var s: Dictionary = hero.bag[idx]
+	hero.bag[idx] = null
+	var fwd := Vector3(-sin(hero.rotation.y), 0, -cos(hero.rotation.y))
+	var lid := _spawn_loot(s["id"], hero.unit.pos + fwd * 1.6, int(s["n"]), hero.hero_id)
+	_sync(hero)
+	_sound(hero, "ui_drop")
+	if Net.cli.has("tradelog") or Net.cli.has("tradetest"):
+		print("DROP hero=%d item=%s n=%d loot=%d" % [hero.hero_id, s["id"], int(s["n"]), lid])
+
+## Поднять добычу кликом. Любую добычу можно поднять и так, выброшенную — только так.
+@rpc("any_peer", "reliable")
+func request_pickup(lid: int) -> void:
+	if not Net.is_server():
+		return
+	var hero = _sender_hero()
+	if hero == null or not _loot.has(lid) or not hero.unit.alive:
+		return
+	var l: Dictionary = _loot[lid]
+	if Vector2(hero.unit.pos.x - l["pos"].x, hero.unit.pos.z - l["pos"].z).length() > CLICK_PICKUP_RANGE + 0.5:
+		return _say(hero, "Подойдите ближе")
+	var t: float = world.now()
+	if int(l.get("owner", 0)) == hero.hero_id and t < float(l.get("lock_until", 0.0)):
+		if Net.cli.has("tradelog") or Net.cli.has("tradetest"):
+			print("PICKUP refused (own drop) hero=%d loot=%d" % [hero.hero_id, lid])
+		return _say(hero, "Свою выброшенную вещь можно поднять через %d сек." % int(ceil(float(l["lock_until"]) - t)))
+	if not hero.bag_add(l["item"], int(l.get("n", 1))):
+		return _say(hero, "Сумка полна")
+	_loot.erase(lid)
+	ev_loot_remove.rpc(lid)
+	_sync(hero)
+	_say_loot(hero, l["item"])
+	if Net.cli.has("tradelog") or Net.cli.has("tradetest"):
+		print("PICKUP hero=%d item=%s loot=%d" % [hero.hero_id, l["item"], lid])
+
+## Добыча под курсором (клиент; для клика ПКМ). 0 — нет.
+func pick_loot(cam: Camera3D, screen_pos: Vector2) -> int:
+	var best := 0
+	var best_d := 1e9
+	for lid in _loot_nodes:
+		var n: Node3D = _loot_nodes[lid]
+		if not is_instance_valid(n):
+			continue
+		var p := n.global_position + Vector3(0, 0.6, 0)
+		if cam.is_position_behind(p):
+			continue
+		var r := clampf(700.0 / maxf(cam.global_position.distance_to(p), 1.0), 18.0, 90.0)
+		var d := cam.unproject_position(p).distance_to(screen_pos)
+		if d < r and d < best_d:
+			best_d = d
+			best = lid
+	return best
+
 func server_tick(delta: float, t: float) -> void:
 	_pickup_t -= delta
 	if _pickup_t > 0.0:
@@ -411,8 +545,8 @@ func server_tick(delta: float, t: float) -> void:
 		for h in world.heroes.values():
 			if not h.unit.alive:
 				continue
-			if Vector2(h.unit.pos.x - l["pos"].x, h.unit.pos.z - l["pos"].z).length() <= PICKUP_RANGE:
-				if h.bag_add(l["item"]):
+			if not l.has("owner") and Vector2(h.unit.pos.x - l["pos"].x, h.unit.pos.z - l["pos"].z).length() <= PICKUP_RANGE:
+				if h.bag_add(l["item"], int(l.get("n", 1))):
 					gone.append(lid)
 					_sync(h)
 					_say_loot(h, l["item"])
@@ -433,7 +567,7 @@ func ev_got(id: String) -> void:
 	Sfx.play("coins")
 
 @rpc("authority", "call_local", "reliable")
-func ev_loot_spawn(lid: int, id: String, p: Vector3) -> void:
+func ev_loot_spawn(lid: int, id: String, p: Vector3, n: int = 1, dropped: bool = false) -> void:
 	var it := GameData.item(id)
 	var holder := Node3D.new()
 	var path := "res://assets/dungeon/chest.glb" if it["kind"] == "gear" else "res://assets/dungeon/bottle_A_labeled_green.gltf.glb"
@@ -454,7 +588,7 @@ func ev_loot_spawn(lid: int, id: String, p: Vector3) -> void:
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	holder.add_child(beam)
 	var tag := Label3D.new()
-	tag.text = it["name"]
+	tag.text = it["name"] + (" ×%d" % n if n > 1 else "") + ("\n(ПКМ — поднять)" if dropped else "")
 	tag.modulate = col
 	tag.outline_modulate = Color(0, 0, 0, 0.9)
 	tag.outline_size = 8
