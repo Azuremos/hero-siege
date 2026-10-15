@@ -86,7 +86,7 @@ func server_tick(_delta: float, t: float) -> void:
 		return
 	while not _queue.is_empty() and t >= _queue[0][0]:
 		var e: Array = _queue.pop_front()
-		world.mobs.spawn(e[1], e[2], wave, world.heroes.size(), e[3], {"champion": e[4] == "champion"})
+		world.mobs.spawn(e[1], e[2], wave, world.online_hero_count(), e[3], {"champion": e[4] == "champion"})
 	if _all_spawned:
 		next_wave_in = 0.0
 		if _queue.is_empty() and world.mobs.alive_count() == 0:
@@ -118,7 +118,7 @@ func _start_wave(t: float) -> void:
 	# В короткой партии (меньше 5 волн) последняя волна заканчивается боссом
 	var short_final: bool = wave_count > 0 and wave_count < 5 and w == wave_count
 	var factions_by_index: Array = active_lanes.map(func(l): return lane_faction[l])
-	var plan: Dictionary = GameData.wave_plan(w, factions_by_index, world.heroes.size(), wave_count > 0 and w == wave_count)
+	var plan: Dictionary = GameData.wave_plan(w, factions_by_index, world.online_hero_count(), wave_count > 0 and w == wave_count)
 	var comp: Array = plan["list"]
 	var per_lane_time: Dictionary = {}
 	var headliners: Array = []

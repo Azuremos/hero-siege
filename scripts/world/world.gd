@@ -88,8 +88,14 @@ func _ready() -> void:
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	if is_server():
 		_ready_peers[1] = true
+		_apply_saved_heroes()
 		mode.begin()
 	else:
+		if Net.joining_mid:
+			# вошёл посреди партии: завершить вход (до этого RPC сюда не шли), дождаться соединения
+			Net.finish_mid_join()
+			await multiplayer.connected_to_server
+			Net.joining_mid = false
 		_client_ready.rpc_id(1)
 
 func _read_map() -> void:
@@ -118,6 +124,9 @@ func _spawn_heroes() -> void:
 		heroes_root.add_child(hero)
 		heroes[hid] = hero
 		units[hid] = hero.unit
+		if info.get("offline", false):
+			hero.offline = true      # продолженная осада: игрок ещё не вернулся — герой ждёт
+			hero.visible = false
 		if pid == Net.my_id():
 			local_hero = hero
 		i += 1
@@ -318,21 +327,34 @@ func ev_sound(name: String) -> void:
 
 @rpc("any_peer", "reliable")
 func _client_ready() -> void:
-	_ready_peers[multiplayer.get_remote_sender_id()] = true
-	economy.send_all_looks(multiplayer.get_remote_sender_id())
+	var peer := multiplayer.get_remote_sender_id()
+	_ready_peers[peer] = true
+	if not _rejoining.has(peer):
+		send_full_state(peer)      # начало партии: сохранённые герои и всё, что уже есть в мире
+	else:
+		# вошёл посреди партии (вернулся или новый): полный снимок мира, герой — у точки воскрешения
+		var h = heroes.get(int(_rejoining[peer]), null)
+		_rejoining.erase(peer)
+		if h:
+			_set_offline(h.hero_id, false)
+			h.ev_respawn.rpc(mode.respawn_point(h))
+		send_full_state(peer)
 
+## Игрок отключился: герой ждёт его до конца партии (без ограничения по времени) — скрыт и неуязвим.
 func _on_peer_left(peer: int) -> void:
+	_ready_peers.erase(peer)
+	_rejoining.erase(peer)
 	var hid := 0
 	for h in heroes.values():
 		if h.peer_id == peer:
 			hid = h.hero_id
-	if hid == 0:
+	if hid == 0 or not is_server():
 		return
-	var h = heroes[hid]
-	heroes.erase(hid)
-	units.erase(hid)
-	h.queue_free()
-	hud.rebuild_party()
+	if Net.players.has(peer):
+		Net.players[peer]["offline"] = true
+		Net._sync_players.rpc(Net.players)
+	_set_offline(hid, true)
+	announce_all("%s отключился — его герой ждёт возвращения." % heroes[hid].player_name, Color(1, 0.7, 0.4))
 
 func _on_net_disconnected(reason: String) -> void:
 	Net.back_to_menu(reason)
@@ -787,3 +809,162 @@ func _manalog_summary() -> void:
 @rpc("authority", "call_local", "unreliable")
 func ev_sound_at(snd: String, pos: Vector3, vol: float, pitch: float) -> void:
 	Sfx.play_at(snd, pos, vol, pitch)
+
+# ---------------------------------------------------------------- отключение, переподключение, поздний вход (сессия 07)
+
+## Герои, чьи игроки сейчас в игре (сила волн считается по ним).
+func online_hero_count() -> int:
+	var n := 0
+	for h in heroes.values():
+		if not h.offline:
+			n += 1
+	return maxi(1, n)
+
+## Сервер: игрок пришёл посреди партии. Тот же uid — его отключённый герой; иначе — новый герой (поздний вход).
+## false — пустить нельзя (поздний вход выключен или отряд полон).
+func server_join(peer: int, rec: Dictionary) -> bool:
+	for pid in Net.players.keys():
+		var old: Dictionary = Net.players[pid]
+		if str(old.get("uid", "")) != "" and str(old.get("uid", "")) == str(rec.get("uid", "")) and old.get("offline", false):
+			# переподключение: та же запись игрока и тот же герой, новый транспорт
+			Net.players.erase(pid)
+			old["offline"] = false
+			old["version"] = rec.get("version", "")
+			Net.players[peer] = old
+			var h = heroes.get(int(old["hero_id"]), null)
+			if h:
+				h.peer_id = peer
+			_rejoining[peer] = int(old["hero_id"])
+			ev_rebind_hero.rpc(int(old["hero_id"]), peer)
+			announce_all("%s вернулся в игру." % old["name"], Color(0.6, 1.0, 0.7))
+			return true
+	if not bool(Net.settings.get("late_join", true)):
+		return false
+	var online := 0
+	for pid in Net.players:
+		if not Net.players[pid].get("offline", false):
+			online += 1
+	if online >= Net.MAX_PLAYERS:
+		return false
+	var hid := 1
+	for h in heroes.keys():
+		hid = maxi(hid, int(h) + 1)
+	rec["hero_id"] = hid
+	Net.players[peer] = rec
+	ev_add_hero.rpc(peer, rec)
+	_late_setup(heroes[hid])
+	_rejoining[peer] = hid
+	announce_all("%s присоединился к осаде." % rec["name"], Color(0.6, 1.0, 0.7))
+	return true
+
+var _rejoining: Dictionary = {}       # сервер: peer -> hero_id, ждём, пока у него загрузится мир
+
+## Поздний вход: уровень — медиана уровней отряда, немного золота на старт. В «Походе» — свой сохранённый герой.
+func _late_setup(h) -> void:
+	var saved: Dictionary = HeroSave.sanitize(Net.players.get(h.peer_id, {}).get("character", null))
+	if not saved.is_empty() and saved["class"] == h.class_id:
+		HeroSave.apply(self, h, saved)
+		return
+	var levels: Array = []
+	for o in heroes.values():
+		if o != h and not o.offline:
+			levels.append(o.unit.level)
+	levels.sort()
+	var lvl: int = levels[levels.size() / 2] if not levels.is_empty() else 1
+	h.unit.level = lvl
+	h.xp_next = GameData.xp_to_next(lvl)
+	h.gold = 25 * lvl
+	h.apply_level_stats(true)
+
+## Создать героя игрока, вошедшего посреди партии (у всех, кто уже в игре).
+@rpc("authority", "call_local", "reliable")
+func ev_add_hero(pid: int, info: Dictionary) -> void:
+	Net.players[pid] = info
+	var hid := int(info["hero_id"])
+	if heroes.has(hid):
+		return
+	var hero: CharacterBody3D = HeroScript.new()
+	hero.name = "Hero_%d" % hid
+	hero.setup(self, hid, pid, info)
+	hero.position = mode.respawn_point(hero)
+	hero.rotation.y = mode.hero_spawn_yaw()
+	heroes_root.add_child(hero)
+	heroes[hid] = hero
+	units[hid] = hero.unit
+	hud.rebuild_party()
+
+## Игрок вернулся: герой теперь управляется с нового соединения.
+@rpc("authority", "call_local", "reliable")
+func ev_rebind_hero(hid: int, peer: int) -> void:
+	var h = heroes.get(hid, null)
+	if h:
+		h.peer_id = peer
+
+## Отключён / вернулся: герой скрыт, враги его не видят, опыт не идёт; рамка в группе серая.
+@rpc("authority", "call_local", "reliable")
+func ev_hero_offline(hid: int, off: bool) -> void:
+	var h = heroes.get(hid, null)
+	if h == null:
+		return
+	h.offline = off
+	h.visible = not off
+	if is_server():
+		h.unit.alive = not off
+		h.respawn_at = 0.0
+		if off:
+			spells._interrupt(h)
+			h.unit.auras.clear()
+	hud.rebuild_party()
+
+func _set_offline(hid: int, off: bool) -> void:
+	ev_hero_offline.rpc(hid, off)
+
+## Сервер: полный снимок мира тому, кто загрузился посреди партии — герои, враги и питомцы, добыча,
+## зоны, стены, ловушки, облик. Состояние режима (волна, таймер, замок) идёт само раз в 0,5 сек.
+func send_full_state(peer: int) -> void:
+	for h in heroes.values():
+		ev_hero_full.rpc_id(peer, h.hero_id, HeroSave.capture(h), h.global_position, h.offline)
+	mobs.send_full(peer)
+	economy.send_loot(peer)
+	spells.send_zones(peer)
+	economy.send_all_looks(peer)
+
+## Клиент: состояние героя целиком (уровень, таланты, книга, снаряжение, сумка, золото, место).
+@rpc("authority", "reliable")
+func ev_hero_full(hid: int, d: Dictionary, pos: Vector3, off: bool) -> void:
+	var h = heroes.get(hid, null)
+	if h == null:
+		return
+	h.unit.level = int(d["level"])
+	h.xp = int(d["xp"])
+	h.gold = int(d["gold"])
+	h.equip = d["equip"].duplicate()
+	h.bag = d["bag"].duplicate(true)
+	h.set_talents(d["talents"])
+	h.set_choices(d["choices"])
+	h.offline = off
+	h.visible = not off
+	if not h.is_local:
+		h.global_position = pos
+	if h == local_hero:
+		hud.on_level_changed()
+		hud.on_talents_changed()
+		hud.on_inventory_changed()
+	hud.rebuild_party()
+
+## Сервер, начало партии: сохранённые герои (продолженная осада — по uid игрока, «Поход» — герой из файла игрока),
+## отключённые с самого начала — ждут своих игроков.
+func _apply_saved_heroes() -> void:
+	var siege: Dictionary = Net.pending_siege
+	for h in heroes.values():
+		var info: Dictionary = Net.players.get(h.peer_id, {})
+		var raw: Variant = null
+		if not siege.is_empty():
+			raw = siege.get("heroes", {}).get(str(info.get("uid", "")), null)
+		if raw == null and info.get("character", null) is Dictionary:
+			raw = info["character"]
+		var d := HeroSave.sanitize(raw)
+		if not d.is_empty() and d["class"] == h.class_id:
+			HeroSave.apply(self, h, d)
+		if h.offline:
+			h.unit.alive = false

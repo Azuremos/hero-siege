@@ -92,7 +92,7 @@ const BUFF_INFO := {
 	"use_sprint": {"name": "Полёт грифона", "color": Color(0.5, 1.0, 0.9), "icon": "angelic_feather"},
 	"use_spell_ward": {"name": "Антимагический покров", "color": Color(0.7, 0.5, 1.0), "icon": "spell_reflection"},
 	"use_arcane_power": {"name": "Вечное пламя разума", "color": Color(0.8, 0.45, 1.0), "icon": "arcane_power"},
-	"fingers_of_frost": {"name": "Ледяные пальцы", "color": Color(0.5, 0.85, 1.0), "icon": "frostbolt"},
+	"fingers_of_frost": {"name": "Ледяные пальцы", "color": Color(0.5, 0.85, 1.0), "icon": "ice_lance"},
 	"arcane_surge": {"name": "Всплеск тайной магии", "color": Color(0.8, 0.5, 1.0), "icon": "arcane_barrage"},
 	"art_of_war": {"name": "Искусство войны", "color": Color(1.0, 0.85, 0.4), "icon": "judgement"},
 	"infusion_of_light": {"name": "Прилив Света", "color": Color(1.0, 0.95, 0.6), "icon": "holy_light"},

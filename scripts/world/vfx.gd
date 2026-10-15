@@ -545,6 +545,8 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 
 ## Долгие эффекты на земле: области, стены, купол.
 static func zone(world: Node3D, id: int, kind: String, pos: Vector3, yaw: float, size: float, duration: float) -> void:
+	if zones.has(id) and is_instance_valid(zones[id]):
+		return      # уже показана (полный снимок мира)
 	if kind == "zone_volley":
 		volley(world, id, pos, size, duration)
 		return
@@ -817,6 +819,8 @@ static func trap(world: Node3D, id: int, kind: String, pos: Vector3, on: bool) -
 		if old and is_instance_valid(old):
 			old.queue_free()
 		traps.erase(id)
+		return
+	if traps.has(id) and is_instance_valid(traps[id]):
 		return
 	var col := COL_FROST if kind == "trap_frost" else COL_FIRE
 	var n := Node3D.new()

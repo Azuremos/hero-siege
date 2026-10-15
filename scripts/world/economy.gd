@@ -571,6 +571,8 @@ func ev_got(id: String) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func ev_loot_spawn(lid: int, id: String, p: Vector3, n: int = 1, dropped: bool = false) -> void:
+	if _loot_nodes.has(lid):
+		return
 	var it := GameData.item(id)
 	var holder := Node3D.new()
 	var path := "res://assets/dungeon/chest.glb" if it["kind"] == "gear" else "res://assets/dungeon/bottle_A_labeled_green.gltf.glb"
@@ -754,3 +756,9 @@ func _process(delta: float) -> void:
 					var p := anvil.global_position + Vector3(-0.05, 0.62, 0)
 					Vfx.burst(world, p, Color(1.0, 0.65, 0.2))
 					Sfx.play_at("blade_hit", p, -12.0))
+
+## Сервер: добыча на земле — игроку, вошедшему посреди партии.
+func send_loot(peer: int) -> void:
+	for lid in _loot:
+		var l: Dictionary = _loot[lid]
+		ev_loot_spawn.rpc_id(peer, lid, l["item"], l["pos"], int(l.get("n", 1)), l.has("owner"))

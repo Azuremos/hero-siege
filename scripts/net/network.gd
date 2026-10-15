@@ -25,6 +25,8 @@ var solo := false
 var cli: Dictionary = {}
 ## Настройки партии (выбирает хост): число волн, направления, длительность передышки (сек.).
 var settings: Dictionary = {"waves": 20, "lanes": 4, "break": 60}
+## Продолженная осада (сессия 07): данные сохранения, которые хост загрузил в лобби. {} — обычная партия.
+var pending_siege: Dictionary = {}
 
 ## Личность игрока: стабильный id (UUID) в user://profile.cfg. peer_id — только транспорт, ключ состояния — uid.
 ## Там же — адрес последнего хоста и флаг «партия оборвалась» (кнопка «Переподключиться»).
@@ -64,6 +66,87 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(_on_connected_ok)
 	multiplayer.connection_failed.connect(_on_connected_fail)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
+	# вход через аутентификацию: пока клиент, вошедший посреди партии, грузит мир, RPC до него не доходят
+	var sm := multiplayer as SceneMultiplayer
+	sm.auth_callback = _auth_received
+	sm.auth_timeout = 90.0
+	sm.peer_authenticating.connect(_on_peer_authenticating)
+
+# ---------------------------------------------------------------- вход: аутентификация (сессия 07)
+## Клиент шлёт hello с данными игрока. В лобби хост сразу пускает (дальше — как раньше, _register_player).
+## В идущей партии хост решает (вернувшийся по uid или поздний вход), отдаёт игроков и настройки байтами
+## аутентификации; клиент грузит мир, отвечает loaded — и только тогда обе стороны завершают вход.
+var joining_mid := false
+
+func _on_peer_authenticating(id: int) -> void:
+	if not is_server() and id == 1:
+		var info := local_info.duplicate()
+		info["version"] = game_version()
+		(multiplayer as SceneMultiplayer).send_auth(1, var_to_bytes({"t": "hello", "info": info}))
+
+func _auth_send(id: int, msg: Dictionary) -> void:
+	(multiplayer as SceneMultiplayer).send_auth(id, var_to_bytes(msg))
+
+func _auth_received(id: int, data: PackedByteArray) -> void:
+	var msg: Variant = bytes_to_var(data)
+	if not msg is Dictionary:
+		return
+	var sm := multiplayer as SceneMultiplayer
+	var t := str(msg.get("t", ""))
+	if is_server():
+		match t:
+			"hello":
+				if not in_game:
+					_auth_send(id, {"t": "lobby"})
+					sm.complete_auth(id)
+					return
+				var info: Variant = msg.get("info", {})
+				if not info is Dictionary or str(info.get("version", "")) != game_version():
+					_auth_send(id, {"t": "refused", "reason": "У хоста версия %s, у вас другая.\nСкачайте ту же версию игры, что у хоста." % game_version()})
+					_kick_later(id)
+					return
+				var rec := _make_rec(info)
+				var w := get_tree().current_scene
+				if w == null or not w.has_method("server_join") or not w.server_join(id, rec):
+					_auth_send(id, {"t": "refused", "reason": "Отряд полон или хост не пускает в идущую партию."})
+					_kick_later(id)
+					return
+				_sync_players.rpc(players)
+				_auth_send(id, {"t": "start", "players": players, "settings": settings})
+			"loaded":
+				sm.complete_auth(id)
+	elif id == 1:
+		match t:
+			"lobby":
+				sm.complete_auth(1)
+			"start":
+				players = msg["players"]
+				settings = msg["settings"]
+				in_game = true
+				joining_mid = true
+				profile_set("unclean", true)
+				game_starting.emit()
+				get_tree().change_scene_to_file.call_deferred("res://scenes/world.tscn")
+			"refused":
+				leave.call_deferred()
+				connection_failed.emit(str(msg.get("reason", "Хост не пустил в партию.")))
+
+## Клиент, вошедший посреди партии: мир загружен — завершить вход.
+func finish_mid_join() -> void:
+	_auth_send(1, {"t": "loaded"})
+	(multiplayer as SceneMultiplayer).complete_auth(1)
+
+func _make_rec(info: Dictionary) -> Dictionary:
+	var rec := {
+		"name": str(info.get("name", "Герой")).substr(0, 16),
+		"class": str(info.get("class", "mage")) if GameData.CLASSES.has(info.get("class", "")) else "mage",
+		"race": str(info.get("race", "human")) if GameData.RACES.has(info.get("race", "")) else "human",
+		"version": str(info.get("version", "")).substr(0, 24),
+		"uid": str(info.get("uid", "")).substr(0, 40),
+	}
+	if info.get("character", null) is Dictionary:
+		rec["character"] = info["character"]       # сохранённый герой «Похода» (хост проверит HeroSave.sanitize)
+	return rec
 
 func is_server() -> bool:
 	return multiplayer.has_multiplayer_peer() and multiplayer.is_server()
@@ -131,6 +214,7 @@ func join_game(address: String) -> Error:
 	leave()
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(address.strip_edges(), port())
+	profile_set("last_host", address.strip_edges())
 	if err != OK:
 		return err
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
@@ -151,6 +235,8 @@ func _on_peer_connected(_id: int) -> void:
 	pass  # клиент сам пришлёт register_player
 
 func _on_peer_disconnected(id: int) -> void:
+	if in_game:
+		return      # в партии запись игрока остаётся: его герой ждёт возвращения (world._on_peer_left)
 	if players.has(id):
 		players.erase(id)
 		players_changed.emit()
@@ -158,6 +244,8 @@ func _on_peer_disconnected(id: int) -> void:
 			_sync_players.rpc(players)
 
 func _on_connected_ok() -> void:
+	if joining_mid:
+		return      # вошёл посреди партии: данные уже переданы при аутентификации
 	var info := local_info.duplicate()
 	info["version"] = game_version()
 	_register_player.rpc_id(1, info)
@@ -175,10 +263,6 @@ func _register_player(info: Dictionary) -> void:
 	if not is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
-	if in_game:
-		# Поздний вход пока не поддерживается — вежливо отключаем.
-		multiplayer.multiplayer_peer.disconnect_peer(id)
-		return
 	var pname := str(info.get("name", "Герой")).substr(0, 16)
 	# Версии до v0.5 свою версию не присылают.
 	var version := str(info.get("version", "")).substr(0, 24)
@@ -190,12 +274,16 @@ func _register_player(info: Dictionary) -> void:
 		_version_mismatch.rpc_id(id, game_version())
 		_kick_later(id)
 		return
-	players[id] = {
-		"name": pname,
-		"class": str(info.get("class", "mage")) if GameData.CLASSES.has(info.get("class", "")) else "mage",
-		"race": str(info.get("race", "human")) if GameData.RACES.has(info.get("race", "")) else "human",
-		"version": version,
-	}
+	var rec := _make_rec(info)
+	if in_game:
+		return      # в идущую партию входят через аутентификацию (_auth_received)
+	# лобби продолженной осады: игрок с тем же uid занимает место своего героя
+	for pid in players.keys():
+		if pid < 0 and str(players[pid].get("uid", "")) == rec["uid"] and rec["uid"] != "":
+			rec["class"] = players[pid]["class"]
+			rec["race"] = players[pid]["race"]
+			players.erase(pid)
+	players[id] = rec
 	players_changed.emit()
 	_sync_players.rpc(players)
 
@@ -234,6 +322,7 @@ func start_game() -> void:
 
 @rpc("authority", "reliable")
 func _start_game(p: Dictionary, s: Dictionary) -> void:
+	profile_set("unclean", not solo)      # партия идёт: если оборвётся — в меню будет «Переподключиться»
 	players = p
 	settings = s
 	in_game = true
@@ -241,6 +330,8 @@ func _start_game(p: Dictionary, s: Dictionary) -> void:
 	get_tree().change_scene_to_file.call_deferred("res://scenes/world.tscn")
 
 func back_to_menu(reason: String = "") -> void:
+	if reason == "":
+		profile_set("unclean", false)      # вышел сам — переподключаться некуда
 	leave()
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 	if reason != "":

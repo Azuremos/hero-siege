@@ -42,7 +42,7 @@ func server_tick(_delta: float, t: float) -> void:
 			_spawned = true
 			var p := hero_spawn + Vector3(0, 0, 15)
 			var wave := int(Net.cli.get("arenawave", 1))
-			world.mobs.spawn(boss_id, 0, wave, world.heroes.size(), 1.0, {"pos": Vector2(p.x, p.z)})
+			world.mobs.spawn(boss_id, 0, wave, world.online_hero_count(), 1.0, {"pos": Vector2(p.x, p.z)})
 		return
 	var boss_alive := false
 	for u in world.mobs.alive_units():

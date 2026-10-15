@@ -1554,3 +1554,14 @@ func _knockback(caster: Unit, target: Unit, dist: float, t: float) -> void:
 		if h:
 			target.knock_until = t + 0.45
 			h.ev_knock.rpc(target.pos + Vector3(dir.x, 0, dir.y))
+
+## Сервер: зоны (Снежная буря, Огненная стена…) и ловушки — игроку, вошедшему посреди партии.
+func send_zones(peer: int) -> void:
+	var t: float = world.now()
+	for id in zones:
+		var z: Dictionary = zones[id]
+		var sp: Dictionary = GameData.SPELLS[z["sid"]]
+		var size := float(z.get("radius", z.get("reach", 3.0)))
+		ev_zone.rpc_id(peer, 10000 + int(id), str(sp.get("vfx", "")), z["pos"], 0.0, size, maxf(0.5, float(z["until"]) - t))
+	for tr: Dictionary in traps:
+		ev_trap.rpc_id(peer, int(tr["id"]), str(GameData.SPELLS[tr["sid"]]["trap"]["vfx"]), tr["pos"], true)

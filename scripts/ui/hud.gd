@@ -1502,7 +1502,10 @@ func _process(delta: float) -> void:
 		f["mp"].max_value = maxf(1.0, u.max_mana)
 		f["mp"].value = u.mana
 		_bar_color(f["mp"], res_color(u.resource))
-		if not h.alive_visual:
+		(f["frame"] as Control).modulate = Color(0.55, 0.55, 0.55) if h.offline else Color.WHITE
+		if h.offline:
+			f["info"].text = "отключён"
+		elif not h.alive_visual:
 			f["info"].text = "Мёртв %d" % int(ceil(h.net_respawn_left))
 		elif u.hp < u.max_hp - 0.5:
 			f["info"].text = "-%d" % int(u.max_hp - u.hp)
