@@ -171,6 +171,38 @@ const MOBS := {
 		"xp": 46, "gold": 7, "scale": 1.45, "radius": 0.9, "armor": 0.05, "ranged": true, "school": "arcane", "proj": "bolt_arcane",
 		"abilities": ["ogre_shield", "ogre_haste"]},
 
+	# ======================= облики будущих боссов (сессия 03) =======================
+	## Только облик: в волны не попадают (role «test»). Осмотр: --mobtest=bosses.
+	## Сессия 03 возьмёт отсюда src / model / mats / weapons / scale для своих боссов.
+	"look_warchief": {"name": "Вождь орды", "faction": "orcs", "role": "test", "cost": 0.0, "min_wave": 999, "boss_look": true,
+		"src": "monster", "model": "Orc", "hide": ["Orc_Weapon"], "weapons": {"r": "axe_C", "l": "axe_C"}, "mats": {"Orc_Main": Color(0.4, 0.5, 0.22), "Orc_Hair": Color(0.75, 0.1, 0.06), "Belt": Color(0.25, 0.08, 0.06), "Gold": Color(1.0, 0.78, 0.3)}, "glow": {"Gold": 0.3},
+		"hp": 3000.0, "min": 40.0, "max": 55.0, "atk_speed": 2.2, "range": 3.6, "speed": 3.6,
+		"xp": 0, "gold": 0, "scale": 2.0, "radius": 1.4, "armor": 0.3},
+	"look_orc_lieutenant": {"name": "Лейтенант орды", "faction": "orcs", "role": "test", "cost": 0.0, "min_wave": 999, "boss_look": true,
+		"src": "monster", "model": "Orc", "hide": ["Orc_Weapon"], "weapons": {"r": "hammer_B"}, "mats": {"Orc_Main": Color(0.33, 0.45, 0.25), "Orc_Hair": Color(0.1, 0.1, 0.1), "Belt": Color(0.45, 0.1, 0.08)},
+		"hp": 1200.0, "min": 25.0, "max": 32.0, "atk_speed": 2.2, "range": 3.0, "speed": 3.8,
+		"xp": 0, "gold": 0, "scale": 1.5, "radius": 1.0, "armor": 0.2},
+	"look_fel_lord": {"name": "Владыка Скверны", "faction": "demons", "role": "test", "cost": 0.0, "min_wave": 999, "boss_look": true,
+		"src": "monster", "model": "Demon", "mats": {"Demon_Main": Color(0.28, 0.05, 0.08), "Black": Color(0.35, 0.85, 0.15), "Eye_White": Color(0.5, 1.0, 0.25)}, "glow": {"Black": 0.7, "Eye_White": 1.0},
+		"hp": 3000.0, "min": 40.0, "max": 55.0, "atk_speed": 2.4, "range": 3.6, "speed": 3.4,
+		"xp": 0, "gold": 0, "scale": 2.2, "radius": 1.5, "armor": 0.3},
+	"look_demon_lieutenant": {"name": "Повелитель бесов", "faction": "demons", "role": "test", "cost": 0.0, "min_wave": 999, "boss_look": true,
+		"src": "monster", "model": "WingedDemon", "mats": {"Demon_Main": Color(0.55, 0.08, 0.35)}, "glow": {"Demon_Main": 0.35},
+		"hp": 1200.0, "min": 25.0, "max": 32.0, "atk_speed": 2.0, "range": 14.0, "speed": 4.4,
+		"xp": 0, "gold": 0, "scale": 1.4, "radius": 1.0, "armor": 0.1},
+	"look_ogre_king": {"name": "Король огров", "faction": "goblins", "role": "test", "cost": 0.0, "min_wave": 999, "boss_look": true,
+		"src": "monster", "model": "Yeti", "weapons": {"r": "hammer_B"}, "mats": {"Yeti_Main": Color(0.8, 0.5, 0.32), "Yeti_Secondary": Color(0.55, 0.12, 0.12), "Yeti_Teeth": Color(1.0, 0.85, 0.4)},
+		"hp": 3000.0, "min": 40.0, "max": 55.0, "atk_speed": 2.6, "range": 3.8, "speed": 3.2,
+		"xp": 0, "gold": 0, "scale": 2.2, "radius": 1.6, "armor": 0.25},
+	"look_mecha_ogre": {"name": "Механоогр", "faction": "goblins", "role": "test", "cost": 0.0, "min_wave": 999, "boss_look": true,
+		"src": "monster", "model": "Yeti", "weapons": {"r": "fistweapon_B_stacked", "l": "fistweapon_B_stacked"}, "mats": {"Yeti_Main": Color(0.5, 0.52, 0.55), "Yeti_Secondary": Color(0.85, 0.6, 0.15), "Eye_White": Color(1.0, 0.3, 0.1)}, "glow": {"Eye_White": 1.0},
+		"hp": 3000.0, "min": 40.0, "max": 55.0, "atk_speed": 2.6, "range": 3.8, "speed": 3.2,
+		"xp": 0, "gold": 0, "scale": 2.0, "radius": 1.6, "armor": 0.4},
+	"look_lich": {"name": "Лич", "faction": "undead", "role": "test", "cost": 0.0, "min_wave": 999, "boss_look": true,
+		"src": "monster", "model": "Ghost", "weapons": {}, "mats": {"Ghost_Main": Color(0.25, 0.75, 0.55)}, "glow": {"Ghost_Main": 0.6, "Eye_White": 1.0},
+		"hp": 3000.0, "min": 40.0, "max": 55.0, "atk_speed": 2.6, "range": 22.0, "speed": 3.2,
+		"xp": 0, "gold": 0, "scale": 1.9, "radius": 1.3, "armor": 0.1, "ranged": true},
+
 	# ======================= для проверок =======================
 	## --casttest: стоит рядом с героем и бесконечно произносит сбиваемое заклинание
 	"cast_dummy": {"name": "Учебный заклинатель", "faction": "undead", "role": "test", "cost": 0.0, "min_wave": 999,

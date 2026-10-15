@@ -536,7 +536,9 @@ func _process(delta: float) -> void:
 		var want: String = Net.cli["mobtest"]
 		var types: Array = []
 		for mid in GameData.MOBS:
-			if mid == want or (GameData.MOBS[mid].get("faction", "") == want and not GameData.MOBS[mid]["role"] in ["boss", "test"]):
+			var md: Dictionary = GameData.MOBS[mid]
+			if mid == want or (md.get("faction", "") == want and not md["role"] in ["boss", "test"]) \
+					or (want == "bosses" and (md["role"] == "boss" or md.get("boss_look", false))):
 				types.append(mid)
 		var fwd := -local_hero.global_transform.basis.z
 		var side := fwd.cross(Vector3.UP)
