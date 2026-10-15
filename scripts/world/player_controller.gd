@@ -763,10 +763,14 @@ const BOT_TREE := {"mage": 2, "paladin": 0, "priest": 1}
 var _bot_learn_wait := 0.0
 
 func _bot_learn_talents() -> void:
-	if hero.talent_points_free() <= 0 or now() < _bot_learn_wait:
+	if now() < _bot_learn_wait:
+		return
+	var main: int = int(Net.cli["bottree"]) if Net.cli.has("bottree") else BOT_TREE.get(hero.class_id, 0)
+	_bot_choose_book(main)
+	if hero.talent_points_free() <= 0:
 		return
 	var trees: Array = GameData.talent_trees(hero.class_id)
-	var order: Array = [int(Net.cli["bottree"]) if Net.cli.has("bottree") else BOT_TREE.get(hero.class_id, 0)]
+	var order: Array = [main]
 	for i in trees.size():
 		if not order.has(i):
 			order.append(i)
@@ -778,6 +782,20 @@ func _bot_learn_talents() -> void:
 				_bot_learn_wait = now() + 0.5
 				_send_server("request_learn", [tl["id"]])
 				return
+## Бот выбирает в книге вариант своей ветки: столбец ряда = ветка талантов (у мага тайная/огонь/лёд).
+## С --choices выбор задаёт тест, бот его не трогает.
+func _bot_choose_book(tree: int) -> void:
+	if Net.cli.has("choices") or not GameData.BOOKS.has(hero.class_id):
+		return
+	var rows: Array = GameData.BOOKS[hero.class_id]["rows"]
+	for i in rows.size():
+		var opts: Array = rows[i]["options"]
+		var want: String = opts[clampi(tree, 0, opts.size() - 1)]
+		if hero.unit.level >= int(rows[i]["level"]) and GameData.book_choice(hero.class_id, i, hero.choices) != want:
+			_bot_learn_wait = now() + 3.0   # в бою сервер откажет — повторим позже
+			_send_server("request_choose", [i, want])
+			return
+
 ## Ключ долгого баффа (благословения, стойкость) — бот поддерживает их на себе.
 func _long_buff_key(sp: Dictionary) -> String:
 	for e in sp.get("effects", []):

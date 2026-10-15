@@ -87,6 +87,12 @@ func setup(w: Node3D) -> void:
 	var hint := _label("ЛКМ — изучить ранг.  Каждый ряд открывается после %d очков в ветке.  Таланты с иконкой заклинания дают новое заклинание." % GameData.TalentData.POINTS_PER_ROW, 13, Color(1, 1, 1, 0.65))
 	v.add_child(hint)
 	_build_trees()
+	if _preview and GameData.BOOKS.has(_class_id):
+		_book_box = HBoxContainer.new()
+		_book_box.add_theme_constant_override("separation", 8)
+		v.add_child(_label("Книга заклинаний — выберите вариант в каждом ряду (ЛКМ):", 15, GOLD))
+		v.add_child(_book_box)
+		_build_book()
 
 func _label(text: String, size: int, col: Color) -> Label:
 	var l := Label.new()
@@ -176,11 +182,22 @@ func _build_trees() -> void:
 			rank.size = Vector2(32, 18)
 			rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			cell.add_child(rank)
-			_cells[tid] = {"panel": cell, "style": cs, "rank": rank, "icon": icon, "tree": ti, "t": t}
+			# талант на заклинание ряда книги закрыт до уровня ряда: замок и уровень
+			var lock := _label("", 12, Color(1, 0.85, 0.5))
+			lock.position = Vector2(2, 2)
+			lock.size = Vector2(CELL - 4, CELL - 4)
+			lock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			lock.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			lock.add_theme_color_override("font_outline_color", Color.BLACK)
+			lock.add_theme_constant_override("outline_size", 4)
+			cell.add_child(lock)
+			_cells[tid] = {"panel": cell, "style": cs, "rank": rank, "icon": icon, "tree": ti, "t": t, "lock": lock}
 
 func refresh() -> void:
 	if not _preview and (world == null or world.local_hero == null):
 		return
+	if _preview and _book_box:
+		_refresh_book()
 	var cls := _cls()
 	var ranks: Dictionary = _ranks()
 	var level := _level()
@@ -217,9 +234,24 @@ func refresh() -> void:
 			style.border_color = Color(0.25, 0.25, 0.25)
 			c["rank"].add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 			c["icon"].modulate = Color(0.35, 0.35, 0.35)
+		var need_lvl := GameData.talent_level(cls, t)
+		var locked := level < need_lvl
+		c["lock"].text = "🔒\n%d ур." % need_lvl if locked else ""
+		if locked:
+			c["icon"].modulate = Color(0.3, 0.3, 0.3)
 		c["panel"].tooltip_text = _tooltip(t, r, err)
 func _tooltip(t: Dictionary, r: int, err: String) -> String:
 	var lines := ["%s   (ранг %d/%d)" % [t["name"], r, int(t["max"])]]
+	# талант ряда книги: усиливает то, что выбрано в ряду, — показываем ряд и выбранный вариант
+	var cls := _cls()
+	var row := GameData.talent_book_row(cls, t)
+	if row >= 0:
+		var rd: Dictionary = GameData.BOOKS[cls]["rows"][row]
+		var chosen := GameData.book_choice(cls, row, _choices())
+		lines.append("Ваше заклинание ряда «%s» (%d ур.)%s" % [rd["name"], int(rd["level"]),
+			(" — сейчас: %s" % GameData.SPELLS[chosen]["name"]) if chosen != "" else ""])
+		if _level() < int(rd["level"]):
+			lines.append("✗ Доступно с %d уровня" % int(rd["level"]))
 	if r > 0:
 		lines.append(GameData.talent_desc(t, r))
 	if r < int(t["max"]):
@@ -234,3 +266,56 @@ func _tooltip(t: Dictionary, r: int, err: String) -> String:
 		lines.append("")
 		lines.append("✗ " + err)
 	return "\n".join(lines)
+
+# ---------------------------------------------------------------- книга в режиме просмотра
+
+var _book_box: HBoxContainer
+var _plan_choices: Dictionary = {}    # ряд -> id (просмотр из главного меню)
+var _book_cells: Array = []           # [ряд, id, панель, стиль]
+
+## Выбор книги: в просмотре — план, в игре — выбор героя.
+func _choices() -> Dictionary:
+	return _plan_choices if _preview else world.local_hero.choices
+
+## Ряды книги в столбик: уровень, название и три варианта; выбранный — в золотой рамке.
+func _build_book() -> void:
+	var rows: Array = GameData.BOOKS[_class_id]["rows"]
+	for i in rows.size():
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 3)
+		_book_box.add_child(col)
+		var head := _label("%d ур.\n%s" % [int(rows[i]["level"]), rows[i]["name"]], 11, Color(1, 1, 1, 0.8))
+		head.custom_minimum_size = Vector2(96, 30)
+		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		head.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		col.add_child(head)
+		var icons := HBoxContainer.new()
+		icons.add_theme_constant_override("separation", 2)
+		col.add_child(icons)
+		for sid in rows[i]["options"]:
+			var p := Panel.new()
+			p.custom_minimum_size = Vector2(32, 32)
+			var ps := StyleBoxFlat.new()
+			ps.bg_color = Color(0, 0, 0, 0.6)
+			ps.set_border_width_all(2)
+			p.add_theme_stylebox_override("panel", ps)
+			p.tooltip_text = SpellIcon.tooltip(sid)
+			var ic := SpellIcon.make(sid, 28)
+			ic.position = Vector2(2, 2)
+			p.add_child(ic)
+			var row_i: int = i
+			var pick: String = sid
+			p.gui_input.connect(func(ev: InputEvent):
+				if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+					_plan_choices[row_i] = pick
+					Sfx.play("ui_learn")
+					refresh())
+			icons.add_child(p)
+			_book_cells.append([i, sid, p, ps])
+
+func _refresh_book() -> void:
+	for c in _book_cells:
+		var chosen := GameData.book_choice(_class_id, c[0], _plan_choices)
+		var on: bool = chosen == c[1]
+		(c[3] as StyleBoxFlat).border_color = GOLD if on else Color(0.25, 0.25, 0.25)
+		(c[2] as Control).modulate = Color.WHITE if on else Color(0.55, 0.55, 0.55)

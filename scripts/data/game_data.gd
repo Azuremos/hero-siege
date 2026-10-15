@@ -18,7 +18,7 @@ const FIRST_WAVE_DELAY := 25.0
 const MANA_REGEN_POOL := 0.03
 const MANA_REGEN_SPIRIT := 0.6
 const COMBAT_REGEN := 0.5
-const CASTING_REGEN := 0.2
+const CASTING_REGEN := 0.15
 const FIVE_SECOND_RULE := 5.0
 const COMBAT_TIME := 6.0
 const WAVE_INTERVAL := 42.0
@@ -191,11 +191,33 @@ func can_learn(class_id: String, ranks: Dictionary, level: int, tid: String) -> 
 	var need := int(t["row"]) * TalentData.POINTS_PER_ROW
 	if tree_points(class_id, ranks, info["tree"]) < need:
 		return "Нужно вложить %d очков в ветку «%s»" % [need, tree["name"]]
+	var need_lvl := talent_level(class_id, t)
+	if level < need_lvl:
+		return "Доступно с %d уровня" % need_lvl
 	if t.has("req"):
 		var req := find_talent(class_id, t["req"])
 		if int(ranks.get(t["req"], 0)) < int(req["t"]["max"]):
 			return "Сначала изучите «%s»" % req["t"]["name"]
 	return ""
+
+## Ряд книги, на заклинание которого действует талант (область «spell:» из ряда или «row:N»), иначе -1.
+func talent_book_row(class_id: String, t: Dictionary) -> int:
+	var best := -1
+	for md in t.get("mods", []):
+		var scope: String = md[0]
+		var row := -1
+		if scope.begins_with("row:"):
+			row = int(scope.trim_prefix("row:"))
+		elif scope.begins_with("spell:"):
+			row = book_row_of(class_id, scope.trim_prefix("spell:"))
+		if row >= 0 and (best < 0 or row < best):
+			best = row
+	return best
+
+## Талант на заклинание из ряда книги открывается не раньше уровня этого ряда.
+func talent_level(class_id: String, t: Dictionary) -> int:
+	var row := talent_book_row(class_id, t)
+	return int(BOOKS[class_id]["rows"][row]["level"]) if row >= 0 else 1
 
 ## Сводит изученные таланты в модификаторы: {global, school, spell, flags}.
 ## Модификаторы героя: таланты (ранги) и пассивные варианты книги заклинаний (choices).
