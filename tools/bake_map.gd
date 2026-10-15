@@ -6,6 +6,8 @@ extends SceneTree
 
 const S := 5.0          # масштаб построек гекс-пака KayKit под героев
 const TREE_S := 7.0
+## Коллайдер дерева — доля радиуса кроны у земли (нижние лапы ели упираются в героя).
+const TREE_TRUNK_FRAC := 0.6
 const HALF := 35.0      # половина стороны городской стены
 const MAP_HALF := 133.0 # граница карты
 
@@ -72,10 +74,10 @@ func _box(pos: Vector3, size: Vector3, rot_y: float = 0.0) -> void:
 	cs.shape = sh
 	_add(body, cs)
 
-func _cyl(pos: Vector3, radius: float, height: float) -> void:
+func _cyl(pos: Vector3, radius: float, height: float, n_name: String = "Cyl") -> void:
 	var body := StaticBody3D.new()
 	body.position = pos + Vector3(0, height * 0.5, 0)
-	_add(colliders, body, "Cyl")
+	_add(colliders, body, n_name)
 	var cs := CollisionShape3D.new()
 	var sh := CylinderShape3D.new()
 	sh.radius = radius
@@ -109,9 +111,44 @@ func _footprint(path: String) -> float:
 
 ## Коллайдер-цилиндр под декорацию: доля frac от её половины ширины (ствол, а не крона).
 ## Случайные числа не трогаем — расстановка карты остаётся прежней.
-func _prop_collider(path: String, p: Vector2, scl: float, frac: float, height: float = 6.0) -> void:
+func _prop_collider(path: String, p: Vector2, scl: float, frac: float, height: float = 6.0, n_name: String = "Cyl") -> void:
 	var r := maxf(0.35, _footprint(path) * scl * frac)
-	_cyl(Vector3(p.x, 0, p.y), r, height)
+	_cyl(Vector3(p.x, 0, p.y), r, height, n_name)
+
+const TrunkFinder := preload("res://tools/trunk_finder.gd")
+var _trunk_cache: Dictionary = {}
+
+## Коллайдер на каждое дерево: деревья берутся из модели (связные части меша — кроны-конусы),
+## на каждое — цилиндр долей frac от радиуса кроны, между соседями с сомкнутыми кронами — перемычка,
+## чтобы сквозь рощу не пройти. Всё в одном теле. yaw и масштаб — те же, что у MultiMesh.
+func _grove_collider(path: String, p: Vector2, yaw: float, scl: float, frac: float, height: float) -> void:
+	if not _trunk_cache.has(path):
+		_trunk_cache[path] = TrunkFinder.trees(path)
+		print("  деревьев в %s: %d" % [path.get_file(), _trunk_cache[path].size()])
+	var body := StaticBody3D.new()
+	body.position = Vector3(p.x, height * 0.5, p.y)
+	_add(colliders, body, "Grove")
+	var rot := Basis(Vector3.UP, yaw)
+	var pts: Array = []
+	for t: Vector3 in _trunk_cache[path]:
+		var w := rot * Vector3(t.x, 0, t.y) * scl
+		pts.append(Vector3(w.x, w.z, t.z * scl))
+	var shapes: Array = []
+	for i in pts.size():
+		var a: Vector3 = pts[i]
+		shapes.append(Vector3(a.x, a.y, maxf(0.35, a.z * frac)))
+		for j in range(i + 1, pts.size()):
+			var b: Vector3 = pts[j]
+			if Vector2(a.x, a.y).distance_to(Vector2(b.x, b.y)) < (a.z + b.z) * 0.95:
+				shapes.append(Vector3((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, maxf(0.35, minf(a.z, b.z) * frac)))
+	for s3: Vector3 in shapes:
+		var cs := CollisionShape3D.new()
+		cs.position = Vector3(s3.x, 0, s3.y)
+		var sh := CylinderShape3D.new()
+		sh.radius = s3.z
+		sh.height = height
+		cs.shape = sh
+		_add(body, cs)
 
 func _face_center(p: Vector2) -> float:
 	return atan2(-p.x, -p.y)
@@ -357,8 +394,9 @@ func _town() -> void:
 		_prop_collider(PROPS + pr[0], p, S, 0.5, 2.0)
 	# Деревья внутри стен
 	for tp in [Vector2(-28, -24), Vector2(28, 24), Vector2(24, -28), Vector2(-24, 28)]:
-		_mm(NATURE + "tree_single_A.gltf", Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * TREE_S), Vector3(tp.x, 0, tp.y)))
-		_prop_collider(NATURE + "tree_single_A.gltf", tp, TREE_S, 0.16, 8.0)
+		var yaw := rng.randf() * TAU
+		_mm(NATURE + "tree_single_A.gltf", Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * TREE_S), Vector3(tp.x, 0, tp.y)))
+		_grove_collider(NATURE + "tree_single_A.gltf", tp, yaw, TREE_S, TREE_TRUNK_FRAC, 8.0)
 	occupied.append([Vector2.ZERO, 50.0])
 
 # ---------------------------------------------------------------- кладбища (точки появления)
@@ -406,7 +444,7 @@ func _graveyards() -> void:
 			if undead:
 				_place(GRAVE + item, Vector3(p.x, 0, p.y), rot + yaw_r, scl, gy)
 				if item.begins_with("tree"):
-					_prop_collider(GRAVE + item, p, scl, 0.18, 6.0)
+					_prop_collider(GRAVE + item, p, scl, 0.18, 6.0, "DeadTree")
 				elif item.begins_with("grave"):
 					_prop_collider(GRAVE + item, p, scl, 0.4, 2.0)
 			placed += 1
@@ -427,9 +465,12 @@ func _nature() -> void:
 			continue
 		var item: String = clumps[rng.randi() % clumps.size()]
 		var s := TREE_S * rng.randf_range(0.85, 1.2)
-		_mm(NATURE + item, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), Vector3(p.x, 0, p.y)))
+		var yaw := rng.randf() * TAU
+		_mm(NATURE + item, Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * s), Vector3(p.x, 0, p.y)))
 		occupied.append([p, 5.5])
-		_prop_collider(NATURE + item, p, s, 0.6 if item.begins_with("hills") else 0.45, 10.0)
+		if item.begins_with("hills"):
+			_prop_collider(NATURE + item, p, s, 0.6, 10.0)   # сам холм
+		_grove_collider(NATURE + item, p, yaw, s, TREE_TRUNK_FRAC, 10.0)
 		placed += 1
 	# Камни
 	for i in 120:
@@ -490,12 +531,12 @@ func _bounds() -> void:
 const LAVA_SHADER := preload("res://shaders/lava.gdshader")
 
 ## Ставит декор, если он не на дороге. Возвращает узел или null.
-func _lp(path: String, p: Vector2, yaw: float, scl: float, parent: Node, collider_frac: float = 0.0, h: float = 3.0) -> Node3D:
+func _lp(path: String, p: Vector2, yaw: float, scl: float, parent: Node, collider_frac: float = 0.0, h: float = 3.0, n_name: String = "Cyl") -> Node3D:
 	if _dist_to_lanes(p) < 5.5:
 		return null
 	var n := _place(path, Vector3(p.x, 0, p.y), yaw, scl, parent)
 	if collider_frac > 0.0:
-		_prop_collider(path, p, scl, collider_frac, h)
+		_prop_collider(path, p, scl, collider_frac, h, n_name)
 	return n
 
 ## Огонь костра: частицы на GPU, без источников света.
@@ -586,7 +627,7 @@ func _lair(faction: String, k: int, spawn: Vector2, out_dir: Vector2, side: Vect
 				_add(lair, swirl, "PortalSwirl")
 				_glow_particles(swirl, Color(0.5, 1.0, 0.3), 30, 1.2, 2.0, Vector3.ZERO)
 			for t in [[-12.0, 4.0], [12.0, 4.0], [-14.0, 14.0], [14.0, 14.0]]:
-				_lp(GRAVE + "tree_dead_large.gltf", spawn + side * t[0] + out_dir * t[1], lrng.randf() * TAU, 1.8, lair, 0.18, 6.0)
+				_lp(GRAVE + "tree_dead_large.gltf", spawn + side * t[0] + out_dir * t[1], lrng.randf() * TAU, 1.8, lair, 0.18, 6.0, "DeadTree")
 			for i in 8:
 				var p := spawn + side * lrng.randf_range(-15, 15) + out_dir * lrng.randf_range(2, 18)
 				_lp(GRAVE + ["skull.gltf", "ribcage.gltf", "bone_A.gltf", "skull_candle.gltf"][i % 4], p, lrng.randf() * TAU, 1.5, lair)

@@ -98,22 +98,26 @@ func build_static_obstacles(colliders: Node) -> void:
 	for body in colliders.get_children():
 		if not body is StaticBody3D:
 			continue
-		var cs := body.get_child(0) as CollisionShape3D
-		var xf: Transform3D = (body as Node3D).transform
-		var o := Vector2(xf.origin.x, xf.origin.z)
-		if cs.shape is BoxShape3D:
-			var size: Vector3 = (cs.shape as BoxShape3D).size
-			if size.x > 100.0 or size.z > 100.0:
+		# у рощи в одном теле по цилиндру на каждое дерево
+		for child in body.get_children():
+			var cs := child as CollisionShape3D
+			if cs == null:
 				continue
-			var long_x := size.x >= size.z
-			var axis3: Vector3 = xf.basis.x if long_x else xf.basis.z
-			var axis := Vector2(axis3.x, axis3.z).normalized()
-			var l := maxf(size.x, size.z)
-			var w := minf(size.x, size.z)
-			var half := (l - w) * 0.5
-			_add_static(o - axis * half, o + axis * half, w * 0.5)
-		elif cs.shape is CylinderShape3D:
-			_add_static(o, o, (cs.shape as CylinderShape3D).radius)
+			var xf: Transform3D = (body as Node3D).transform * cs.transform
+			var o := Vector2(xf.origin.x, xf.origin.z)
+			if cs.shape is BoxShape3D:
+				var size: Vector3 = (cs.shape as BoxShape3D).size
+				if size.x > 100.0 or size.z > 100.0:
+					continue
+				var long_x := size.x >= size.z
+				var axis3: Vector3 = xf.basis.x if long_x else xf.basis.z
+				var axis := Vector2(axis3.x, axis3.z).normalized()
+				var l := maxf(size.x, size.z)
+				var w := minf(size.x, size.z)
+				var half := (l - w) * 0.5
+				_add_static(o - axis * half, o + axis * half, w * 0.5)
+			elif cs.shape is CylinderShape3D:
+				_add_static(o, o, (cs.shape as CylinderShape3D).radius)
 
 func _add_static(a: Vector2, b: Vector2, r: float) -> void:
 	var idx := _static_obs.size()
@@ -199,7 +203,7 @@ func kill(u: Unit, killer: Unit) -> void:
 	var reward := GameData.AffixData.ELITE_REWARD if u.elite > 0 else 1.0
 	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)) * reward)
 	world.award_kill(u.pos, xp, int(float(m.def["gold"]) * reward))
-	world.economy.roll_loot(u.pos, u.level, m.def.get("boss", false) or u.elite == 2, u.elite == 1)
+	world.economy.roll_loot(u.pos, u.level, "boss" if m.def.get("boss", false) else ("champion" if u.elite == 2 else ("elite" if u.elite == 1 else "mob")))
 	if u.affixes.has("explosive"):
 		_delayed.append({"at": world.now() + 1.5, "pos": m.pos2, "r": 5.0, "min": 30.0, "max": 40.0, "power": u.power})
 		ev_telegraph.rpc("circle", u.pos, 0.0, 5.0, 0.0, 1.5)
