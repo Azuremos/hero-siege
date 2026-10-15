@@ -3,12 +3,15 @@ extends RefCounted
 ## Экземпляр хранится и ходит по сети компактной строкой (см. encode/decode), в сумке и снаряжении — она же.
 ## Расходники — постоянные id (potion_heal_2, elixir_power…).
 
-const SLOTS := {"weapon": "Оружие", "offhand": "Левая рука", "helm": "Голова", "chest": "Доспех", "boots": "Обувь", "ring": "Кольцо", "amulet": "Амулет",
-	"trinket": "Аксессуар", "trinket1": "Аксессуар", "trinket2": "Аксессуар"}
-const SLOT_ORDER := ["weapon", "offhand", "helm", "chest", "boots", "ring", "amulet", "trinket1", "trinket2"]
+const SLOTS := {"weapon": "Оружие", "offhand": "Левая рука", "helm": "Голова", "shoulders": "Плечи", "chest": "Доспех", "boots": "Обувь",
+	"ring": "Кольцо", "amulet": "Амулет", "trinket": "Аксессуар", "trinket1": "Аксессуар", "trinket2": "Аксессуар"}
+const SLOT_ORDER := ["weapon", "offhand", "helm", "shoulders", "chest", "boots", "ring", "amulet", "trinket1", "trinket2"]
+## Ячейки, которые видны на модели героя (ev_appearance рассылает только их).
+const LOOK_SLOTS := ["weapon", "offhand", "helm", "shoulders", "chest", "boots"]
 ## Аксессуар (шаблон со slot "trinket") надевается в одну из двух ячеек.
 const TRINKET_SLOTS := ["trinket1", "trinket2"]
 ## Оружие в левой руке (только воин с талантом «Бой двумя руками») даёт эту долю характеристик.
+## Щит, том и сфера — вещи самой левой руки (slot "offhand"), они дают характеристики полностью.
 const OFFHAND_RATIO := 0.6
 
 # ---------------------------------------------------------------- качество
@@ -75,19 +78,46 @@ static func material(ilvl: int, gender: int) -> String:
 
 ## Шаблоны снаряжения: g — род (0 м, 1 ж, 2 с, 3 мн), stats — на 1-м уровне белого качества,
 ## role — какие дополнительные свойства подходят (phys / caster / any), suffix — добавлять ли «…медведя».
-## models — модель в руке героя по ступени металла (TIERS), файлы из assets/weapons (KayKit Fantasy Weapons Bits).
+## models — модель в руке героя по ступени металла (TIERS): файл из assets/weapons (KayKit Fantasy Weapons Bits)
+## или «Модель/Часть» — готовая часть другой модели героя KayKit (щиты рыцаря, книга мага), «orb» — светящаяся сфера.
+## wear — облик брони на модели (ModelFactory.apply_outfit): head — головной убор (часть модели KayKit или
+## «hooded» — голова в капюшоне), cape — плащ, body — ткань/кольчуга/латы туловища, pads — наплечники
+## (cloth / mail / plate), legs — цвет ног по сапогам. Щит, том и сфера — оружие: в сеты не входят.
 const TEMPLATES := {
 	"staff": {"name": "посох", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "staff", "role": "caster", "stats": {"int": 4, "spi": 2, "sp": 6}, "models": ["staff_A", "staff_A", "staff_B", "staff_B", "staff_B", "staff_B"]},
 	"wand": {"name": "жезл", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "wand", "role": "caster", "stats": {"int": 3, "sp": 8}, "models": ["wand_A"]},
 	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_C", "sword_D", "sword_E"]},
 	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
 	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
-	"robe": {"name": "мантия", "g": 1, "slot": "chest", "icon": "robe", "role": "caster", "stats": {"int": 3, "spi": 3, "sta": 2, "armor": 0.01}},
-	"mail": {"name": "кольчуга", "g": 1, "slot": "chest", "icon": "mail", "role": "phys", "stats": {"str": 2, "agi": 2, "sta": 3, "armor": 0.02}},
-	"plate": {"name": "кираса", "g": 1, "slot": "chest", "icon": "plate", "role": "phys", "stats": {"str": 3, "sta": 4, "armor": 0.03}},
-	"helm": {"name": "шлем", "g": 0, "slot": "helm", "icon": "helm", "role": "phys", "stats": {"str": 1, "sta": 2, "armor": 0.01}},
-	"hood": {"name": "капюшон", "g": 0, "slot": "helm", "icon": "hood", "role": "caster", "stats": {"int": 2, "spi": 2}},
-	"boots": {"name": "сапоги", "g": 3, "slot": "boots", "icon": "boots", "role": "any", "stats": {"agi": 2, "sta": 2, "armor": 0.005}},
+	"shield": {"name": "щит", "g": 0, "slot": "offhand", "classes": ["paladin", "warrior"], "icon": "shield", "role": "phys",
+		"stats": {"sta": 3, "str": 1, "armor": 0.015, "block": 0.012},
+		"models": ["Barbarian/Barbarian_Round_Shield", "Knight/Round_Shield", "Knight/Rectangle_Shield", "Knight/Badge_Shield", "Knight/Spike_Shield", "Knight/Spike_Shield"]},
+	"tome": {"name": "том", "g": 0, "slot": "offhand", "classes": ["mage", "priest"], "icon": "tome", "role": "caster",
+		"stats": {"int": 2, "spi": 2, "sp": 4}, "models": ["Mage/Spellbook", "Mage/Spellbook", "Mage/Spellbook_open"]},
+	"orb": {"name": "сфера", "g": 1, "slot": "offhand", "classes": ["mage", "priest"], "icon": "orb", "role": "caster",
+		"stats": {"int": 3, "sp": 5}, "models": ["orb"]},
+	"robe": {"name": "мантия", "g": 1, "slot": "chest", "icon": "robe", "role": "caster", "stats": {"int": 3, "spi": 3, "sta": 2, "armor": 0.01},
+		"wear": {"cape": "Mage/Mage_Cape", "body": "cloth"}},
+	"mail": {"name": "кольчуга", "g": 1, "slot": "chest", "icon": "mail", "role": "phys", "stats": {"str": 2, "agi": 2, "sta": 3, "armor": 0.02},
+		"wear": {"cape": "Barbarian/Barbarian_Cape", "body": "mail"}},
+	"plate": {"name": "кираса", "g": 1, "slot": "chest", "icon": "plate", "role": "phys", "stats": {"str": 3, "sta": 4, "armor": 0.03},
+		"wear": {"cape": "Knight/Knight_Cape", "body": "plate"}},
+	"helm": {"name": "шлем", "g": 0, "slot": "helm", "icon": "helm", "role": "phys", "stats": {"str": 1, "sta": 2, "armor": 0.01},
+		"wear": {"head": "Knight/Knight_Helmet"}},
+	"warhelm": {"name": "медвежья шапка", "g": 1, "slot": "helm", "icon": "warhelm", "role": "phys", "stats": {"str": 2, "agi": 1, "armor": 0.008},
+		"wear": {"head": "Barbarian/Barbarian_Hat", "head_scale": 1.16}},
+	"hood": {"name": "капюшон", "g": 0, "slot": "helm", "icon": "hood", "role": "caster", "stats": {"int": 2, "spi": 2},
+		"wear": {"head": "hooded"}},
+	"hat": {"name": "колпак", "g": 0, "slot": "helm", "icon": "hat", "role": "caster", "stats": {"int": 3, "sp": 2},
+		"wear": {"head": "Mage/Mage_Hat"}},
+	"pads_cloth": {"name": "оплечье", "g": 2, "slot": "shoulders", "icon": "pads_cloth", "role": "caster", "stats": {"int": 2, "spi": 2, "armor": 0.004},
+		"wear": {"pads": "cloth"}},
+	"pads_mail": {"name": "кольчужные наплечники", "g": 3, "slot": "shoulders", "icon": "pads_mail", "role": "phys", "stats": {"agi": 2, "sta": 2, "armor": 0.008},
+		"wear": {"pads": "mail"}},
+	"pads_plate": {"name": "наплечники", "g": 3, "slot": "shoulders", "icon": "pads_plate", "role": "phys", "stats": {"str": 2, "sta": 2, "armor": 0.012},
+		"wear": {"pads": "plate"}},
+	"boots": {"name": "сапоги", "g": 3, "slot": "boots", "icon": "boots", "role": "any", "stats": {"agi": 2, "sta": 2, "armor": 0.005},
+		"wear": {"legs": true}},
 	"ring_mind": {"name": "кольцо мудрости", "g": 2, "slot": "ring", "icon": "ring", "role": "caster", "suffix": false, "stats": {"int": 2, "spi": 2, "sp": 2}},
 	"ring_might": {"name": "кольцо силы", "g": 2, "slot": "ring", "icon": "ring", "role": "phys", "suffix": false, "stats": {"str": 2, "agi": 2, "ap": 2}},
 	"amulet": {"name": "амулет", "g": 0, "slot": "amulet", "icon": "amulet", "role": "any", "stats": {"sta": 3, "sp": 2, "ap": 2}},
@@ -285,13 +315,15 @@ const UNIQUES := {
 
 const STAT_NAMES := {"str": "Сила", "agi": "Ловкость", "sta": "Выносливость", "int": "Интеллект", "spi": "Дух",
 	"res": "Сопротивление магии", "regen": "к восполнению маны", "haste": "к скорости атак и заклинаний",
-	"sp": "Сила заклинаний", "ap": "Сила атаки", "armor": "Броня", "crit": "Шанс крит. удара"}
+	"sp": "Сила заклинаний", "ap": "Сила атаки", "armor": "Броня", "crit": "Шанс крит. удара", "block": "Шанс блока"}
 ## Порядок строк в подсказке.
-const STAT_ORDER := ["str", "agi", "sta", "int", "spi", "sp", "ap", "crit", "haste", "regen", "res", "armor"]
+const STAT_ORDER := ["str", "agi", "sta", "int", "spi", "sp", "ap", "crit", "haste", "regen", "res", "armor", "block"]
 ## Доли, а не единицы (в подсказке — проценты).
-const PCT_STATS := ["armor", "crit", "haste", "regen", "res"]
-## Характеристики аксессуаров, которые идут не в атрибуты, а в модификаторы героя (unit.gear_mods): ключ модификатора и знак.
-const MOD_STATS := {"res": ["magic_taken", -1.0], "regen": ["regen", 1.0], "haste": ["haste", 1.0]}
+const PCT_STATS := ["armor", "crit", "haste", "regen", "res", "block"]
+## Характеристики аксессуаров и щитов, которые идут не в атрибуты, а в модификаторы героя (unit.gear_mods): ключ модификатора и знак.
+const MOD_STATS := {"res": ["magic_taken", -1.0], "regen": ["regen", 1.0], "haste": ["haste", 1.0], "block": ["block", 1.0]}
+## Блок щитом: заблокированный физический удар теряет эту долю урона.
+const BLOCK_REDUCE := 0.5
 
 # ---------------------------------------------------------------- экземпляр
 
@@ -409,7 +441,7 @@ static func describe(id: String) -> Dictionary:
 	if UNIQUES.has(d["unique_id"]):
 		name = UNIQUES[d["unique_id"]]["name"]
 	var slot: String = tp.get("slot", "trinket")
-	var small: bool = slot in ["ring", "amulet", "boots", "helm", "trinket"]
+	var small: bool = slot in ["ring", "amulet", "boots", "helm", "shoulders", "trinket"]
 	var price := int(ilvl_price(ilvl) * float(QUALITY_PRICE[q]) * (0.6 if small else 1.0))
 	var is_use: bool = d["proc"] != "" and str(ITEM_PROCS[d["proc"]]["on"]) == "use"
 	return {"id": id, "name": name, "kind": "gear", "slot": slot, "stats": st, "level": ilvl, "ilvl": ilvl, "price": price,
@@ -506,7 +538,10 @@ static func tier_index(ilvl: int) -> int:
 			idx = i
 	return idx
 
-## Как выглядит вещь в руке: модель, оттенок металла, качество. {} — у вещи нет модели.
+## Цвет ткани (мантия, оплечье) по качеству: небелёный лён, зелёный, синий, фиолетовый, золотистый.
+const CLOTH_TINT := [Color(0.95, 0.9, 0.8), Color(0.6, 0.9, 0.6), Color(0.6, 0.75, 1.05), Color(0.8, 0.6, 1.05), Color(1.1, 0.85, 0.55)]
+
+## Как выглядит вещь на герое: модель в руке и/или облик брони (wear), оттенок металла, качество. {} — облика нет.
 static func look(id: String) -> Dictionary:
 	if id == "" or not is_gear_id(id):
 		return {}
@@ -514,12 +549,21 @@ static func look(id: String) -> Dictionary:
 	if it.is_empty():
 		return {}
 	var tp := tpl(it["base"])
-	if not tp.has("models"):
+	if not tp.has("models") and not tp.has("wear"):
 		return {}
 	var ti := tier_index(int(it["ilvl"]))
-	var models: Array = tp["models"]
-	var mdl: String = models[mini(ti, models.size() - 1)]
-	return {"model": mdl, "tint": TIER_TINT[ti], "q": int(it["q"]), "two_hand": TWO_HANDED.has(mdl)}
+	var q := int(it["q"])
+	var out := {"tint": TIER_TINT[ti], "q": q, "tier": ti, "base": it["base"], "cloth": CLOTH_TINT[q], "wear": tp.get("wear", {})}
+	if tp.has("models"):
+		var models: Array = tp["models"]
+		var mdl: String = models[mini(ti, models.size() - 1)]
+		out["model"] = mdl
+		out["two_hand"] = TWO_HANDED.has(mdl)
+	return out
+
+## Вещь самой левой руки (щит, том, сфера), а не второе оружие воина.
+static func is_offhand_base(base: String) -> bool:
+	return str(tpl(base).get("slot", "")) == "offhand"
 
 ## Двуручная ли вещь (по её модели).
 static func is_two_handed(id: String) -> bool:

@@ -98,7 +98,8 @@ func gear_stats() -> Dictionary:
 	var s := {}
 	for slot in equip:
 		var it := GameData.item(equip[slot])
-		var w: float = GameData.ItemData.OFFHAND_RATIO if slot == "offhand" else 1.0
+		# второе оружие в левой руке — доля характеристик; щит, том и сфера — полностью
+		var w: float = GameData.ItemData.OFFHAND_RATIO if slot == "offhand" and it.get("slot", "") == "weapon" else 1.0
 		for k in it.get("stats", {}):
 			s[k] = float(s.get(k, 0.0)) + float(it["stats"][k]) * w
 	return s
@@ -117,23 +118,23 @@ func _sync_gear_procs() -> void:
 			procs.append(pd)
 	unit.mods["procs"] = procs
 
-## Внешний вид по снаряжению: в правой руке — модель надетого оружия (ступень металла, качество),
-## в левой — второе оружие воина с талантом (вместо щита). Без вещи — оружие класса по умолчанию.
-## Вызывается при смене снаряжения (economy.ev_appearance), не каждый кадр.
-func update_weapon_visual(dual: bool, main_id: String = "", off_id: String = "") -> void:
+## Внешний вид по снаряжению: оружие и левая рука (щит, том, сфера, второе оружие), головной убор, плащ и цвет
+## доспеха, наплечники, сапоги — по надетым вещам (ступень металла, качество). Без вещи — облик класса по умолчанию,
+## без шлема видна голова расы. Вызывается при смене снаряжения (economy.ev_appearance), не каждый кадр.
+var look_ids: Dictionary = {}
+
+func update_outfit(ids: Dictionary) -> void:
+	look_ids = ids.duplicate()
 	if model == null:
 		return
-	var defaults: Array = GameData.CLASSES[class_id]["show"]
-	var main_look := GameData.ItemData.look(main_id)
-	two_hand = bool(main_look.get("two_hand", false))
-	ModelFactory.set_hand_item(model, "r", main_look, defaults)
-	var left := defaults.duplicate()
-	if class_id == "warrior" and dual:
-		left = ["1H_Axe_Offhand"]
-	if two_hand:
-		left = []           # двуручное: левая рука пуста — ни щита, ни книги
-		dual = false
-	ModelFactory.set_hand_item(model, "l", GameData.ItemData.look(off_id) if dual else {}, left)
+	var looks := {}
+	for slot in ids:
+		if GameData.ItemData.LOOK_SLOTS.has(slot):
+			var lk := GameData.ItemData.look(str(ids[slot]))
+			if not lk.is_empty():
+				looks[slot] = lk
+	two_hand = bool(looks.get("weapon", {}).get("two_hand", false))
+	ModelFactory.apply_outfit(model, class_id, looks)
 
 func apply_level_stats(full_restore: bool) -> void:
 	var cls: Dictionary = GameData.CLASSES[class_id]
@@ -248,6 +249,8 @@ func _ready() -> void:
 
 	model = ModelFactory.build_hero(class_id, race_id)
 	add_child(model)
+	if not look_ids.is_empty():
+		update_outfit(look_ids)
 	anim = ModelFactory.find_anim(model)
 	_play("Idle")
 

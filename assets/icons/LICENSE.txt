@@ -19,3 +19,7 @@
 
 Сессия 05: иконки аксессуаров items/tr_*.svg — копии уже имеющихся иконок заклинаний и талантов
 (game-icons.net, CC BY 3.0, Lorc и Delapouite), в игре перекрашиваются в цвет качества. Нужны свои иконки.
+
+Сессия 05б (game-icons.net, CC BY 3.0): щит (checked-shield, Lorc), сфера (crystal-ball, Lorc), колпак (pointy-hat, Lorc),
+наплечники (shoulder-armor, Delapouite), кольчужные наплечники (shoulder-scales, Lorc), рогатый шлем (viking-helmet, Delapouite),
+том (spell-book, Delapouite), оплечье (poncho, Delapouite).

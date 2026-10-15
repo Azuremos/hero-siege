@@ -89,8 +89,6 @@ func refresh() -> void:
 		c.queue_free()
 	_equip_box.add_child(_lbl("Снаряжение", 15, GOLD))
 	for slot in GameData.ItemData.SLOT_ORDER:
-		if slot == "offhand" and hero.unit.flag("dual_wield") <= 0.0 and not hero.equip.has("offhand"):
-			continue
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
 		var id = hero.equip.get(slot, null)
@@ -132,6 +130,7 @@ func refresh() -> void:
 		"Сила атаки: %d" % int(hero.attack_power),
 		"Шанс крита: %.1f%%" % (u.crit_base * 100.0),
 		"Броня: −%d%% физ. урона" % int(u.armor * 100.0),
+		"Блок щитом: %.1f%%" % (u.mod("block") * 100.0),
 		"Множитель заклинаний: ×%.2f" % u.power,
 		"Множитель оружия: ×%.2f" % u.phys_power]:
 		_stats_box.add_child(_lbl(line, 13, Color(0.9, 0.9, 0.85)))

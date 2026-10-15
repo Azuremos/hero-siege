@@ -26,7 +26,35 @@ func _init() -> void:
 		_row(src, 15, src, false)
 	for scenario in [["одиночка", 1, 0.7], ["группа из 3", 3, 0.9]]:
 		_run(scenario[0], scenario[1], scenario[2])
+	_slots()
 	quit()
+
+## 3) Какие вещи падают: доля ячеек (как economy._random_gear: аксессуар с шансом 20%, иначе любой шаблон поровну)
+##    и сколько вещей своего класса по ячейкам на 100 выпавших.
+func _slots() -> void:
+	var by_slot := {}
+	var for_class := {}
+	var keys: Array = ItemData.TEMPLATES.keys()
+	for i in N:
+		var slot := "trinket"
+		var base := ""
+		if randf() >= 0.2:
+			base = keys[randi() % keys.size()]
+			slot = ItemData.TEMPLATES[base]["slot"]
+		by_slot[slot] = int(by_slot.get(slot, 0)) + 1
+		for cid in ["mage", "priest", "paladin", "warrior"]:
+			var cls: Array = ItemData.TEMPLATES[base].get("classes", []) if base != "" else []
+			if cls.is_empty() or cls.has(cid):
+				var k: String = cid + "|" + slot
+				for_class[k] = int(for_class.get(k, 0)) + 1
+	print("\n== Ячейки выпавших вещей (%d бросков)" % N)
+	print("| Ячейка | Доля | Маг | Жрец | Паладин | Воин |")
+	print("|---|---|---|---|---|---|")
+	for slot in ["weapon", "offhand", "helm", "shoulders", "chest", "boots", "ring", "amulet", "trinket"]:
+		var s := "| %s | %.1f%% |" % [ItemData.SLOTS[slot], 100.0 * int(by_slot.get(slot, 0)) / N]
+		for cid in ["mage", "priest", "paladin", "warrior"]:
+			s += " %.1f |" % (100.0 * int(for_class.get(cid + "|" + slot, 0)) / N)
+		print(s)
 
 func _row(title: String, lvl: int, src: String, per_mob: bool = true) -> void:
 	var c := [0, 0, 0, 0, 0]

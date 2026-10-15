@@ -42,8 +42,263 @@ static func build_hero(class_id: String, race_id: String) -> Node3D:
 	var recolor_key := "%s|%s|%s" % [cls["model"], cls["recolor"], race.get("skin", "")]
 	if cls["recolor"] != "" or race.get("skin", "") != "":
 		_apply_recolor(inst, recolor_key, cls["recolor"], race.get("skin", ""))
+	holder.set_meta("class_id", class_id)
+	holder.set_meta("race_id", race_id)
 	_setup_anims(inst)
 	return holder
+
+static func _prim(mesh: Mesh, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	return mi
+
+static var _mesh_cache: Dictionary = {}
+
+## Усечённый конус по оси Y (низ — r1, верх — r2), общий на все модели.
+static func _cone(r1: float, r2: float, h: float, seg: int) -> Mesh:
+	var key := "cone|%s|%s|%s|%d" % [r1, r2, h, seg]
+	if not _mesh_cache.has(key):
+		var m := CylinderMesh.new()
+		m.bottom_radius = r1
+		m.top_radius = r2
+		m.height = h
+		m.radial_segments = seg
+		m.rings = 1
+		_mesh_cache[key] = m
+	return _mesh_cache[key]
+
+static func _capsule(r: float, h: float) -> Mesh:
+	var key := "caps|%s|%s" % [r, h]
+	if not _mesh_cache.has(key):
+		var m := CapsuleMesh.new()
+		m.radius = r
+		m.height = h
+		m.radial_segments = 10
+		m.rings = 3
+		_mesh_cache[key] = m
+	return _mesh_cache[key]
+
+static func _dome(r: float) -> Mesh:
+	var key := "dome|%s" % r
+	if not _mesh_cache.has(key):
+		var m := SphereMesh.new()
+		m.radius = r
+		m.height = r
+		m.is_hemisphere = true
+		m.radial_segments = 14
+		m.rings = 5
+		_mesh_cache[key] = m
+	return _mesh_cache[key]
+
+static func _flat_material(key: String, col: Color, rough: float) -> StandardMaterial3D:
+	if not _material_cache.has(key):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = col
+		m.roughness = rough
+		_material_cache[key] = m
+	return _material_cache[key]
+
+# ---------------------------------------------------------------- облик по снаряжению
+## Части других моделей героев KayKit («Knight/Knight_Helmet»): на всех моделях одна схема костей,
+## поэтому шлем рыцаря садится на голову мага так же, как на свою. Шаблон узла кешируется, на героя — копия.
+static var _donors: Dictionary = {}
+
+static func _donor(spec: String) -> Node3D:
+	if not _donors.has(spec):
+		# храним ресурсы (меш, скин, положение), а не узел: узлы вне дерева утекли бы при выходе
+		var p := spec.split("/")
+		var inst := _scene("res://assets/heroes/%s.glb" % p[0]).instantiate()
+		var src := inst.find_child(p[1], true, false) as MeshInstance3D
+		_donors[spec] = {} if src == null else {"mesh": src.mesh, "skin": src.skin, "xf": src.transform}
+		inst.free()
+	var d: Dictionary = _donors[spec]
+	if d.is_empty():
+		return null
+	var mi := MeshInstance3D.new()
+	mi.mesh = d["mesh"]
+	mi.skin = d["skin"]
+	mi.transform = d["xf"]
+	return mi
+
+## Облик героя по надетым вещам: looks — {ячейка: ItemData.look(id)}. Пересобирается только при смене
+## снаряжения (economy.ev_appearance). Пустая ячейка: оружие и левая рука — по умолчанию класса, голова открыта,
+## плащ — родной, туловище и ноги — родного цвета.
+static func apply_outfit(model: Node3D, class_id: String, looks: Dictionary) -> bool:
+	var skel := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skel == null:
+		return false
+	var cls: Dictionary = GameData.CLASSES[class_id]
+	var defaults: Array = cls["show"]
+	for n: Node in model.get_meta("outfit_nodes", []):
+		if is_instance_valid(n):
+			n.get_parent().remove_child(n)
+			n.queue_free()
+	var added: Array = []
+	# --- руки
+	var main: Dictionary = looks.get("weapon", {})
+	var off: Dictionary = looks.get("offhand", {})
+	var two := bool(main.get("two_hand", false))
+	set_hand_item(model, "r", main if main.has("model") else {}, defaults)
+	var left_def: Array = [] if two else defaults
+	set_hand_item(model, "l", off if (off.has("model") and not two) else {}, left_def)
+	# --- голова, плащ, наплечники
+	var helm: Dictionary = looks.get("helm", {})
+	var hw: Dictionary = helm.get("wear", {})
+	var chest: Dictionary = looks.get("chest", {})
+	var cw: Dictionary = chest.get("wear", {})
+	var hooded := str(hw.get("head", "")) == "hooded"
+	for att in skel.get_children():
+		if not att is BoneAttachment3D:
+			continue
+		var bn: String = att.bone_name
+		if bn == "head":
+			# без шлема — родной головной убор класса (если класс его не прячет)
+			for m in att.get_children():
+				(m as Node3D).visible = not helm.has("wear") and not cls["hide"].has(m.name)
+			if helm.has("wear") and not hooded:
+				var h := _donor(str(hw["head"]))
+				if h:
+					h.name = "OutfitHelm"
+					h.scale *= float(hw.get("head_scale", 1.0))      # шапка варвара сделана под лысую голову — чуть больше, чтобы прятала волосы
+					att.add_child(h)
+					_tint_node(h, str(hw["head"]), helm["cloth"] if helm["base"] == "hat" else helm["tint"], int(helm["q"]), 0.35)
+					added.append(h)
+		elif bn == "chest":
+			for m in att.get_children():
+				(m as Node3D).visible = not cw.has("cape")
+			if cw.has("cape"):
+				var cape := _donor(str(cw["cape"]))
+				if cape:
+					cape.name = "OutfitCape"
+					att.add_child(cape)
+					_tint_node(cape, str(cw["cape"]), chest["cloth"], int(chest["q"]), 0.25)
+					added.append(cape)
+	# капюшон: голова-капюшон разбойника вместо родной головы (свой меш со скином на той же схеме костей)
+	var own_head: MeshInstance3D = null
+	for c in skel.get_children():
+		if c is MeshInstance3D and str(c.name).ends_with("_Head"):
+			own_head = c
+	if own_head:
+		own_head.visible = not hooded
+	if hooded:
+		var hd := _donor("Rogue_Hooded/Rogue_Head_Hooded") as MeshInstance3D
+		if hd:
+			hd.name = "OutfitHood"
+			skel.add_child(hd)
+			hd.skeleton = NodePath("..")
+			var race: Dictionary = GameData.RACES[model.get_meta("race_id", "human")]
+			if race.get("skin", "") != "":
+				_apply_recolor(hd, "Rogue_Hooded|hood|" + str(race["skin"]), "", race["skin"])
+			_tint_node(hd, "hood|" + str(race.get("skin", "")), Color.WHITE, int(helm["q"]), 0.2)   # лицо не красим — только свечение по качеству
+			added.append(hd)
+	var pads: Dictionary = looks.get("shoulders", {})
+	if pads.has("wear"):
+		# на кости груди, а не плеча: рука в анимациях вращается, а наплечник должен лежать на плече
+		var att := BoneAttachment3D.new()
+		att.name = "OutfitPads"
+		att.bone_name = "chest"
+		skel.add_child(att)
+		for side in ["l", "r"]:
+			_build_pad(skel, att, str(pads["wear"]["pads"]), pads, side)
+		added.append(att)
+	# --- туловище (доспех) и ноги (сапоги): цвет ткани или металла, свечение по качеству
+	for c in skel.get_children():
+		if not c is MeshInstance3D:
+			continue
+		var cn := str(c.name)
+		if cn.ends_with("_Body"):
+			_tint_body(c, chest, str(cw.get("body", "")))
+		elif cn.ends_with("_LegLeft") or cn.ends_with("_LegRight"):
+			var boots: Dictionary = looks.get("boots", {})
+			_tint_body(c, boots, "boots" if boots.has("wear") else "")
+	model.set_meta("outfit_nodes", added)
+	return true
+
+## Перекраска части тела: исходные материалы запоминаются при первом вызове, пустой kind — вернуть родные.
+static func _tint_body(mi: MeshInstance3D, lk: Dictionary, kind: String) -> void:
+	if not mi.has_meta("base_mats"):
+		var base: Array = []
+		for s in mi.mesh.get_surface_count():
+			base.append(mi.get_surface_override_material(s))
+		mi.set_meta("base_mats", base)
+	var mats: Array = mi.get_meta("base_mats")
+	for s in mi.mesh.get_surface_count():
+		var src: Material = mats[s] if mats[s] != null else mi.mesh.surface_get_material(s)
+		if kind == "":
+			mi.set_surface_override_material(s, mats[s])
+			continue
+		var tint: Color = lk["tint"]
+		match kind:
+			"cloth": tint = lk["cloth"]
+			"mail": tint = (lk["tint"] as Color) * 0.82
+			"boots": tint = (lk["tint"] as Color).lerp(Color(0.75, 0.6, 0.45), 0.35)
+		var key := "body|%d|%s|%s|%d" % [src.get_instance_id() if src else 0, kind, tint.to_html(), int(lk["q"])]
+		mi.set_surface_override_material(s, _item_material(key, src, tint, int(lk["q"]), 0.15, false))
+
+## Перекраска готовой части (шлем, плащ): все поверхности всех мешей узла.
+static func _tint_node(n: Node, key: String, tint: Color, q: int, glow: float) -> void:
+	var list: Array = n.find_children("*", "MeshInstance3D", true, false)
+	if n is MeshInstance3D:
+		list.append(n)
+	for mi in list:
+		var m := mi as MeshInstance3D
+		for s in m.mesh.get_surface_count():
+			var src: Material = m.get_surface_override_material(s) if m.get_surface_override_material(s) else m.mesh.surface_get_material(s)
+			m.set_surface_override_material(s, _item_material("wear|%s|%s|%d|%d|%d" % [key, tint.to_html(), q, s, src.get_instance_id() if src else 0], src, tint, q, glow, false))
+
+## Наплечники из примитивов на кости плеча: ткань — мягкий валик, кольчуга — двойная чешуя,
+## латы — крупный купол с ободом, с синего — шип. Металл по ступени, ткань по качеству, свечение по качеству.
+static func _build_pad(skel: Skeleton3D, att: Node3D, kind: String, lk: Dictionary, side: String) -> void:
+	var q: int = lk["q"]
+	var metal := _item_material("pad|metal|%s|%d" % [(lk["tint"] as Color).to_html(), q], null,
+		Color(0.62, 0.64, 0.68) * (lk["tint"] as Color), q, 0.35, false) as StandardMaterial3D
+	metal.metallic = 0.7
+	metal.roughness = 0.35
+	# место и наклон — из позы покоя скелета: над суставом плеча, купол вверх и чуть наружу
+	var chest_rest := skel.get_bone_global_rest(skel.find_bone("chest"))
+	var arm_rest := skel.get_bone_global_rest(skel.find_bone("upperarm." + side))
+	var inv := chest_rest.basis.inverse()
+	var up := (inv * Vector3.UP).normalized()
+	var outward := (inv * Vector3(signf(arm_rest.origin.x), 0, 0)).normalized()
+	var fwd := (inv * Vector3.BACK).normalized()
+	var y := (up + outward * 0.5).normalized()
+	var x := y.cross(fwd).normalized()
+	var root := Node3D.new()
+	root.transform = Transform3D(Basis(x, y, x.cross(y)), chest_rest.affine_inverse() * arm_rest.origin + up * 0.06 + outward * 0.1)
+	root.scale = Vector3.ONE * 1.3
+	att.add_child(root)
+	match kind:
+		"cloth":
+			var cm := _item_material("pad|cloth|%s|%d" % [(lk["cloth"] as Color).to_html(), q], null, Color(0.55, 0.45, 0.7) * (lk["cloth"] as Color), q, 0.3, false)
+			var d := _prim(_dome(0.24), cm)
+			d.scale = Vector3(1.0, 0.75, 1.1)
+			root.add_child(d)
+			var rim := _prim(_capsule(0.06, 0.5), cm)
+			rim.rotation_degrees = Vector3(0, 90, 90)
+			rim.position = Vector3(0, -0.03, -0.14)
+			root.add_child(rim)
+		"mail":
+			var d1 := _prim(_dome(0.25), metal)
+			d1.scale = Vector3(1.0, 0.7, 1.1)
+			root.add_child(d1)
+			var d2 := _prim(_dome(0.22), metal)
+			d2.scale = Vector3(1.05, 0.6, 1.1)
+			d2.position = Vector3(0, -0.05, -0.1)
+			root.add_child(d2)
+		_:
+			var d := _prim(_dome(0.3), metal)
+			d.scale = Vector3(1.0, 0.8, 1.15)
+			root.add_child(d)
+			var rim := _prim(_cone(0.31, 0.31, 0.05, 14), metal)
+			rim.scale = Vector3(1.0, 1.0, 1.15)
+			root.add_child(rim)
+			if q >= 2:
+				var sp := _prim(_cone(0.07, 0.0, 0.3, 6), metal)
+				sp.position = Vector3(0, 0.33, 0)
+				root.add_child(sp)
+	if q >= 4:
+		root.add_child(_legend_sparks())
 
 ## Враг: модель скелета с оружием в руках или (src «hero») модель героя KayKit на той же схеме костей —
 ## с перекраской под фракцию, своим оружием в руках и масштабом.
@@ -166,32 +421,92 @@ static func set_hand_item(model: Node3D, side: String, look: Dictionary, default
 			(m as Node3D).visible = look.is_empty() and defaults.has(m.name)
 		if look.is_empty():
 			return
-		var w := weapon_scene(look["model"]).instantiate() as Node3D
+		var mdl: String = look["model"]
+		var w: Node3D
+		if mdl == "orb":
+			w = _orb(look)
+		elif mdl.contains("/"):
+			w = _donor(mdl)          # щит рыцаря, книга мага — уже на своём месте в руке
+		else:
+			w = weapon_scene(mdl).instantiate() as Node3D
+			w.scale = Vector3.ONE * 0.8      # оружие Fantasy Weapons Bits крупнее родного оружия героев KayKit
+		if w == null:
+			return
 		w.name = "ItemWeapon"
-		w.scale = Vector3.ONE * 0.8      # оружие Fantasy Weapons Bits крупнее родного оружия героев KayKit
 		att.add_child(w)
 		var q: int = look["q"]
-		var key := "item|%s|%s|%d" % [look["model"], str(look["tint"]), q]
-		for mi in w.find_children("*", "MeshInstance3D", true, false):
-			var m := mi as MeshInstance3D
-			for s in m.mesh.get_surface_count():
-				m.set_surface_override_material(s, _item_material(key + "|" + str(s), m.mesh.surface_get_material(s), look["tint"], q))
+		var key := "item|%s|%s|%d" % [mdl, str(look["tint"]), q]
+		var list: Array = w.find_children("*", "MeshInstance3D", true, false)
+		if w is MeshInstance3D:
+			list.append(w)
+		if mdl != "orb":
+			for mi in list:
+				var m := mi as MeshInstance3D
+				for s in m.mesh.get_surface_count():
+					m.set_surface_override_material(s, _item_material(key + "|" + str(s), m.mesh.surface_get_material(s), look["tint"], q))
 		if q >= 4:
 			w.add_child(_legend_sparks())
 		return
 
-static func _item_material(key: String, src: Material, tint: Color, q: int) -> Material:
+## Сфера в левой руке заклинателя: светящийся шар над ладонью, цвет — по качеству.
+static func _orb(look: Dictionary) -> Node3D:
+	var q: int = look["q"]
+	var col: Color = GameData.ItemData.QUALITY[q].lerp(Color(0.5, 0.7, 1.0), 0.5)
+	var key := "orb|%d" % q
+	if not _material_cache.has(key):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(col.r, col.g, col.b, 0.8)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.emission_enabled = true
+		m.emission = col
+		m.emission_energy_multiplier = 0.8 + 0.4 * q
+		m.roughness = 0.1
+		_material_cache[key] = m
+		if q == 3:
+			_pulse_mats.append(m)
+			m.set_meta("pulse_base", m.emission_energy_multiplier)
+	var root := Node3D.new()
+	var ball := _prim(_ball(0.16), _material_cache[key])
+	ball.position = Vector3(0, 0.22, 0.05)
+	root.add_child(ball)
+	return root
+
+static func _ball(r: float) -> Mesh:
+	var key := "ball|%s" % r
+	if not _mesh_cache.has(key):
+		var m := SphereMesh.new()
+		m.radius = r
+		m.height = r * 2.0
+		m.radial_segments = 16
+		m.rings = 8
+		_mesh_cache[key] = m
+	return _mesh_cache[key]
+
+## Материалы эпических вещей мерцают: их немного (кеш по вещи), яркость меняет world._process раз в кадр.
+static var _pulse_mats: Array = []
+
+static func pulse(t: float) -> void:
+	var k := 0.55 + 0.45 * sin(t * 3.2)
+	for m: StandardMaterial3D in _pulse_mats:
+		m.emission_energy_multiplier = float(m.get_meta("pulse_base")) * k
+
+## Материал вещи: оттенок металла/ткани, свечение по качеству (glow — сила свечения: оружие ярче брони),
+## purple — эпическое оружие ещё и окрашивается в фиолетовый.
+static func _item_material(key: String, src: Material, tint: Color, q: int, glow_k: float = 1.0, purple: bool = true) -> Material:
 	if _material_cache.has(key):
 		return _material_cache[key]
 	var mat := (src.duplicate() if src is StandardMaterial3D else StandardMaterial3D.new()) as StandardMaterial3D
 	mat.albedo_color = mat.albedo_color * tint
 	var glow: Color = GameData.ItemData.QUALITY_GLOW.get(q, Color.BLACK)
-	if q == 3:
+	if q == 3 and purple:
 		mat.albedo_color = mat.albedo_color.lerp(Color(0.45, 0.25, 0.95), 0.45)   # эпическое — фиолетовое, не розовое
 	if q >= 3:
 		mat.emission_enabled = true
 		mat.emission = glow
-		mat.emission_energy_multiplier = 0.45 if q == 3 else 0.8
+		mat.emission_energy_multiplier = (0.45 if q == 3 else 0.8) * glow_k
+		if q == 3:
+			mat.set_meta("pulse_base", mat.emission_energy_multiplier)
+			_pulse_mats.append(mat)
 	_material_cache[key] = mat
 	return mat
 

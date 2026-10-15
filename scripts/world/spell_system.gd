@@ -354,6 +354,15 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 		"projectile":
 			_launch_projectile(u, tu, sp["effects"], sid, school, float(sp["speed"]), sp["vfx"], t)
 			st["auto_target"] = tu.id
+			# прок с extra_targets (Ледяные пальцы): снаряд летит ещё в ближайших врагов рядом с целью
+			var extra := int(proc["data"].get("extra_targets", 0)) if not proc.is_empty() else 0
+			if extra > 0 and tu.kind == "mob":
+				for m: Unit in world.mobs.query_radius(Vector2(tu.pos.x, tu.pos.z), 10.0):
+					if extra <= 0:
+						break
+					if m != tu:
+						_launch_projectile(u, m, sp["effects"], sid, school, float(sp["speed"]), sp["vfx"], t)
+						extra -= 1
 		"instant":
 			if sp["target"] == "enemy":
 				st["auto_target"] = tu.id
@@ -1114,6 +1123,11 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 					break
 	amount *= dst.damage_taken_mult
 	amount *= maxf(0.1, 1.0 + dst.mod("dmg_taken"))
+	# блок щитом: физический удар с шансом теряет половину урона
+	if school == "physical" and dst.kind == "hero" and src and dst.mod("block") > 0.0 and randf() < dst.mod("block"):
+		var blocked: float = amount * GameData.ItemData.BLOCK_REDUCE
+		amount -= blocked
+		world.fx_number(dst.id, blocked, "block", school, src_id, false)
 	if dst.flag("ardent") > 0.0 and dst.hp < dst.max_hp * 0.35:
 		amount *= 1.0 - dst.flag("ardent")
 	if school == "physical":

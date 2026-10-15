@@ -105,7 +105,7 @@ const BUFF_INFO := {
 # ---------------------------------------------------------------- Проки (срабатывания)
 ## Бафф-прок делает следующее заклинание из списка мгновенным/бесплатным/усиленным.
 const PROC_BUFFS := {
-	"fingers_of_frost": {"spells": ["frostbolt", "deep_freeze"], "instant": true, "free": true, "amp": 0.5},
+	"fingers_of_frost": {"spells": ["ice_lance", "deep_freeze"], "instant": true, "free": true, "amp": 0.5, "reset_cd": true, "extra_targets": 2},
 	"arcane_surge": {"spells": ["arcane_barrage", "arcane_missiles"], "free": true, "amp": 0.5, "reset_cd": true},
 	"art_of_war": {"spells": ["holy_light", "judgement"], "instant": true, "free": true, "amp": 0.3},
 	"infusion_of_light": {"spells": ["holy_light"], "instant": true, "amp": 0.2},

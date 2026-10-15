@@ -303,6 +303,9 @@ func _equip(hero, idx: int) -> void:
 	if slot == "weapon" and not two and hero.unit.flag("dual_wield") > 0.0 and hero.equip.has("weapon") \
 			and not hero.equip.has("offhand") and not GameData.ItemData.is_two_handed(hero.equip["weapon"]):
 		slot = "offhand"
+	# щит, том, сфера: двуручное оружие занимает обе руки
+	if slot == "offhand" and it["slot"] == "offhand" and hero.equip.has("weapon") and GameData.ItemData.is_two_handed(hero.equip["weapon"]):
+		return _say(hero, "Двуручное оружие занимает обе руки")
 	if two and hero.equip.has("offhand"):
 		var free: int = hero.bag.find(null)
 		if free < 0 or free == idx:
@@ -352,7 +355,7 @@ func request_swap(a: int, b: int) -> void:
 
 ## Вторую руку без таланта носить нельзя — при сбросе талантов оружие уходит в сумку.
 func check_offhand(hero) -> void:
-	if hero.equip.has("offhand") and hero.unit.flag("dual_wield") <= 0.0:
+	if hero.equip.has("offhand") and hero.unit.flag("dual_wield") <= 0.0 and GameData.item(hero.equip["offhand"]).get("slot", "") == "weapon":
 		var free: int = hero.bag.find(null)
 		if free >= 0:
 			hero.bag[free] = {"id": hero.equip["offhand"], "n": 1}
@@ -361,7 +364,7 @@ func check_offhand(hero) -> void:
 		_sync(hero)
 
 func _sync(hero) -> void:
-	ev_appearance.rpc(hero.hero_id, hero.equip.has("offhand"), str(hero.equip.get("weapon", "")), str(hero.equip.get("offhand", "")))
+	ev_appearance.rpc(hero.hero_id, look_of(hero))
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_inventory(hero.hero_id, hero.bag, hero.equip)
 	else:
@@ -609,11 +612,31 @@ func ev_loot_remove(lid: int) -> void:
 		n.queue_free()
 	_loot_nodes.erase(lid)
 
+## Облик героя: {ячейка: id вещи} только видимых ячеек (ItemData.LOOK_SLOTS).
+func look_of(hero) -> Dictionary:
+	var out := {}
+	for slot in GameData.ItemData.LOOK_SLOTS:
+		if hero.equip.has(slot):
+			out[slot] = str(hero.equip[slot])
+	return out
+
+## Сервер: облик всех героев одному игроку (подключился или загрузился позже — видит снаряжение сразу).
+func send_all_looks(peer: int) -> void:
+	for h in world.heroes.values():
+		if not h.equip.is_empty():
+			ev_appearance.rpc_id(peer, h.hero_id, look_of(h))
+
 @rpc("authority", "call_local", "reliable")
-func ev_appearance(hero_id: int, dual: bool, main_id: String, off_id: String) -> void:
+func ev_appearance(hero_id: int, ids: Dictionary) -> void:
 	var h = world.heroes.get(hero_id, null)
-	if h:
-		h.update_weapon_visual(dual, main_id, off_id)
+	if h == null:
+		return
+	# клиенту не доверяем и тут: только строки в видимых ячейках
+	var clean := {}
+	for slot in ids:
+		if GameData.ItemData.LOOK_SLOTS.has(slot) and ids[slot] is String:
+			clean[slot] = ids[slot]
+	h.update_outfit(clean)
 # ---------------------------------------------------------------- уровень добычи
 
 ## Уровни живых героев рядом с местом выпадения (если рядом никого — всех героев).

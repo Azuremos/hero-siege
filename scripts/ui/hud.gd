@@ -1351,6 +1351,9 @@ func floating_number(u: Unit, amount: float, kind: String, school: String, crit:
 		"absorb":
 			text = "Поглощено"
 			col = Color(1, 1, 0.7)
+		"block":
+			text = "Блок (%s)" % text
+			col = Color(0.85, 0.85, 0.95)
 		"immune":
 			text = "Невосприимчив"
 			col = Color(1, 1, 0.7)

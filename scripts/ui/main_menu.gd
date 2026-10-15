@@ -45,6 +45,10 @@ var _cli: Dictionary = {}
 
 func _ready() -> void:
 	_parse_cli()
+	if Net.cli.has("heroshot"):
+		# снимок героев в снаряжении вместо меню (tools/hero_shot.gd)
+		add_child(preload("res://tools/hero_shot.gd").new())
+		return
 	var map := (load("res://scenes/map.tscn") as PackedScene).instantiate()
 	add_child(map)
 	var roads := map.get_node_or_null("Roads") as MeshInstance3D
@@ -122,6 +126,7 @@ func _build_ui() -> void:
 	add_child(layer)
 	_ui = Control.new()
 	_ui.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE      # свободное место — вращение героя на подиуме
 	var theme := Theme.new()
 	var f := SystemFont.new()
 	f.font_names = PackedStringArray(["Segoe UI", "Arial", "Tahoma"])
@@ -400,7 +405,7 @@ func _update_preview() -> void:
 	_preview = ModelFactory.build_hero(cid, rid)
 	add_child(_preview)
 	_preview.position = _preview_anchor
-	_preview.rotation.y = PI + 0.3
+	_preview.rotation.y = _preview_yaw
 	var ap := ModelFactory.find_anim(_preview)
 	if ap:
 		ap.play("Idle")
@@ -612,3 +617,15 @@ func _notification(what: int) -> void:
 		await get_tree().create_timer(1.5).timeout
 		get_viewport().get_texture().get_image().save_png(_cli["menushot"])
 		Sfx.quit_game()
+
+# ---------------------------------------------------------------- вращение героя на подиуме
+var _preview_yaw := PI + 0.3
+var _drag_preview := false
+
+## Зажать ЛКМ на свободном месте экрана и вести — герой на подиуме поворачивается.
+func _unhandled_input(ev: InputEvent) -> void:
+	if ev is InputEventMouseButton and (ev as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		_drag_preview = (ev as InputEventMouseButton).pressed
+	elif ev is InputEventMouseMotion and _drag_preview and _preview:
+		_preview_yaw += (ev as InputEventMouseMotion).relative.x * 0.012
+		_preview.rotation.y = _preview_yaw

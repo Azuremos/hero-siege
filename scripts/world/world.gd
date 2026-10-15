@@ -319,6 +319,7 @@ func ev_sound(name: String) -> void:
 @rpc("any_peer", "reliable")
 func _client_ready() -> void:
 	_ready_peers[multiplayer.get_remote_sender_id()] = true
+	economy.send_all_looks(multiplayer.get_remote_sender_id())
 
 func _on_peer_left(peer: int) -> void:
 	var hid := 0
@@ -349,6 +350,7 @@ var _start_ms := 0
 
 func _process(delta: float) -> void:
 	_update_music(delta)
+	ModelFactory.pulse(now())      # мерцание эпических вещей на героях
 	if Net.cli.is_empty():
 		return
 	var siege: SiegeMode = mode as SiegeMode    # хуки волн — только для осады
@@ -489,13 +491,10 @@ func _process(delta: float) -> void:
 		var op: PackedStringArray = (Net.cli["outfit"] + ":").split(":")
 		var oil: int = int(op[0]) if op[0].is_valid_int() else 25
 		var oq: int = int(op[1]) if op[1].is_valid_int() else 4
-		var hi := 0
+		# третье поле — вариант набора: сдвигает выбор оружия, шлема, доспеха и левой руки
+		var hi: int = int(op[2]) if op.size() > 2 and op[2].is_valid_int() else 0
 		for h in heroes.values():
-			var bases: Array = []
-			for b in GameData.ItemData.TEMPLATES:
-				if GameData.ItemData.TEMPLATES[b].get("classes", []).has(h.class_id):
-					bases.append(b)
-			bases = [bases[hi % bases.size()], "plate" if h.class_id in ["warrior", "paladin"] else "robe", "helm", "boots"]
+			var bases: Array = preload("res://tools/hero_shot.gd").outfit_bases(h.class_id, hi)
 			hi += 1
 			for b in bases:
 				h.bag_add(GameData.make_gear(b, oil, oq))
