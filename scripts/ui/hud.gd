@@ -1945,7 +1945,7 @@ func _build_boss_bar() -> void:
 	_boss_panel = PanelContainer.new()
 	_boss_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.85, 0.35, 0.2)))
 	_boss_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_boss_panel.position = Vector2(-260, 34)
+	_boss_panel.position = Vector2(-260, 2)
 	_boss_panel.custom_minimum_size = Vector2(520, 0)
 	_boss_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	_boss_panel.visible = false

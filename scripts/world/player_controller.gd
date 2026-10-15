@@ -827,6 +827,8 @@ func _bot_priority() -> Array:
 	if Net.cli.has("botspells"):
 		var only: PackedStringArray = Net.cli["botspells"].split(",")
 		list = list.filter(func(s): return only.has(s))
+	# прерывания бот бережёт для вражеских кастов (_bot_try_interrupt), в ротации их нет
+	list = list.filter(func(s): return not GameData.SPELLS[s].get("effects", []).any(func(e): return e["type"] == "interrupt"))
 	list.sort_custom(func(a, b): return _bot_rank(a) > _bot_rank(b))
 	return list
 
