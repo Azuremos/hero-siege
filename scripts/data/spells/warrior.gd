@@ -142,6 +142,13 @@ const SPELLS := {
 		"enemy_fx": [{"type": "taunt", "dur": 6.0}],
 		"vfx": "taunt_aoe", "anim": "raise",
 	},
+	"earthsplitter": {
+		"name": "Раскол земли", "school": "physical", "icon": "РЗ", "talent": true,
+		"desc": "Удар оружием в землю: 45–55 урона всем врагам в 7 м вокруг и кровотечение 20 ед. за 4 сек.",
+		"target": "self", "delivery": "auto_spell", "auto": "earthsplitter", "radius": 7.0,
+		"cast": 0.0, "cd": 30.0, "mana": 15.0, "range": 0.0,
+		"vfx": "whirl", "anim": "spin",
+	},
 	# --- книга заклинаний (сессия 04) ---
 	"rend": {
 		"name": "Кровопускание", "school": "physical", "icon": "Кр", "melee": true,

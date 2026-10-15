@@ -19,6 +19,7 @@ const BUFF_INFO := {
 	"ignite": {"name": "Горение", "color": Color(1.0, 0.5, 0.15), "icon": "fireball", "debuff": true, "desc": "Огненный шар: урон огнём со временем."},
 	"burn": {"name": "Пламя стены", "color": Color(1.0, 0.5, 0.15), "icon": "fire_wall", "debuff": true, "desc": "Стена огня: урон огнём со временем."},
 	"meteor_burn": {"name": "Огненная глыба", "color": Color(1.0, 0.45, 0.1), "icon": "flamestrike", "debuff": true, "desc": "Горит после удара глыбы."},
+	"earthsplitter_bleed": {"name": "Раскол земли", "color": Color(0.8, 0.15, 0.1), "icon": "rend", "debuff": true, "desc": "Кровоточит после Раскола земли."},
 	"ignite_talent": {"name": "Возгорание", "color": Color(1.0, 0.4, 0.1), "icon": "fireball", "debuff": true, "desc": "После критического удара огнём цель догорает."},
 	"holy_fire": {"name": "Священный огонь", "color": Color(1.0, 0.85, 0.4), "icon": "holy_fire", "debuff": true, "desc": "Урон Светом со временем."},
 	"living_bomb": {"name": "Живая бомба", "color": Color(1.0, 0.45, 0.1), "icon": "living_bomb", "debuff": true, "desc": "Горит, а в конце взрывается и задевает врагов рядом."},
@@ -105,6 +106,13 @@ const AUTO_SPELLS := {
 		"enemy_fx": [{"type": "damage", "min": 55.0, "max": 70.0}, {"type": "dot", "total": 24.0, "dur": 4.0, "tick": 1.0, "key": "meteor_burn"}]},
 	"holy_star": {"name": "Звезда Света", "school": "holy", "radius": 6.0, "delay": 0.7, "vfx": "holy_star",
 		"enemy_fx": [{"type": "damage", "min": 40.0, "max": 50.0}], "ally_fx": [{"type": "heal", "min": 30.0, "max": 36.0}]},
+	# автозаклинания талантов-заклинаний со сбросом перезарядки (как Огненная глыба)
+	"hammer_of_heaven": {"name": "Молот небес", "school": "holy", "radius": 6.0, "delay": 0.6, "vfx": "holy_star",
+		"enemy_fx": [{"type": "damage", "min": 50.0, "max": 62.0}], "ally_fx": [{"type": "heal", "min": 28.0, "max": 34.0}]},
+	"holy_word_sanctify": {"name": "Слово Света: Освящение", "school": "holy", "radius": 7.0, "delay": 0.0, "vfx": "nova_holy",
+		"enemy_fx": [{"type": "damage", "min": 20.0, "max": 24.0}], "ally_fx": [{"type": "heal", "min": 60.0, "max": 72.0}]},
+	"earthsplitter": {"name": "Раскол земли", "school": "physical", "radius": 7.0, "delay": 0.0, "vfx": "whirl", "around_caster": true,
+		"enemy_fx": [{"type": "damage", "min": 45.0, "max": 55.0}, {"type": "dot", "total": 20.0, "dur": 4.0, "tick": 1.0, "key": "earthsplitter_bleed"}]},
 	"divine_burst": {"name": "Вспышка Света", "school": "holy", "radius": 6.0, "delay": 0.0, "vfx": "nova_holy", "around_caster": true,
 		"enemy_fx": [{"type": "damage", "min": 28.0, "max": 34.0}]},
 }

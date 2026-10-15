@@ -280,13 +280,13 @@ const CONSUMABLES := {
 		"use": {"buff": "elixir_fort", "dur": 180.0, "mods": {"hp_pct": 0.1}}, "desc": "+10% к здоровью на 3 минуты."},
 	"elixir_wisdom": {"name": "Эликсир мудрости", "level": 5, "price": 60, "q": 1, "icon": "elixir_wisdom", "elixir": true,
 		"use": {"buff": "elixir_wisdom", "dur": 180.0, "mods": {"regen": 0.5, "mana_pct": 0.05}}, "desc": "Мана восполняется на 50% быстрее, +5% маны на 3 минуты."},
-	"elixir_haste": {"name": "Эликсир быстроты", "level": 8, "price": 80, "q": 1, "icon": "elixir_power", "elixir": true,
+	"elixir_haste": {"name": "Эликсир быстроты", "level": 8, "price": 80, "q": 1, "icon": "elixir_haste", "elixir": true,
 		"use": {"buff": "elixir_haste", "dur": 180.0, "mods": {"haste": 0.08}}, "desc": "+8% к скорости произнесения и атак на 3 минуты."},
-	"elixir_crit": {"name": "Эликсир меткости", "level": 8, "price": 80, "q": 1, "icon": "elixir_power", "elixir": true,
+	"elixir_crit": {"name": "Эликсир меткости", "level": 8, "price": 80, "q": 1, "icon": "elixir_crit", "elixir": true,
 		"use": {"buff": "elixir_crit", "dur": 180.0, "mods": {"crit": 0.05}}, "desc": "+5% к шансу критического удара на 3 минуты."},
-	"elixir_warding": {"name": "Эликсир защиты от магии", "level": 10, "price": 90, "q": 1, "icon": "elixir_fort", "elixir": true,
+	"elixir_warding": {"name": "Эликсир защиты от магии", "level": 10, "price": 90, "q": 1, "icon": "elixir_warding", "elixir": true,
 		"use": {"buff": "elixir_warding", "dur": 180.0, "mods": {"magic_taken": -0.2}}, "desc": "−20% урона от магии (огонь, лёд, тьма, Скверна…) на 3 минуты."},
-	"elixir_swift": {"name": "Эликсир стремительности", "level": 3, "price": 50, "q": 1, "icon": "elixir_wisdom", "elixir": true,
+	"elixir_swift": {"name": "Эликсир стремительности", "level": 3, "price": 50, "q": 1, "icon": "elixir_swift", "elixir": true,
 		"use": {"buff": "elixir_swift", "dur": 180.0, "mods": {"speed": 0.15}}, "desc": "+15% к скорости бега на 3 минуты."},
 }
 

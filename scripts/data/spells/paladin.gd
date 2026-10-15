@@ -144,6 +144,13 @@ const SPELLS := {
 		"ally_fx": [{"type": "heal", "min": 22.0, "max": 26.0}],
 		"vfx": "nova_holy", "anim": "melee",
 	},
+	"hammer_of_heaven": {
+		"name": "Молот небес", "school": "holy", "icon": "МН", "talent": true,
+		"desc": "Молот Света падает в точку через 0.6 сек.: 50–62 урона врагам в радиусе 6 м и 28–34 лечения союзникам там же.",
+		"target": "ground", "delivery": "auto_spell", "auto": "hammer_of_heaven", "radius": 6.0,
+		"cast": 0.0, "cd": 30.0, "mana": 45.0, "range": 36.0,
+		"vfx": "holy_star", "anim": "raise",
+	},
 	# --- книга заклинаний (сессия 04) ---
 	"flash_of_light": {
 		"name": "Вспышка Света", "school": "holy", "icon": "ВС",

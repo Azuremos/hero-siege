@@ -136,6 +136,13 @@ const SPELLS := {
 		"ally_fx": [{"type": "heal", "min": 45.0, "max": 55.0}],
 		"vfx": "nova_holy", "anim": "raise",
 	},
+	"holy_word_sanctify": {
+		"name": "Слово Света: Освящение", "school": "holy", "icon": "СО", "talent": true,
+		"desc": "Свет нисходит в точку: 60–72 лечения союзникам в радиусе 7 м и 20–24 урона врагам там же.",
+		"target": "ground", "delivery": "auto_spell", "auto": "holy_word_sanctify", "radius": 7.0,
+		"cast": 0.0, "cd": 30.0, "mana": 50.0, "range": 36.0,
+		"vfx": "heal_circle", "anim": "raise",
+	},
 	# --- книга заклинаний (сессия 04) ---
 	"penance": {
 		"name": "Покаяние", "school": "holy", "icon": "Пк",
