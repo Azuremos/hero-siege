@@ -562,6 +562,32 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 		if h:
 			skel.remove_child(h)
 			h.free()
+	# родное оружие модели (шипастая дубинка орка) — снять со скина и закрепить на кисти жёстко, как в позе покоя:
+	# при склейке частей оно съезжало с руки
+	var rigid: Dictionary = mdl.get("rigid", {})
+	for part: String in rigid:
+		var src := skel.find_child(part, true, false) as MeshInstance3D
+		if src == null:
+			continue
+		var bone: String = rigid[part]
+		var ratt := BoneAttachment3D.new()
+		ratt.bone_name = bone
+		skel.add_child(ratt)
+		var rm := MeshInstance3D.new()
+		rm.mesh = src.mesh
+		# рукоять — верхний конец меша (головка с шипами внизу): кладём её в кулак тем же хватом, что и наше оружие,
+		# головкой — со стороны большого пальца
+		var ab := src.mesh.get_aabb()
+		var grip_pt := Vector3(ab.get_center().x, ab.end.y - ab.size.y * 0.15, ab.get_center().z)
+		rm.transform = _fist_grip(skel, bone, bone.get_slice(".", 1)) * Transform3D(Basis(Vector3.BACK, PI), Vector3.ZERO) * Transform3D(Basis(), -grip_pt)
+		for s in src.mesh.get_surface_count():
+			rm.set_surface_override_material(s, _monster_material(mob_id + "|rigid|" + str(s), def, src.mesh.surface_get_material(s), true))
+		ratt.add_child(rm)
+		skel.remove_child(src)
+		src.free()
+		var rfist := FistModifier.new()
+		rfist.setup(skel, bone.get_slice(".", 1))
+		skel.add_child(rfist)
 	if Net.cli.has("nomerge") or not _merge_monster(skel, mob_id, def):
 		for mi in skel.find_children("*", "MeshInstance3D", true, false):
 			var m := mi as MeshInstance3D
@@ -581,15 +607,46 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 		att.bone_name = grip["bone"]
 		skel.add_child(att)
 		var w := weapon_scene(weapons[side]).instantiate() as Node3D
-		w.position = grip["pos"] / (arm * float(mdl["fit"]))
-		w.rotation_degrees = def.get("grip_rot", grip["rot"])
-		w.scale = Vector3.ONE * float(grip["scale"]) * float(def.get("weapon_scale", 1.0)) / (arm * float(mdl["fit"]))
+		var sc := float(grip["scale"]) * float(def.get("weapon_scale", 1.0)) / (arm * float(mdl["fit"]))
+		var fist_xf := _fist_grip(skel, grip["bone"], side.to_upper())
+		if fist_xf != Transform3D.IDENTITY:
+			# как у героев KayKit: рукоять поперёк кулака (от мизинца к большому пальцу), клинок — со стороны
+			# большого пальца; крепление к кисти (предплечью), поэтому оружие идёт за ударом в любой анимации
+			w.transform = fist_xf * Transform3D(Basis.from_euler(def.get("grip_rot", grip["rot"]) * PI / 180.0).scaled(Vector3.ONE * sc), Vector3.ZERO)
+		else:
+			w.position = grip["pos"] / (arm * float(mdl["fit"]))
+			w.rotation_degrees = def.get("grip_rot", grip["rot"])
+			w.scale = Vector3.ONE * sc
 		att.add_child(w)
 		# пальцы этой руки — в кулак вокруг рукояти
 		var fist := FistModifier.new()
 		fist.setup(skel, side.to_upper())
 		skel.add_child(fist)
 	_setup_monster_anims(inst, mdl)
+
+## Хват в кулаке (модели Quaternius): в пространстве кости-кисти bone (LowerArm — у этих моделей пальцы растут
+## прямо из неё). Центр — середина первых фаланг пальцев, ось Y — от мизинца к указательному (рукоять поперёк
+## ладони, клинок со стороны большого пальца), ось X — вдоль пальцев. IDENTITY — у модели нет таких костей.
+static func _fist_grip(skel: Skeleton3D, bone: String, side: String) -> Transform3D:
+	var bi := skel.find_bone(bone)
+	var ii := skel.find_bone("Index2." + side)       # первые фаланги растут из одной точки — берём вторые
+	var pk := skel.find_bone("Pinky2." + side)
+	var mi := skel.find_bone("Middle1." + side)
+	var m2 := skel.find_bone("Middle2." + side)
+	if bi < 0 or ii < 0 or pk < 0 or mi < 0 or m2 < 0:
+		return Transform3D.IDENTITY
+	var inv := skel.get_bone_global_rest(bi).affine_inverse()
+	var p_index := inv * skel.get_bone_global_rest(ii).origin
+	var p_pinky := inv * skel.get_bone_global_rest(pk).origin
+	var p_mid := inv * skel.get_bone_global_rest(mi).origin
+	var p_mid2 := inv * skel.get_bone_global_rest(m2).origin
+	var y := (p_index - p_pinky).normalized()
+	var fingers := (p_mid2 - p_mid).normalized()
+	var x := (fingers - y * fingers.dot(y)).normalized()
+	var z := x.cross(y).normalized()
+	# центр кулака: у основания пальцев, чуть внутрь ладони
+	var center := (p_mid + p_mid2) * 0.5
+	return Transform3D(Basis(x, y, z), center)
 
 ## Оружие KayKit: Fantasy Weapons Bits (assets/weapons) или оружие скелетов (assets/enemies/weapons).
 static func weapon_scene(wname: String) -> PackedScene:
