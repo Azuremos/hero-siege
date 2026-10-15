@@ -42,6 +42,9 @@ var _talent_class := "mage"
 var _keys_view: Control = null
 var _settings_view: Control = null
 var _cli: Dictionary = {}
+var _reconnect_btn: Button
+var _sieges_box: VBoxContainer
+var _del_armed := ""
 
 func _ready() -> void:
 	_parse_cli()
@@ -161,6 +164,10 @@ func _build_ui() -> void:
 	var m := _panel("main", 360)
 	_big_button(m, "Одиночная игра", func(): _open_hero("solo"))
 	_big_button(m, "Сетевая игра", func(): _open_hero("net"))
+	_big_button(m, "Продолжить осаду", _show_sieges)
+	_reconnect_btn = _big_button(m, "Переподключиться", _on_reconnect)
+	_reconnect_btn.visible = bool(Net.profile_get("unclean", false)) and str(Net.profile_get("last_host", "")) != ""
+	_reconnect_btn.tooltip_text = "Партия оборвалась — вернуться к хосту %s тем же героем" % str(Net.profile_get("last_host", ""))
 	_big_button(m, "Таланты классов", func(): _show("talents"))
 	_big_button(m, "Настройки", _toggle_settings)
 	_big_button(m, "Настроить интерфейс", _start_ui_preview)
@@ -442,7 +449,8 @@ func _apply_local_info() -> void:
 		"break": int(_break_option.get_item_metadata(_break_option.selected)),
 		"marks_host_only": _marks_check.button_pressed or _cli.has("markshost"),
 		"factions": FACTION_CHOICES[_faction_option.selected][0], "faction": FACTION_CHOICES[_faction_option.selected][2],
-		"seed": randi()}
+		"seed": randi(), "siege_id": Net.new_uid().substr(0, 12), "late_join": true}
+	Net.pending_siege = {}
 	_save_settings()
 
 # ---------------------------------------------------------------- сеть
@@ -504,6 +512,10 @@ func _refresh_lobby() -> void:
 	for pid in ids:
 		var p: Dictionary = Net.players[pid]
 		var cls: Dictionary = GameData.CLASSES[p["class"]]
+		if pid < 0:
+			# продолженная осада: место игрока, который ещё не зашёл
+			_lobby_list.add_child(_label("ждём %s — %s, %s" % [p["name"], GameData.RACES[p["race"]]["name"], cls["name"]], 17, Color(0.6, 0.6, 0.6)))
+			continue
 		var l := _label("%s%s — %s, %s  ·  v%s" % ["★ " if pid == 1 else "", p["name"], GameData.RACES[p["race"]]["name"], cls["name"],
 			p.get("version", "?")], 17, cls["color"])
 		_lobby_list.add_child(l)
@@ -601,6 +613,12 @@ func _run_cli() -> void:
 	if _cli.has("uipreview"):
 		_start_ui_preview()
 		return
+	if _cli.has("continue"):
+		# --continue=last | <id>: загрузить сохранённую осаду (с --autostart=N — сетевая, ждёт N игроков)
+		var sl := SiegeSave.list()
+		var csid: String = (str(sl[0]["id"]) if not sl.is_empty() else "") if _cli["continue"] == "last" else str(_cli["continue"])
+		_continue_siege(csid)
+		return
 	if _cli.has("solo"):
 		_on_solo()
 	elif _cli.has("host"):
@@ -610,7 +628,7 @@ func _run_cli() -> void:
 		_on_join()
 
 func _check_autostart() -> void:
-	if _cli.has("autostart") and Net.players.size() >= int(_cli["autostart"]):
+	if _cli.has("autostart") and Net.players.keys().filter(func(k): return k > 0).size() >= int(_cli["autostart"]):
 		Net.start_game()
 
 ## --menushot=путь: снимок меню (для проверки внешнего вида).
@@ -631,3 +649,90 @@ func _unhandled_input(ev: InputEvent) -> void:
 	elif ev is InputEventMouseMotion and _drag_preview and _preview:
 		_preview_yaw += (ev as InputEventMouseMotion).relative.x * 0.012
 		_preview.rotation.y = _preview_yaw
+
+# ---------------------------------------------------------------- продолжить осаду, переподключиться (сессия 07)
+
+## Партия оборвалась: вернуться к тому же хосту (герой ждёт по uid игрока).
+func _on_reconnect() -> void:
+	_apply_local_info()
+	_ip_edit.text = str(Net.profile_get("last_host", ""))
+	_open_hero("net")
+	_on_join()
+
+## Список сохранённых осад хоста: дата, отбито волн, отряд. «Продолжить» — лобби ждёт тех же игроков.
+func _show_sieges() -> void:
+	if not _screens.has("sieges"):
+		var v := _panel("sieges", 560)
+		v.add_child(_label("Продолжить осаду", 24, GOLD))
+		v.add_child(_label("Осады сохраняются сами после каждой волны и по кнопке «Сохранить осаду и выйти» в меню (Esc). Друзья заходят как обычно — каждый получит своего героя из сохранения.", 14, Color(0.9, 0.9, 0.85)))
+		_sieges_box = VBoxContainer.new()
+		_sieges_box.add_theme_constant_override("separation", 6)
+		v.add_child(_sieges_box)
+		var back := Button.new()
+		back.text = "Назад"
+		back.pressed.connect(func(): _show("main"))
+		v.add_child(back)
+	for c in _sieges_box.get_children():
+		c.queue_free()
+	var list := SiegeSave.list()
+	if list.is_empty():
+		_sieges_box.add_child(_label("Сохранённых осад пока нет.", 15, Color(0.7, 0.7, 0.7)))
+	for d: Dictionary in list:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var w: int = int(d["settings"].get("waves", 20))
+		var names: Array = d["party"].map(func(p): return "%s (%s %d)" % [p["name"], GameData.CLASSES[p["class"]]["name"], int(p["level"])])
+		var l := _label("%s\nОтбито волн: %d из %s  ·  %s" % [str(d["date"]).replace("T", " "), int(d["wave"]), "∞" if w == 0 else str(w), ", ".join(names)], 14, Color.WHITE)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(l)
+		var go := Button.new()
+		go.text = "Продолжить"
+		var sid: String = d["id"]
+		go.pressed.connect(func(): _continue_siege(sid))
+		row.add_child(go)
+		var del := Button.new()
+		del.text = "Удалить"
+		del.pressed.connect(func():
+			if _del_armed != sid:
+				_del_armed = sid
+				del.text = "Точно удалить?"
+				return
+			SiegeSave.remove(sid)
+			_del_armed = ""
+			_show_sieges())
+		row.add_child(del)
+		_sieges_box.add_child(row)
+	_show("sieges")
+
+## Загрузить осаду: одиночную — сразу в бой, сетевую — лобби с местами «ждём <имя>» для остальных игроков.
+func _continue_siege(sid: String) -> void:
+	var d := SiegeSave.load_file(sid)
+	if d.is_empty():
+		_status.text = "Сохранение повреждено"
+		return
+	_apply_local_info()
+	var me: Dictionary = d["party"][0]
+	for p in d["party"]:
+		if p["uid"] == Net.uid:
+			me = p
+	Net.local_info["class"] = me["class"]
+	Net.local_info["race"] = me["race"]
+	Net.local_info["name"] = me["name"]
+	Net.local_info["uid"] = me["uid"]       # хост — тот же игрок, что сохранял (его герой в сохранении)
+	var solo: bool = d["party"].size() == 1 and bool(d.get("solo", false))
+	if Net.host_game(solo) != OK:
+		_status.text = "Не удалось запустить игру (порт %d занят?)" % Net.port()
+		return
+	Net.settings = d["settings"].duplicate()
+	Net.settings["siege_id"] = sid
+	Net.pending_siege = d
+	var i := 1
+	for p in d["party"]:
+		if p["uid"] == me["uid"]:
+			continue
+		Net.players[-i] = {"name": p["name"], "class": p["class"], "race": p["race"], "uid": p["uid"], "offline": true, "version": Net.game_version()}
+		i += 1
+	if solo:
+		Net.start_game()
+	else:
+		_show("lobby")

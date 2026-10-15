@@ -401,6 +401,12 @@ func _process(delta: float) -> void:
 		local_hero.global_position = Vector3(pf[0], 0.5, pf[1])
 	if Net.cli.has("chasedebug") and is_server() and _log_t == 0.0:
 		print("CHASE chases=%d drops=%d flips=%d hero=%s" % [mobs.dbg_chases, mobs.dbg_drops, mobs.dbg_flips, local_hero.global_position if local_hero else Vector3.ZERO])
+	# --savesiege=T: хост сохраняет осаду на T-й секунде и выходит (проверка «Сохранить осаду и продолжить»)
+	if Net.cli.has("savesiege") and is_server() and _test_t >= float(Net.cli["savesiege"]) and _test_t - delta < float(Net.cli["savesiege"]):
+		print("SIEGE SAVED ", SiegeSave.save(self), " wave=", (mode as SiegeMode).wave, " castle=", int((mode as SiegeMode).castle.hp))
+		for h in heroes.values():
+			print("HERO ", h.player_name, " lvl=", h.unit.level, " xp=", h.xp, " gold=", h.gold, " talents=", h.talents.size(), " equip=", h.equip.size(), " bag=", h.bag.filter(func(s): return s != null).size())
+		Sfx.quit_game.call_deferred()
 	if Net.cli.has("level") and is_server() and _test_t >= 1.0 and _test_t - delta < 1.0:
 		for h in heroes.values():
 			while h.unit.level < int(Net.cli["level"]):
@@ -966,5 +972,7 @@ func _apply_saved_heroes() -> void:
 		var d := HeroSave.sanitize(raw)
 		if not d.is_empty() and d["class"] == h.class_id:
 			HeroSave.apply(self, h, d)
+			if not Net.cli.is_empty():
+				print("HERO LOADED ", h.player_name, " lvl=", h.unit.level, " xp=", h.xp, " gold=", h.gold, " talents=", h.talents.size(), " equip=", h.equip.size(), " bag=", h.bag.filter(func(s): return s != null).size(), " offline=", h.offline)
 		if h.offline:
 			h.unit.alive = false

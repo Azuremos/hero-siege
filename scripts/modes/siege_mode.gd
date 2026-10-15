@@ -63,6 +63,15 @@ func begin() -> void:
 	_started = true
 	var delay: float = GameData.FIRST_WAVE_DELAY if wave_count == 0 else minf(GameData.FIRST_WAVE_DELAY, 12.0 + 3.0 * wave_count)
 	_next_wave_at = world.now() + delay
+	var sv: Dictionary = Net.pending_siege
+	if not sv.is_empty():
+		# продолженная осада: отбитые волны и замок — из сохранения, следующая волна через 30 сек.
+		wave = int(sv["wave"])
+		castle.max_hp = float(sv["castle_max"])
+		castle.hp = float(sv["castle"])
+		_next_wave_at = world.now() + 30.0
+		world.announce_all("Осада продолжается: отбито волн — %d. Следующая через 30 сек." % wave, Color(0.6, 1.0, 0.7))
+		return
 	var mode: String = "  (бесконечная осада)" if wave_count == 0 else ("" if wave_count == GameData.WAVE_COUNT else "  (волн: %d)" % wave_count)
 	world.announce_all("Защитите замок! Первая волна через %d сек.%s" % [int(delay), mode])
 	var parts: Array = []
@@ -100,6 +109,7 @@ func server_tick(_delta: float, t: float) -> void:
 			_next_wave_at = t + break_time
 			world.sound_all("level_up")
 			world.announce_all("Передышка! Следующая волна через %d сек. — восстановите силы." % int(break_time), Color(0.6, 1.0, 0.7))
+			_autosave()
 		return
 	next_wave_in = maxf(0.0, _next_wave_at - t)
 	if t >= _next_wave_at:
@@ -111,6 +121,8 @@ func skip() -> void:
 		_next_wave_at = world.now()
 
 func _start_wave(t: float) -> void:
+	if wave > 0:
+		_autosave()      # отбитая волна сохранена: вылет хоста не теряет прогресс
 	wave += 1
 	world.meter.new_segment("Волна %d" % wave)
 	state = "running"
@@ -309,3 +321,17 @@ func balance_summary() -> String:
 		parts.append("в%d: %s" % [w, ("%.0f с" % (float(_bal["cleared"][w]) - float(_bal["wave_t"][w]))) if _bal["cleared"].has(w) else "не зачищена"])
 	return "BAL END state=%s wave=%d castle=%d%% (мин. %d%%) deaths=%d | %s" % [state, wave, int(castle.hp / castle.max_hp * 100.0),
 		int(_bal["min_castle"] * 100.0), _bal["deaths"], ", ".join(parts)]
+
+## Автосохранение осады (одна ячейка на осаду). В одиночной игре — тоже: её можно продолжить.
+func _autosave() -> void:
+	if not Net.is_server() or str(Net.settings.get("mode", "siege")) == "preview" or not Net.cli.is_empty() and not Net.cli.has("autosave"):
+		return
+	var p := SiegeSave.save(world)
+	if p != "":
+		world.announce_all("Осада сохранена (волна %d)." % wave, Color(0.7, 0.85, 1.0))
+
+## Сервер: победа — сохранение этой осады больше не нужно.
+func finish(victory: bool) -> void:
+	super.finish(victory)
+	if victory and Net.settings.has("siege_id"):
+		SiegeSave.remove(str(Net.settings["siege_id"]))

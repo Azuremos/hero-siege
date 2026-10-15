@@ -330,6 +330,7 @@ func _start_game(p: Dictionary, s: Dictionary) -> void:
 	get_tree().change_scene_to_file.call_deferred("res://scenes/world.tscn")
 
 func back_to_menu(reason: String = "") -> void:
+	pending_siege = {}
 	if reason == "":
 		profile_set("unclean", false)      # вышел сам — переподключаться некуда
 	leave()

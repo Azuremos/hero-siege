@@ -929,6 +929,18 @@ func _build_menu() -> void:
 		toggle_menu()
 		toggle_settings())
 	v.add_child(b_set)
+	if Net.is_server() and world.mode is SiegeMode:
+		# хост: сохранить недоигранную осаду и продолжить её потом с того же места (главное меню → «Продолжить осаду»)
+		var b_save := Button.new()
+		b_save.text = "Сохранить осаду и выйти"
+		b_save.tooltip_text = "Между волнами — с того же места. Во время волны она начнётся заново."
+		b_save.pressed.connect(func():
+			var p := SiegeSave.save(world)
+			if p == "":
+				error("Не удалось сохранить осаду")
+				return
+			Net.back_to_menu())
+		v.add_child(b_save)
 	var b3 := Button.new()
 	b3.text = "Выйти в главное меню"
 	b3.pressed.connect(func(): Net.back_to_menu())
