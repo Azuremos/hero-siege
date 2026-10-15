@@ -63,6 +63,11 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 		return _feedback(peer, sid, "Сейчас нельзя")
 	if t < u.silence_until or t < u.fear_until:
 		return _feedback(peer, sid, "Сейчас нельзя: вы под контролем")
+	# во льду Ледяной гробницы можно бить только саму гробницу (иначе одиночке не выбраться)
+	if u.has_buff("ice_tomb"):
+		var tomb: Unit = world.get_unit(target_id)
+		if sp["target"] != "enemy" or tomb == null or tomb.type_id != "ice_tomb":
+			return _feedback(peer, sid, "Вы во льду — разбейте гробницу")
 	if not st["cast"].is_empty():
 		return _feedback(peer, sid, "Вы уже произносите заклинание")
 	var proc := GameData.active_proc(u, sid)
@@ -258,7 +263,7 @@ func _auto_attack(hero, st: Dictionary, t: float) -> void:
 		return
 	var auto: Dictionary = GameData.CLASSES[hero.class_id]["auto"]
 	var u: Unit = hero.unit
-	if _dist(u, tu) > float(auto["range"]) + tu.radius or u.is_stunned(t):
+	if _dist(u, tu) > float(auto["range"]) + tu.radius or u.is_stunned(t) or (u.has_buff("ice_tomb") and tu.type_id != "ice_tomb"):
 		return
 	st["auto_ready"] = t + float(auto["speed"]) * maxf(0.5, 1.0 - u.mod("haste"))
 	var fx := [{"type": "damage", "min": auto["min"], "max": auto["max"]}]
