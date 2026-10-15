@@ -232,10 +232,10 @@ func server_tick(delta: float, t: float) -> void:
 				if t > u.combat_until:
 					u.mana = maxf(0.0, u.mana - 1.5)
 			else:
-				# в секунду: запас × 3% + Дух × 0,6; после траты маны 5 с — 30% от этого (правило 5 секунд)
+				# в секунду: запас × 3% + Дух × 0,6 вне боя; в бою — 50%, в бою после траты маны 5 с — 20%
 				var per_s := u.max_mana * GameData.MANA_REGEN_POOL + u.spirit * GameData.MANA_REGEN_SPIRIT
-				if t - u.mana_spent_at < GameData.FIVE_SECOND_RULE:
-					per_s *= GameData.CASTING_REGEN
+				if t < u.combat_until:
+					per_s *= GameData.CASTING_REGEN if t - u.mana_spent_at < GameData.FIVE_SECOND_RULE else GameData.COMBAT_REGEN
 				u.mana = minf(u.max_mana, u.mana + per_s * 0.5 * (1.0 + u.mod("regen")) * rest)
 			u.hp = minf(u.max_hp, u.hp + (u.max_hp * 0.0025 + u.spirit * 0.05) * rest)
 	_update_bursts(t)
@@ -654,6 +654,12 @@ func _m(u: Unit, key: String, sid: String = "", school: String = "") -> float:
 ## Неудержимый элитный не поддаётся контролю (кроме замедления).
 const CONTROL_TYPES := ["stun", "freeze", "fear", "knockback", "root", "chill"]
 
+## Помощь союзнику в бою (лечение, щит, бафф) вводит в бой и помогающего — как в WoW.
+## Иначе лекарь за спинами считался бы вне боя и восполнял ману полностью.
+func join_combat(helper: Unit, ally: Unit, t: float) -> void:
+	if helper and ally and helper != ally and helper.kind == "hero" and ally.kind == "hero" and t < ally.combat_until:
+		helper.combat_until = maxf(helper.combat_until, t + GameData.COMBAT_TIME)
+
 func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, school: String) -> void:
 	var t: float = world.now()
 	var pw := 1.0
@@ -661,6 +667,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 		pw = caster.phys_power if school == "physical" else caster.power
 	var amp := _m(caster, "amount", sid, school)
 	var crit_chance := (caster.crit_base if caster else 0.05) + _m(caster, "crit", sid, school)
+	join_combat(caster, target, t)
 	if caster and target.is_rooted(t):
 		crit_chance += caster.flag("shatter")
 	for e: Dictionary in effects:
@@ -930,7 +937,7 @@ func gain_rage(u: Unit, amount: float, t: float) -> void:
 	if u.resource != "rage":
 		return
 	u.mana = minf(u.max_mana, u.mana + amount)
-	u.combat_until = t + 6.0
+	u.combat_until = t + GameData.COMBAT_TIME
 
 var _proc_cd: Dictionary = {}
 
@@ -939,7 +946,7 @@ func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: Stri
 	if u == null or u.kind != "hero" or u.mods.is_empty() or GameData.AUTO_SPELLS.has(sid):
 		return
 	for p in u.mods.get("procs", []):
-		if p["on"] != on:
+		if not (p["on"] == on if p["on"] is String else (p["on"] as Array).has(on)):
 			continue
 		if p.has("school") and p["school"] != school:
 			continue
@@ -950,7 +957,7 @@ func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: Stri
 		var key := "%d:%s" % [u.id, p["id"]]
 		if t < float(_proc_cd.get(key, 0.0)) or (randf() >= float(p["chance"]) and not Net.cli.has("procall")):
 			continue
-		_proc_cd[key] = t + 1.0
+		_proc_cd[key] = t + float(p.get("icd", 1.0))
 		if Net.cli.has("proclog"):
 			print("PROC ", p["id"], " t=%.1f" % t)
 		if p.has("reset"):
@@ -963,7 +970,8 @@ func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: Stri
 			fx_at("proc", u.pos, u.pos, 0.0, u.id)
 			continue
 		if p.has("buff"):
-			u.add_buff(p["buff"], t + 15.0, {})
+			# у проков вещей свои длительность и модификаторы (item_data.ITEM_PROCS)
+			u.add_buff(p["buff"], t + float(p.get("dur", 15.0)), p.get("mods", {}))
 			fx_at("proc", u.pos, u.pos, 0.0, u.id)
 		elif p.has("spell") and target:
 			cast_auto_spell(u, p["spell"], target.pos, t)
@@ -1028,6 +1036,8 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		return
 	if school == "physical":
 		amount *= maxf(0.0, 1.0 + dst.mod("phys_taken"))
+	else:
+		amount *= maxf(0.0, 1.0 + dst.mod("magic_taken"))   # эликсир защиты от магии
 	if src and src.kind == "hero" and src.flag("brittle") > 0.0 and dst.is_frozen(t):
 		amount *= 1.0 + src.flag("brittle")
 	if dst.kind == "hero" and src and src.kind == "mob":
@@ -1079,8 +1089,8 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 	dst.hp -= amount
 	if src:
 		dst.last_attacker = src.id
-		src.combat_until = t + 6.0
-	dst.combat_until = t + 6.0
+		src.combat_until = t + GameData.COMBAT_TIME
+	dst.combat_until = t + GameData.COMBAT_TIME
 	if dst.kind == "hero":
 		if dst.resource == "rage":
 			gain_rage(dst, amount / maxf(dst.max_hp, 1.0) * 60.0, t)
@@ -1095,6 +1105,7 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 func heal(src: Unit, dst: Unit, amount: float, crit: bool, sid: String = "") -> void:
 	if dst == null or not dst.alive:
 		return
+	join_combat(src, dst, world.now())
 	amount *= maxf(0.0, 1.0 + dst.mod("heal_taken"))
 	if src and src.flag("grace") > 0.0 and dst.hp_frac() < 0.35:
 		amount *= 1.0 + src.flag("grace")      # Благодать: тяжело раненых лечит сильнее

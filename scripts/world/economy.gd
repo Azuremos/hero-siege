@@ -98,17 +98,13 @@ func nearest_vendor(pos: Vector3) -> String:
 			return vid
 	return ""
 
-## Что продаёт торговец.
-func vendor_items(vid: String) -> Array:
-	var out: Array = []
-	for id in GameData.all_items():
-		if GameData.item(id)["kind"] == VENDORS[vid]["kind"]:
-			out.append(id)
-	out.sort_custom(func(a, b):
-		var ia := GameData.item(a)
-		var ib := GameData.item(b)
-		return [ia["level"], ia["name"]] < [ib["level"], ib["name"]])
-	return out
+## Что продаёт торговец герою уровня level (ассортимент кузнеца меняется каждые 3 волны).
+func vendor_items(vid: String, level: int) -> Array:
+	return GameData.vendor_stock(VENDORS[vid]["kind"], level, _rotation())
+
+func _rotation() -> int:
+	var w = world.mode.get("wave")
+	return int(w) / 3 if w != null else 0
 
 # ---------------------------------------------------------------- запросы игроков
 
@@ -142,20 +138,25 @@ func request_buy(vid: String, item_id: String) -> void:
 	if not Net.is_server():
 		return
 	var hero = _sender_hero()
-	var it := GameData.item(item_id)
-	if hero == null or it.is_empty() or not VENDORS.has(vid) or it["kind"] != VENDORS[vid]["kind"]:
+	if hero == null or not VENDORS.has(vid):
 		return
+	# покупать можно только то, что сейчас лежит в лавке у этого героя (ассортимент сервер считает сам)
+	if not vendor_items(vid, hero.unit.level).has(item_id):
+		return _say(hero, "Этого товара уже нет — откройте лавку заново")
+	var it := GameData.item(item_id)
 	if Vector2(hero.unit.pos.x - vendor_pos[vid].x, hero.unit.pos.z - vendor_pos[vid].z).length() > VENDOR_RANGE + 2.0:
 		return _say(hero, "Подойдите ближе к торговцу")
 	if hero.unit.level < int(it["level"]):
 		return _say(hero, "Нужен %d уровень" % it["level"])
-	if hero.gold < int(it["price"]):
+	var cost := GameData.shop_price(item_id)
+	if hero.gold < cost:
 		return _say(hero, "Недостаточно золота")
 	if not hero.bag_add(item_id):
 		return _say(hero, "Сумка полна")
-	hero.gold -= int(it["price"])
+	hero.gold -= cost
 	_sync(hero)
 	_sound(hero, "coins")
+
 
 @rpc("any_peer", "reliable")
 func request_sell(idx: int) -> void:
@@ -187,23 +188,27 @@ func request_use(idx: int) -> void:
 		_equip(hero, idx)
 		return
 	var t: float = world.now()
-	if t < hero.potion_ready_at:
+	# эликсиры не делят перезарядку с зельями: бафф на 3 минуты, повторный глоток лишь обновляет его
+	var elixir: bool = it.get("elixir", false)
+	if not elixir and t < hero.potion_ready_at:
 		return _say(hero, "Зелья ещё не готовы")
 	var u: Unit = hero.unit
 	var use: Dictionary = it["use"]
-	if use.has("heal"):
-		world.spells.heal(u, u, float(use["heal"]), false, "item:" + str(it["id"]))
-	if use.has("mana"):
-		u.mana = minf(u.max_mana, u.mana + float(use["mana"]))
+	if use.has("heal_pct"):
+		world.spells.heal(u, u, u.max_hp * float(use["heal_pct"]), false, "item:" + str(it["id"]))
+	if use.has("mana_pct"):
+		u.mana = minf(u.max_mana, u.mana + u.max_mana * float(use["mana_pct"]))
 	if use.has("buff"):
 		u.add_buff(use["buff"], t + float(use["dur"]), use["mods"])
 		hero.apply_level_stats(false)
-	world.spells.fx_at("heal_small" if use.has("heal") else "proc", u.pos, u.pos, 0.0, u.id)
-	hero.potion_ready_at = t + GameData.POTION_CD
+	world.spells.fx_at("heal_small" if use.has("heal_pct") else "proc", u.pos, u.pos, 0.0, u.id)
 	s["n"] = int(s["n"]) - 1
 	if s["n"] <= 0:
 		hero.bag[idx] = null
 	_sync(hero)
+	if elixir:
+		return
+	hero.potion_ready_at = t + GameData.POTION_CD
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_potion_cd(GameData.POTION_CD)
 	else:
@@ -306,20 +311,23 @@ func _sound(hero, snd: String) -> void:
 
 # ---------------------------------------------------------------- добыча с врагов
 
-## Сервер: шанс выпадения предмета с убитого врага (лучше с ростом волны).
-func roll_loot(pos: Vector3, wave: int, boss: bool, elite: bool = false) -> void:
+## Сервер: добыча с убитого врага. source: mob / elite / champion / boss — повышает качество вещи и шанс зелий.
+func roll_loot(pos: Vector3, wave: int, source: String) -> void:
 	var drops: Array = []
-	if elite:
-		# элитный — вещь получше наверняка, иногда ещё зелье
-		drops.append(_random_gear(wave + 2, pos))
-		if randf() < 0.5:
-			drops.append(_random_consumable(wave))
-	elif boss:
-		drops.append(_random_gear(wave + 4, pos))
-		drops.append(_random_gear(wave + 4, pos))
-		drops.append(_random_consumable(wave))
-	elif randf() < (float(Net.cli["lootrate"]) if Net.cli.has("lootrate") else 0.06):
-		drops.append(_random_gear(wave, pos) if randf() < 0.5 else _random_consumable(wave))
+	match source:
+		"boss", "champion":
+			drops.append(_random_gear(wave, pos, source))
+			drops.append(_random_gear(wave, pos, source))
+			drops.append(_random_consumable(pos))
+			drops.append(_random_consumable(pos))
+		"elite":
+			# элитный — вещь получше наверняка, часто ещё зелье
+			drops.append(_random_gear(wave, pos, source))
+			if randf() < 0.75:
+				drops.append(_random_consumable(pos))
+		_:
+			if randf() < (float(Net.cli["lootrate"]) if Net.cli.has("lootrate") else 0.06):
+				drops.append(_random_gear(wave, pos, source) if randf() < 0.4 else _random_consumable(pos))
 	for id in drops:
 		var lid := _next_loot
 		_next_loot += 1
@@ -327,24 +335,31 @@ func roll_loot(pos: Vector3, wave: int, boss: bool, elite: bool = false) -> void
 		_loot[lid] = {"item": id, "pos": p, "until": world.now() + LOOT_TIME}
 		ev_loot_spawn.rpc(lid, id, p)
 
-## Ступень выпавшей вещи: по уровню героев рядом, номер волны ограничивает сверху.
-## Раньше ступень зависела только от волны, и в одиночной игре, где уровень героя отстаёт,
-## падали вещи, которые нельзя надеть.
-func _random_gear(wave: int, pos: Vector3) -> String:
+## Вещь: уровень — по уровню героев рядом (номер волны ограничивает сверху), качество — отдельным броском
+## по уровню героев и источнику. Требуемый уровень = уровень предмета.
+func _random_gear(wave: int, pos: Vector3, source: String) -> String:
 	var levels := _levels_near(pos)
-	var tier := GameData.Formulas.gear_tier(wave, levels)
-	if randf() < 0.25:
-		tier = maxi(1, tier - 1)    # иногда попроще — для разнообразия, надеть всё равно можно
+	var ilvl := GameData.Formulas.gear_ilvl(wave, levels, source)
+	var q := GameData.ItemData.roll_quality(GameData.Formulas.typical_level(levels), source, randf())
 	if Net.cli.has("lootsim"):
-		_lootsim_record(tier, GameData.Formulas.old_gear_tier(wave), levels)
+		_lootsim_record(ilvl, q, levels)
 	var keys: Array = GameData.ItemData.TEMPLATES.keys()
-	return "%s_%d" % [keys[randi() % keys.size()], tier]
+	return GameData.make_gear(keys[randi() % keys.size()], ilvl, q)
 
-func _random_consumable(wave: int) -> String:
-	if randf() < 0.25:
-		return ["elixir_power", "elixir_fort", "elixir_wisdom"][randi() % 3]
-	var tier := 1 if wave < 8 else (2 if wave < 16 else 3)
-	return "potion_%s_%d" % ["heal" if randf() < 0.6 else "mana", tier]
+## Зелье (ступень — по уровню героев рядом) или эликсир.
+func _random_consumable(pos: Vector3) -> String:
+	var lvl := GameData.Formulas.typical_level(_levels_near(pos))
+	var cons: Dictionary = GameData.ItemData.CONSUMABLES
+	if randf() < 0.3:
+		var elixirs: Array = cons.keys().filter(func(c): return cons[c].get("elixir", false) and int(cons[c]["level"]) <= lvl + 2)
+		if not elixirs.is_empty():
+			return elixirs[randi() % elixirs.size()]
+	var kind := "heal" if randf() < 0.55 else "mana"
+	var best := "potion_%s_1" % kind
+	for c in cons:
+		if c.begins_with("potion_" + kind) and int(cons[c].get("drop_level", 99)) <= lvl and int(cons[c]["drop_level"]) >= int(cons[best]["drop_level"]):
+			best = c
+	return best
 
 func server_tick(delta: float, t: float) -> void:
 	_pickup_t -= delta
@@ -441,23 +456,27 @@ func _levels_near(pos: Vector3) -> Array:
 			near.append(h.unit.level)
 	return near if not near.is_empty() else all
 
-## --lootsim: копим, сколько выпавших вещей герои рядом могут надеть сразу или через 1–2 уровня.
-var _ls: Dictionary = {"n": 0, "new_now": 0, "new_soon": 0, "old_now": 0, "old_soon": 0}
+## --lootsim: копим, сколько выпавших вещей герои рядом могут надеть сразу или через 1–2 уровня,
+## и распределение качества.
+var _ls: Dictionary = {"n": 0, "now": 0, "soon": 0, "q": [0, 0, 0, 0, 0]}
 
-func _lootsim_record(tier: int, old_tier: int, levels: Array) -> void:
-	var need_new := int(GameData.ItemData.TIERS[tier - 1]["level"])
-	var need_old := int(GameData.ItemData.TIERS[old_tier - 1]["level"])
+func _lootsim_record(ilvl: int, q: int, levels: Array) -> void:
+	_ls["q"][q] += 1
 	for l in levels:
 		_ls["n"] += 1
-		_ls["new_now"] += 1 if l >= need_new else 0
-		_ls["new_soon"] += 1 if l + 2 >= need_new else 0
-		_ls["old_now"] += 1 if l >= need_old else 0
-		_ls["old_soon"] += 1 if l + 2 >= need_old else 0
+		_ls["now"] += 1 if l >= ilvl else 0
+		_ls["soon"] += 1 if l + 2 >= ilvl else 0
 
 func lootsim_report() -> String:
 	var n := maxf(1.0, float(_ls["n"]))
-	return "LOOTSIM героев×вещей=%d | было: сразу %d%%, через ≤2 ур. %d%% | стало: сразу %d%%, через ≤2 ур. %d%%" % [_ls["n"],
-		int(_ls["old_now"] / n * 100.0), int(_ls["old_soon"] / n * 100.0), int(_ls["new_now"] / n * 100.0), int(_ls["new_soon"] / n * 100.0)]
+	var qn := 0
+	for c in _ls["q"]:
+		qn += c
+	var qs := []
+	for i in 5:
+		qs.append("%s %d" % [GameData.ItemData.QUALITY_NAMES[i], _ls["q"][i]])
+	return "LOOTSIM героев×вещей=%d | надеть сразу %d%%, через ≤2 ур. %d%% | вещей %d: %s" % [_ls["n"],
+		int(_ls["now"] / n * 100.0), int(_ls["soon"] / n * 100.0), qn, ", ".join(qs)]
 
 # ---------------------------------------------------------------- облик торговцев
 

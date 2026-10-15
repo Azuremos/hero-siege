@@ -76,13 +76,14 @@ func refresh() -> void:
 	_gold.text = "Золото: %d" % hero.gold
 	for c in _list.get_children():
 		c.queue_free()
-	for id in world.economy.vendor_items(vendor):
+	for id in world.economy.vendor_items(vendor, hero.unit.level):
 		var it := GameData.item(id)
 		if _only_mine.visible and _only_mine.button_pressed and not it["classes"].is_empty() and not it["classes"].has(hero.class_id):
 			continue
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
-		row.tooltip_text = GameData.item_tooltip(id, hero.class_id, hero.unit.level)
+		var cost := GameData.shop_price(id)
+		row.tooltip_text = GameData.item_tooltip(id, hero.class_id, hero.unit.level, cost)
 		row.mouse_filter = Control.MOUSE_FILTER_PASS
 		var icon_holder := Control.new()
 		icon_holder.custom_minimum_size = Vector2(42, 42)
@@ -106,13 +107,13 @@ func refresh() -> void:
 		sub.text = "ур. %d   •   %s" % [it["level"], _short(it)]
 		text.add_child(sub)
 		var price := Label.new()
-		price.text = "%d з." % it["price"]
+		price.text = "%d з." % cost
 		price.custom_minimum_size = Vector2(60, 0)
-		price.add_theme_color_override("font_color", GOLD if hero.gold >= int(it["price"]) else Color(1, 0.4, 0.35))
+		price.add_theme_color_override("font_color", GOLD if hero.gold >= cost else Color(1, 0.4, 0.35))
 		row.add_child(price)
 		var buy := Button.new()
 		buy.text = "Купить"
-		buy.disabled = low or hero.gold < int(it["price"])
+		buy.disabled = low or hero.gold < cost
 		if low:
 			buy.tooltip_text = "Нужен %d уровень — у вас %d" % [it["level"], hero.unit.level]
 		var item_id: String = id
@@ -123,15 +124,17 @@ func refresh() -> void:
 func _short(it: Dictionary) -> String:
 	if it["kind"] != "gear":
 		var u: Dictionary = it["use"]
-		if u.has("heal"):
-			return "+%d здоровья" % int(u["heal"])
-		if u.has("mana"):
-			return "+%d маны" % int(u["mana"])
+		if u.has("heal_pct"):
+			return "+%d%% здоровья" % roundi(float(u["heal_pct"]) * 100.0)
+		if u.has("mana_pct"):
+			return "+%d%% маны" % roundi(float(u["mana_pct"]) * 100.0)
 		return it.get("desc", "")
 	var parts := []
 	for k in ["str", "agi", "sta", "int", "spi", "sp", "ap"]:
 		if it["stats"].has(k):
 			parts.append("+%d %s" % [int(it["stats"][k]), SHORT[k]])
+	if it["stats"].has("crit"):
+		parts.append("+%.1f%% крит" % (it["stats"]["crit"] * 100.0))
 	if it["stats"].has("armor"):
 		parts.append("+%.1f%% брони" % (it["stats"]["armor"] * 100.0))
 	return "  ".join(parts)

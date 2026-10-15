@@ -88,6 +88,10 @@ func _ready() -> void:
 func _read_map() -> void:
 	mode.read_map(map)
 	mobs.build_static_obstacles(map.get_node("Colliders"))
+	if Net.cli.has("treetest"):
+		var tt: Node = preload("res://scripts/world/tree_test.gd").new()
+		add_child(tt)
+		tt.setup(map.get_node("Colliders"))
 	economy.spawn_vendors()
 	_apply_cobblestone()
 	Settings.apply_shadows(map.get_node_or_null("Sun") as DirectionalLight3D)
@@ -435,9 +439,14 @@ func _process(delta: float) -> void:
 		for h in heroes.values():
 			h.gold = int(Net.cli["gold"])
 			h.bag_add("potion_heal_2", 5)
-			h.bag_add("sword_3")
-			h.bag_add("axe_4")
-			h.bag_add("plate_3")
+			h.bag_add("potion_mana_2", 5)
+			h.bag_add("elixir_haste", 2)
+			# по вещи каждого качества (зелёная, синяя, фиолетовая с проком, легендарная) — проверка подсказок и проков
+			h.bag_add(GameData.make_gear("sword", 10, 1))
+			h.bag_add(GameData.make_gear("axe", 15, 2))
+			h.bag_add(GameData.make_gear("plate", 10, 3))
+			h.bag_add(GameData.make_gear("staff", 12, 4))
+			h.bag_add(GameData.make_gear("robe", 12, 3))
 			economy._sync(h)
 	if Net.cli.has("equip") and is_server() and _test_t >= float(Net.cli["equip"]) and _test_t - delta < float(Net.cli["equip"]):
 		for h in heroes.values():

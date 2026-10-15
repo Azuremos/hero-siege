@@ -9,15 +9,18 @@ const RESPAWN_BASE := 8.0
 const CASTLE_HP := 6000.0
 const WAVE_COUNT := 20            # полная осада по умолчанию
 const MAX_WAVES := 100            # 0 в настройках = бесконечная осада
-const POTION_CD := 30.0           # общее восстановление зелий
+const POTION_CD := 40.0           # общее восстановление зелий
 const FIRST_WAVE_DELAY := 25.0
 
-## Мана. Восполнение в секунду: запас × MANA_REGEN_POOL + Дух × MANA_REGEN_SPIRIT.
-## Правило 5 секунд: после траты маны 5 с восполнение — только CASTING_REGEN от обычного.
+## Мана. Восполнение в секунду: запас × MANA_REGEN_POOL + Дух × MANA_REGEN_SPIRIT — это 100% (вне боя).
+## Ступени: передышка — ×8; в бою (наносил/получал урон или помогал союзнику в бою за COMBAT_TIME сек.) —
+## COMBAT_REGEN; в бою и после траты маны 5 сек. (правило 5 секунд) — CASTING_REGEN.
 const MANA_REGEN_POOL := 0.03
 const MANA_REGEN_SPIRIT := 0.6
-const CASTING_REGEN := 0.3
+const COMBAT_REGEN := 0.5
+const CASTING_REGEN := 0.2
 const FIVE_SECOND_RULE := 5.0
+const COMBAT_TIME := 6.0
 const WAVE_INTERVAL := 42.0
 
 # ---------------------------------------------------------------- Данные по файлам
@@ -330,50 +333,80 @@ func eff_range(u: Unit, sid: String) -> float:
 const ItemData := preload("res://scripts/data/item_data.gd")
 var _items: Dictionary = {}
 
-## Описание предмета по id: {id, name, kind (gear/consumable), slot, stats, level, price, q, icon, classes, use}
+## Описание предмета по id: {id, name, kind (gear/consumable), slot, stats, level, price, q, icon, classes, use, proc…}.
+## Снаряжение — экземпляр в строке (ItemData.encode), описание строится при первом обращении и кэшируется.
 func item(id: String) -> Dictionary:
-	if _items.is_empty():
-		_build_items()
-	return _items.get(id, {})
+	if _items.has(id):
+		return _items[id]
+	var it := {}
+	if ItemData.is_gear_id(id):
+		it = ItemData.describe(id)
+	elif ItemData.CONSUMABLES.has(id):
+		var c: Dictionary = ItemData.CONSUMABLES[id]
+		it = {"id": id, "name": c["name"], "kind": "consumable", "level": c["level"], "price": c["price"],
+			"q": c["q"], "icon": c["icon"], "use": c["use"], "desc": c.get("desc", ""), "elixir": c.get("elixir", false)}
+	if not it.is_empty():
+		_items[id] = it
+	return it
 
-func all_items() -> Array:
-	if _items.is_empty():
-		_build_items()
-	return _items.keys()
+## Сервер: новая вещь шаблона base уровня ilvl и качества q (свойства и прок — случайно).
+func make_gear(base: String, ilvl: int, q: int, seed: int = -1) -> String:
+	if seed < 0:
+		seed = randi() % 1000000
+	return ItemData.encode(ItemData.roll(base, ilvl, q, seed))
 
-func _build_items() -> void:
-	for tid in ItemData.TEMPLATES:
-		var tp: Dictionary = ItemData.TEMPLATES[tid]
-		for i in ItemData.TIERS.size():
-			var tier: Dictionary = ItemData.TIERS[i]
-			var st := {}
-			for k in tp["stats"]:
-				st[k] = float(tp["stats"][k]) * (i + 1)
-			var id := "%s_%d" % [tid, i + 1]
-			_items[id] = {"id": id, "name": "%s %s" % [tier["adj"][tp["g"]], tp["name"]], "kind": "gear", "slot": tp["slot"],
-				"stats": st, "level": tier["level"], "price": int(tier["price"] * (0.6 if tp["slot"] in ["ring", "amulet", "boots", "helm"] else 1.0)),
-				"q": tier["q"], "icon": tp["icon"], "classes": tp.get("classes", []), "tier": i + 1}
-	for cid in ItemData.CONSUMABLES:
-		var c: Dictionary = ItemData.CONSUMABLES[cid]
-		_items[cid] = {"id": cid, "name": c["name"], "kind": "consumable", "level": c["level"], "price": c["price"],
-			"q": c["q"], "icon": c["icon"], "use": c["use"], "desc": c.get("desc", "")}
+## Ассортимент лавки для героя уровня level. Кузнец: каждый шаблон белым и зелёным на уровне героя и
+## на 3 уровня ниже, плюс изредка одна-две синие вещи — дорого. Фиолетового и легендарного не продают.
+## Ассортимент детерминирован по (уровень, rotation): сервер пересчитывает его и проверяет покупку.
+func vendor_stock(kind: String, level: int, rotation: int) -> Array:
+	var out: Array = []
+	if kind == "consumable":
+		var ids: Array = ItemData.CONSUMABLES.keys()
+		ids.sort_custom(func(a, b): return [ItemData.CONSUMABLES[a]["level"], a] < [ItemData.CONSUMABLES[b]["level"], b])
+		return ids
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([level, rotation])
+	var bases: Array = ItemData.TEMPLATES.keys()
+	for base in bases:
+		for lv in [maxi(1, level - 3), level]:
+			for q in [0, 1]:
+				var id := make_gear(base, lv, q, (rng.randi() % 1000000) if q > 0 else 0)
+				if not out.has(id):
+					out.append(id)
+	# синее — не каждый раз: с 5-го уровня, одна-две вещи
+	if level >= 5 and rng.randf() < 0.6:
+		for i in 1 + int(rng.randf() < 0.3):
+			out.append(make_gear(bases[rng.randi() % bases.size()], level, 2, rng.randi() % 1000000))
+	return out
+
+## Цена в лавке: синее с наценкой.
+func shop_price(id: String) -> int:
+	var it := item(id)
+	var p := float(it.get("price", 0))
+	if it.get("kind", "") == "gear" and int(it["q"]) >= 2:
+		p *= ItemData.SHOP_BLUE_MARKUP
+	return int(p)
 
 func item_color(id: String) -> Color:
 	return ItemData.QUALITY[clampi(int(item(id).get("q", 0)), 0, ItemData.QUALITY.size() - 1)]
 
 ## Текст подсказки предмета.
-func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99) -> String:
+func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99, price: int = -1) -> String:
 	var it := item(id)
 	if it.is_empty():
 		return ""
 	var lines := [it["name"]]
 	if it["kind"] == "gear":
-		lines.append(ItemData.SLOTS[it["slot"]])
-		for k in ["str", "agi", "sta", "int", "spi", "sp", "ap"]:
+		lines.append("%s · %s · уровень предмета %d" % [ItemData.QUALITY_NAMES[it["q"]], ItemData.SLOTS[it["slot"]], it["ilvl"]])
+		for k in ItemData.STAT_ORDER:
 			if it["stats"].has(k):
-				lines.append("+%d %s" % [int(it["stats"][k]), ItemData.STAT_NAMES[k]])
-		if it["stats"].has("armor"):
-			lines.append("+%.1f%% %s" % [it["stats"]["armor"] * 100.0, ItemData.STAT_NAMES["armor"]])
+				if ItemData.PCT_STATS.has(k):
+					lines.append("+%.1f%% %s" % [it["stats"][k] * 100.0, ItemData.STAT_NAMES[k]])
+				else:
+					lines.append("+%d %s" % [int(it["stats"][k]), ItemData.STAT_NAMES[k]])
+		if it["proc"] != "":
+			var pr: Dictionary = ItemData.ITEM_PROCS[it["proc"]]
+			lines.append("%s: %s" % [pr["name"], pr["desc"]])
 		if not it["classes"].is_empty():
 			var names := []
 			for c in it["classes"]:
@@ -382,10 +415,10 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99) -> 
 			lines.append(("Классы: " if ok else "✗ Только: ") + ", ".join(names))
 	else:
 		var u: Dictionary = it["use"]
-		if u.has("heal"):
-			lines.append("Восстанавливает %d здоровья." % int(u["heal"]))
-		if u.has("mana"):
-			lines.append("Восстанавливает %d маны (воину — ярость)." % int(u["mana"]))
+		if u.has("heal_pct"):
+			lines.append("Восстанавливает %d%% здоровья." % roundi(float(u["heal_pct"]) * 100.0))
+		if u.has("mana_pct"):
+			lines.append("Восстанавливает %d%% маны (воину — ярости)." % roundi(float(u["mana_pct"]) * 100.0))
 		if it["desc"] != "":
 			lines.append(it["desc"])
 		lines.append("Общая перезарядка зелий: %d сек." % int(POTION_CD))
@@ -393,5 +426,5 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99) -> 
 		lines.append("Требуется уровень %d" % it["level"])
 	else:
 		lines.append("✗ Требуется уровень %d — у вас %d" % [it["level"], hero_level])
-	lines.append("Цена: %d золота" % it["price"])
+	lines.append("Цена: %d золота" % (price if price >= 0 else int(it["price"])))
 	return "\n".join(lines)

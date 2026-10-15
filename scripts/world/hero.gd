@@ -96,6 +96,20 @@ func gear_stats() -> Dictionary:
 			s[k] = float(s.get(k, 0.0)) + float(it["stats"][k]) * w
 	return s
 
+## Проки надетых вещей (фиолетовые и легендарные) — в общий список проков героя, рядом с талантами.
+## id прока «item:<ячейка>:<прок>», чтобы две одинаковые вещи срабатывали независимо.
+func _sync_gear_procs() -> void:
+	if unit.mods.is_empty():
+		unit.mods = GameData.compute_mods(class_id, talents, choices)
+	var procs: Array = unit.mods["procs"].filter(func(p): return not str(p["id"]).begins_with("item:"))
+	for slot in equip:
+		var pid: String = GameData.item(equip[slot]).get("proc", "")
+		if pid != "":
+			var pd: Dictionary = GameData.ItemData.ITEM_PROCS[pid].duplicate()
+			pd["id"] = "item:%s:%s" % [slot, pid]
+			procs.append(pd)
+	unit.mods["procs"] = procs
+
 ## Внешний вид: воин с оружием в левой руке держит второй топор вместо щита.
 func update_weapon_visual(dual: bool) -> void:
 	if class_id != "warrior" or model == null:
@@ -118,6 +132,7 @@ func apply_level_stats(full_restore: bool) -> void:
 	var hp_frac := unit.hp / unit.max_hp if unit.max_hp > 0.0 else 1.0
 	var mana_frac := unit.mana / unit.max_mana if unit.max_mana > 0.0 else 1.0
 	var gear := gear_stats()
+	_sync_gear_procs()
 	attrs = {}
 	for k in cls["attrs"]:
 		attrs[k] = float(cls["attrs"][k]) + float(cls["grow"][k]) * l + float(gear.get(k, 0.0))
@@ -134,7 +149,7 @@ func apply_level_stats(full_restore: bool) -> void:
 	var dm := float(cls.get("dmg_mult", 1.0))
 	unit.power = lvl * (1.0 + spell_power / 100.0) * float(race.get("power_mult", 1.0)) * dm
 	unit.phys_power = lvl * (1.0 + attack_power / 100.0) * dm
-	unit.crit_base = 0.05 + attrs["agi"] * 0.001 + attrs["int"] * 0.0005
+	unit.crit_base = 0.05 + attrs["agi"] * 0.001 + attrs["int"] * 0.0005 + float(gear.get("crit", 0.0))
 	unit.spirit = attrs["spi"]
 	unit.heal_mult = float(race.get("heal_mult", 1.0))
 	if full_restore:
