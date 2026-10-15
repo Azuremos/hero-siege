@@ -585,6 +585,10 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 		w.rotation_degrees = def.get("grip_rot", grip["rot"])
 		w.scale = Vector3.ONE * float(grip["scale"]) * float(def.get("weapon_scale", 1.0)) / (arm * float(mdl["fit"]))
 		att.add_child(w)
+		# пальцы этой руки — в кулак вокруг рукояти
+		var fist := FistModifier.new()
+		fist.setup(skel, side.to_upper())
+		skel.add_child(fist)
 	_setup_monster_anims(inst, mdl)
 
 ## Оружие KayKit: Fantasy Weapons Bits (assets/weapons) или оружие скелетов (assets/enemies/weapons).

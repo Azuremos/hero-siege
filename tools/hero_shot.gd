@@ -73,7 +73,8 @@ func _ready() -> void:
 	var cam := Camera3D.new()
 	add_child(cam)
 	var dist := maxf(4.5, cols * 2.2 * 0.95) / zoom
-	cam.look_at_from_position(Vector3(0, 1.6 + dist * 0.08, dist), Vector3(0, 1.1, 0))
+	var cy := float(cli.get("camy", 1.1))      # --camy= — высота, куда смотрит камера
+	cam.look_at_from_position(Vector3(0, cy + 0.5 + dist * 0.08, dist), Vector3(0, cy, 0))
 	cam.fov = 40.0
 	cam.make_current()
 	for i in 30:
