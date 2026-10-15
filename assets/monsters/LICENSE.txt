@@ -1,0 +1,16 @@
+Модели врагов — Quaternius (quaternius.com), скачаны с официальной страницы автора на Poly Pizza.
+
+CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/):
+  Orc.glb          — «Orc»          https://poly.pizza/m/5vO2YJsPEf
+  Demon.glb        — «Demon»        https://poly.pizza/m/LnfIziKv4o
+  BlueDemon.glb    — «Blue Demon»   https://poly.pizza/m/S7jYW6Amye
+  WingedDemon.glb  — «Demon»        https://poly.pizza/m/Mo2ky6vkf8
+  Wolf.glb         — «Wolf»         https://poly.pizza/m/P1gU3Qkr9r
+  Ghost.glb        — «Ghost»        https://poly.pizza/m/Iip30bDHmu
+  Yeti.glb         — «Yeti»         https://poly.pizza/m/ceRHrn8HHE
+  Goblin.glb       — «Zombie»       https://poly.pizza/m/VlXjG0N8Eg
+
+CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/):
+  Ghoul.glb        — «Zombie» by Quaternius, https://poly.pizza/m/22K0aSZkHV
+
+В игре модели перекрашиваются по материалам (mob_data.gd → mats).

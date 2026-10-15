@@ -153,6 +153,7 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 	var inst := _scene("res://assets/monsters/%s.glb" % def["model"]).instantiate() as Node3D
 	inst.scale = Vector3.ONE * float(mdl["fit"])
 	inst.position.y = float(mdl.get("lift", 0.0))
+	inst.rotation_degrees.y = float(mdl.get("yaw", 0.0))
 	holder.add_child(inst)
 	var skel := inst.find_child("Skeleton3D", true, false) as Skeleton3D
 	for hide_name: String in def.get("hide", []):
@@ -165,6 +166,13 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 			var m := mi as MeshInstance3D
 			for s in m.mesh.get_surface_count():
 				m.set_surface_override_material(s, _monster_material(mob_id + "|" + str(s) + m.name, def, m.mesh.surface_get_material(s), true))
+	# у моделей Quaternius у арматуры масштаб 100 — оружие задаём в единицах героя
+	var arm := 1.0
+	var pn: Node = skel
+	while pn != inst:
+		if pn is Node3D:
+			arm *= (pn as Node3D).scale.x
+		pn = pn.get_parent()
 	var weapons: Dictionary = def.get("weapons", {})
 	for side: String in weapons:
 		var grip: Dictionary = mdl["grip_" + side]
@@ -172,9 +180,9 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 		att.bone_name = grip["bone"]
 		skel.add_child(att)
 		var w := weapon_scene(weapons[side]).instantiate() as Node3D
-		w.position = grip["pos"]
-		w.rotation_degrees = grip["rot"]
-		w.scale = Vector3.ONE * float(grip["scale"]) * float(def.get("weapon_scale", 1.0))
+		w.position = grip["pos"] / (arm * float(mdl["fit"]))
+		w.rotation_degrees = def.get("grip_rot", grip["rot"])
+		w.scale = Vector3.ONE * float(grip["scale"]) * float(def.get("weapon_scale", 1.0)) / (arm * float(mdl["fit"]))
 		att.add_child(w)
 	_setup_monster_anims(inst, mdl)
 
@@ -183,34 +191,49 @@ static func weapon_scene(wname: String) -> PackedScene:
 	var p := "res://assets/weapons/%s.gltf" % wname
 	return _scene(p if ResourceLoader.exists(p) else "res://assets/enemies/weapons/%s.gltf" % wname)
 
+## Цвет части (альфа — сила свечения из glow: {материал: 0…1}).
 static func _monster_color(def: Dictionary, src: Material) -> Color:
 	var mname := src.resource_name if src else ""
 	var mats: Dictionary = def.get("mats", {})
+	var c: Color
 	if mats.has(mname):
-		return mats[mname]
-	var base := (src as StandardMaterial3D).albedo_color if src is StandardMaterial3D else Color.WHITE
-	return base * def.get("tint", Color.WHITE)
+		c = mats[mname]
+	else:
+		var base := (src as StandardMaterial3D).albedo_color if src is StandardMaterial3D else Color.WHITE
+		c = base * def.get("tint", Color.WHITE)
+	c.a = float(def.get("glow", {}).get(mname, 0.0))
+	return c
 
-## Материал склеенного меша: цвет из вершин, текстура атласа (если была), матовый, как у KayKit.
-static func _monster_material(key: String, def: Dictionary, src: Material, flat: bool) -> StandardMaterial3D:
+static var _monster_shader: Shader = null
+
+## Материал склеенного меша — общий шейдер монстров (shaders/monster.gdshader): цвет и свечение из вершин,
+## текстура атласа, если была. Без склейки (--nomerge) — обычный матовый материал на каждую часть.
+static func _monster_material(key: String, def: Dictionary, src: Material, flat: bool) -> Material:
 	if _material_cache.has(key):
 		return _material_cache[key]
-	var mat := StandardMaterial3D.new()
-	mat.roughness = 1.0
-	mat.metallic = 0.0
-	if src is StandardMaterial3D and (src as StandardMaterial3D).albedo_texture:
-		mat.albedo_texture = (src as StandardMaterial3D).albedo_texture
+	var tex: Texture2D = (src as StandardMaterial3D).albedo_texture if src is StandardMaterial3D else null
+	var out: Material
 	if flat:
-		mat.albedo_color = _monster_color(def, src)
+		var mat := StandardMaterial3D.new()
+		mat.roughness = 1.0
+		mat.albedo_texture = tex
+		var c := _monster_color(def, src)
+		mat.albedo_color = Color(c.r, c.g, c.b)
+		if c.a > 0.0:
+			mat.emission_enabled = true
+			mat.emission = Color(c.r, c.g, c.b)
+			mat.emission_energy_multiplier = c.a * 1.5
+		out = mat
 	else:
-		mat.vertex_color_use_as_albedo = true
-		mat.vertex_color_is_srgb = true
-	if def.has("glow"):
-		mat.emission_enabled = true
-		mat.emission = def["glow"]
-		mat.emission_energy_multiplier = float(def.get("glow_energy", 0.25))
-	_material_cache[key] = mat
-	return mat
+		if _monster_shader == null:
+			_monster_shader = load("res://shaders/monster.gdshader")
+		var sm := ShaderMaterial.new()
+		sm.shader = _monster_shader
+		sm.set_shader_parameter("use_tex", tex != null)
+		sm.set_shader_parameter("tex", tex)
+		out = sm
+	_material_cache[key] = out
+	return out
 
 static func _merge_monster(skel: Skeleton3D, key: String, def: Dictionary) -> bool:
 	var parts: Array = []

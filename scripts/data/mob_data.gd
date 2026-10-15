@@ -6,7 +6,7 @@ extends RefCounted
 ##   faction, role — swarm (массовка) | heavy | fast | ranged | support | special | boss
 ##   cost — сколько стоит в бюджете волны; min_wave — с какой волны появляется
 ##   облик: src «enemy» (скелеты KayKit, оружие — weapons), «monster» (модели Quaternius из MODELS:
-##     mats — цвет по имени материала, tint — общий оттенок, glow — свечение, hide — убрать часть,
+##     mats — цвет по имени материала, tint — общий оттенок, glow — свечение частей {материал: 0…1}, hide — убрать часть,
 ##     weapons — оружие KayKit в руки, anims — замены анимаций) или «hero» (модели героев KayKit:
 ##     show — что держит в руках, hide — что спрятать), recolor — схема перекраски KayKit, scale; spawn_anim / death_anim — анимации появления и смерти
 ##   бой: hp, min/max — урон за удар, atk_speed, range, speed, armor, ranged (+ proj — снаряд, school),
@@ -15,30 +15,30 @@ extends RefCounted
 ##
 ## Облики врагов, кроме скелетов, — модели Quaternius (assets/monsters, CC0 / CC BY) со своей схемой костей.
 ## MODELS: fit — множитель, приводящий модель к росту героя KayKit (scale моба = 1 — рост героя);
-##   lift — подъём над землёй; set — набор анимаций; grip_r / grip_l — куда крепить оружие из рук
+##   lift — подъём над землёй; yaw — поворот, если модель смотрит вбок; set — набор анимаций; grip_r / grip_l — куда крепить оружие из рук
 ##   (кость, смещение, поворот в градусах, масштаб оружия).
 ## ANIM_SETS: какая анимация модели отвечает за действие (idle, run, attack, cast, hit, death, spawn).
 ##   Логика мобов просит анимации KayKit по имени; model_factory.monster_anim() переводит их в действие.
 ##   Моб может заменить анимацию действия полем anims ({"attack": "Punch"}).
 const MODELS := {
 	"Orc": {"fit": 0.72, "set": "beast",
-		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 2.0},
-		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 2.0}},
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0}},
 	"Demon": {"fit": 0.75, "set": "beast",
-		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 2.0},
-		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 2.0}},
-	"BlueDemon": {"fit": 0.46, "set": "beast",
-		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 3.0},
-		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 3.0}},
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0}},
+	"BlueDemon": {"fit": 0.58, "set": "beast",
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0}},
 	"Yeti": {"fit": 0.85, "set": "beast",
-		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 1.8},
-		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 1.8}},
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.4, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0}},
 	"WingedDemon": {"fit": 0.85, "lift": -0.6, "set": "flyer"},
 	"Ghost": {"fit": 0.75, "lift": -0.1, "set": "flyer"},
 	"Wolf": {"fit": 0.55, "set": "wolf"},
 	"Goblin": {"fit": 1.7, "set": "zombie",
-		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.3, 0.0), "rot": Vector3(0, 0, -90), "scale": 0.8},
-		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.3, 0.0), "rot": Vector3(0, 0, 90), "scale": 0.8}},
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.25, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.25, 0.0), "rot": Vector3(150, 0, 0), "scale": 1.0}},
 	"Ghoul": {"fit": 1.45, "set": "zombie"},
 }
 
@@ -81,7 +81,7 @@ const MOBS := {
 		"hp": 170.0, "min": 11.0, "max": 15.0, "atk_speed": 1.3, "range": 2.3, "speed": 5.2,
 		"xp": 28, "gold": 4, "scale": 1.12, "radius": 0.65, "armor": 0.05, "abilities": ["devour"]},
 	"banshee": {"name": "Банши", "faction": "undead", "role": "special", "cost": 3.0, "min_wave": 8,
-		"src": "monster", "model": "Ghost", "mats": {"Ghost_Main": Color(0.62, 0.8, 0.95)}, "glow": Color(0.45, 0.75, 1.0), "glow_energy": 0.45,
+		"src": "monster", "model": "Ghost", "mats": {"Ghost_Main": Color(0.62, 0.8, 0.95)}, "glow": {"Ghost_Main": 0.5},
 		"hp": 130.0, "min": 12.0, "max": 16.0, "atk_speed": 2.2, "range": 16.0, "speed": 4.2,
 		"xp": 36, "gold": 5, "scale": 1.0, "radius": 0.6, "armor": 0.0, "ranged": true, "abilities": ["wail"]},
 	"boss_warlord": {"name": "Костяной полководец", "faction": "undead", "role": "boss", "cost": 0.0, "min_wave": 1,
@@ -122,16 +122,16 @@ const MOBS := {
 
 	# ======================= ДЕМОНЫ =======================
 	"imp": {"name": "Бес", "faction": "demons", "role": "swarm", "cost": 0.8, "min_wave": 1,
-		"src": "monster", "model": "WingedDemon", "mats": {"Demon_Main": Color(0.85, 0.32, 0.1)}, "glow": Color(1.0, 0.35, 0.05), "anims": {"attack": "Punch"},
+		"src": "monster", "model": "WingedDemon", "mats": {"Demon_Main": Color(0.8, 0.25, 0.08)}, "glow": {"Demon_Main": 0.25}, "anims": {"attack": "Punch"},
 		"hp": 55.0, "min": 6.0, "max": 9.0, "atk_speed": 1.8, "range": 14.0, "speed": 5.0,
 		"xp": 11, "gold": 2, "scale": 0.6, "radius": 0.45, "armor": 0.0, "ranged": true, "school": "fire", "proj": "bolt_fire"},
 	"felhound": {"name": "Гончая Скверны", "faction": "demons", "role": "fast", "cost": 1.8, "min_wave": 3,
-		"src": "monster", "model": "Wolf", "mats": {"Main": Color(0.35, 0.1, 0.1), "Main_Light": Color(0.55, 0.2, 0.12), "Nose": Color(0.3, 1.0, 0.2), "Eyes_Black": Color(0.4, 1.0, 0.2)}, "glow": Color(0.25, 0.6, 0.1), "glow_energy": 0.12,
+		"src": "monster", "model": "Wolf", "mats": {"Main": Color(0.35, 0.1, 0.1), "Main_Light": Color(0.55, 0.2, 0.12), "Nose": Color(0.3, 1.0, 0.2), "Eyes_Black": Color(0.4, 1.0, 0.2)}, "glow": {"Nose": 1.0, "Eyes_Black": 1.0},
 		"hp": 125.0, "min": 8.0, "max": 11.0, "atk_speed": 1.3, "range": 2.3, "speed": 6.2,
 		"xp": 22, "gold": 3, "scale": 0.92, "radius": 0.6, "armor": 0.05,
 		"on_hit": [{"type": "mana_burn", "amount": 18.0}]},
 	"felguard": {"name": "Страж Скверны", "faction": "demons", "role": "heavy", "cost": 3.0, "min_wave": 3,
-		"src": "monster", "model": "Demon", "mats": {"Demon_Main": Color(0.45, 0.08, 0.1), "Black": Color(0.12, 0.12, 0.12)}, "glow": Color(0.3, 0.8, 0.1), "glow_energy": 0.08,
+		"src": "monster", "model": "Demon", "mats": {"Demon_Main": Color(0.45, 0.08, 0.1), "Black": Color(0.12, 0.12, 0.12), "Eye_White": Color(0.4, 1.0, 0.2)}, "glow": {"Eye_White": 1.0},
 		"hp": 320.0, "min": 17.0, "max": 23.0, "atk_speed": 2.3, "range": 3.0, "speed": 3.5,
 		"xp": 40, "gold": 6, "scale": 1.25, "radius": 0.85, "armor": 0.25, "cleave": 3.0},
 	"succubus": {"name": "Суккуба", "faction": "demons", "role": "support", "cost": 3.0, "min_wave": 5,
@@ -139,7 +139,7 @@ const MOBS := {
 		"hp": 150.0, "min": 12.0, "max": 15.0, "atk_speed": 1.6, "range": 2.5, "speed": 4.6,
 		"xp": 36, "gold": 5, "scale": 1.0, "radius": 0.6, "armor": 0.0, "abilities": ["seduce"]},
 	"infernal": {"name": "Инфернал", "faction": "demons", "role": "special", "cost": 4.5, "min_wave": 7,
-		"src": "monster", "model": "Yeti", "mats": {"Yeti_Main": Color(0.22, 0.2, 0.19), "Yeti_Secondary": Color(1.0, 0.45, 0.1), "Yeti_Teeth": Color(1.0, 0.7, 0.2)}, "glow": Color(1.0, 0.35, 0.05), "glow_energy": 0.3,
+		"src": "monster", "model": "Yeti", "mats": {"Yeti_Main": Color(0.22, 0.2, 0.19), "Yeti_Secondary": Color(1.0, 0.45, 0.1), "Yeti_Teeth": Color(1.0, 0.7, 0.2)}, "glow": {"Yeti_Secondary": 1.0, "Yeti_Teeth": 1.0},
 		"hp": 420.0, "min": 20.0, "max": 26.0, "atk_speed": 2.4, "range": 3.2, "speed": 3.2,
 		"xp": 55, "gold": 8, "scale": 1.6, "radius": 1.1, "armor": 0.3, "abilities": ["infernal_drop"]},
 
