@@ -84,10 +84,10 @@ static func wave_plan(wave: int, lane_factions: Array, players: int, final_boss:
 
 static func mob_hp_mult(wave: int, players: int) -> float:
 	# число игроков частично учтено в бюджете волны (больше врагов), остальное — в здоровье
-	return (1.0 + 0.17 * float(wave - 1)) * (1.0 + 0.32 * float(max(players, 1) - 1))
+	return (1.0 + 0.18 * float(wave - 1)) * (1.0 + 0.35 * float(max(players, 1) - 1))
 
 static func mob_dmg_mult(wave: int) -> float:
-	return 1.0 + 0.09 * float(wave - 1)
+	return 1.0 + 0.10 * float(wave - 1)
 
 
 ## Множитель стоимости заклинаний от уровня, как в WoW: стоимость — доля базового запаса маны класса.
