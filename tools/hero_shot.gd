@@ -81,6 +81,10 @@ static func outfit_bases(cid: String, hi: int) -> Array:
 	var helms: Array = ["helm", "warhelm"] if phys else ["hat", "hood"]
 	var chests: Array = ["plate", "mail"] if phys else ["robe"]
 	var pads: Array = ["pads_plate", "pads_mail"] if phys else ["pads_cloth"]
+	if cid == "hunter":       # охотник — кольчуга и капюшон
+		helms = ["hood", "warhelm"]
+		chests = ["mail"]
+		pads = ["pads_mail"]
 	var out: Array = [weapons[hi % weapons.size()], helms[hi % 2], chests[hi % chests.size()], pads[hi % pads.size()], "boots"]
 	if not offs.is_empty():
 		out.append(offs[hi % offs.size()])

@@ -175,6 +175,8 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	m.unit = u
 	m.def = def
 	m.route = source
+	if opts.has("pet_owner"):
+		return _spawn_pet(m, u, type, opts)
 	var want_elite: bool = opts.get("champion", false) or (not def.get("boss", false) and (not opts.has("pos") or Net.cli.has("elite")) and not def["role"] in ["test", "summon"]
 		and (Net.cli.has("elite") or randf() < GameData.AffixData.elite_chance(wave)))
 	if want_elite:
@@ -200,6 +202,30 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave, u.affixes, u.elite])
 	if GameData.BOSSES.has(type):
 		_boss_init(m, wave, players, hp_scale, t)
+	return u.id
+
+## Питомец: та же запись Mob, но сторона игроков и свой словарь (не враг, не в волне).
+func _spawn_pet(m: Mob, u: Unit, type: String, opts: Dictionary) -> int:
+	u.team = Unit.Team.PLAYERS
+	u.kind = "pet"
+	u.owner_id = int(opts["pet_owner"])
+	u.level = 1
+	m.pos2 = opts["pos"]
+	m.yaw = 0.0
+	m.state = S.CHASE
+	var t: float = world.now()
+	m.spawn_until = t
+	m.next_think = t
+	u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
+	pets[u.id] = m
+	world.units[u.id] = u
+	_make_visual(m)
+	var owner_hero = world.heroes.get(u.owner_id, null)
+	if owner_hero:
+		u.hp = 1.0
+		u.max_hp = 1.0
+		_pet_refresh(m, owner_hero)     # здоровье и сила от хозяина — до рассылки
+	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, 1, [], 0, u.owner_id])
 	return u.id
 
 func kill(u: Unit, killer: Unit) -> void:
@@ -246,7 +272,7 @@ func taunt(u: Unit, src: Unit, until: float) -> void:
 
 func on_damaged(u: Unit, src: Unit) -> void:
 	var m: Mob = mobs.get(u.id, null)
-	if m == null or src == null or src.kind != "hero":
+	if m == null or src == null or not (src.kind == "hero" or src.kind == "pet"):
 		return
 	if (m.state == S.MOVE or m.state == S.OBJECTIVE) and world.now() >= m.reaggro_at:
 		m.state = S.CHASE
@@ -269,6 +295,8 @@ func server_tick(delta: float, t: float) -> void:
 		_rebuild_grid()
 		for m: Mob in mobs.values():
 			_sim(m, SIM_STEP, t)
+		for p: Mob in pets.values():
+			_pet_sim(p, SIM_STEP, t)
 		var expired: Array = []
 		for id in walls:
 			if t >= walls[id]["until"]:
@@ -432,6 +460,13 @@ func _think(m: Mob) -> void:
 		if d < best_d:
 			best_d = d
 			best = hu
+	# питомцы охотников — такие же цели (медведь с угрозой threat — охотнее)
+	for p: Mob in pets.values():
+		var pu: Unit = p.unit
+		var pd := p.pos2.distance_to(m.pos2) / (1.0 + float(p.def.get("threat", 0.0)))
+		if pu.alive and pd < best_d:
+			best_d = pd
+			best = pu
 	if best:
 		m.state = S.CHASE
 		m.target = best.id
@@ -562,10 +597,11 @@ func ev_wall_damage(id: int, stage: int) -> void:
 
 func _encode_snapshot() -> PackedByteArray:
 	var buf := PackedByteArray()
-	buf.resize(2 + mobs.size() * 11)
-	buf.encode_u16(0, mobs.size())
+	var all: Array = mobs.values() + pets.values()      # питомцы — в том же снимке
+	buf.resize(2 + all.size() * 11)
+	buf.encode_u16(0, all.size())
 	var o := 2
-	for m: Mob in mobs.values():
+	for m: Mob in all:
 		buf.encode_u32(o, m.unit.id)
 		buf.encode_s16(o + 4, int(clampf(m.pos2.x * 100.0, -32767, 32767)))
 		buf.encode_s16(o + 6, int(clampf(m.pos2.y * 100.0, -32767, 32767)))
@@ -581,7 +617,7 @@ func ev_snapshot(buf: PackedByteArray) -> void:
 	var o := 2
 	for i in count:
 		var id := buf.decode_u32(o)
-		var m: Mob = mobs.get(id, null)
+		var m: Mob = mobs.get(id, pets.get(id, null))
 		if m:
 			m.pos2 = Vector2(buf.decode_s16(o + 4) * 0.01, buf.decode_s16(o + 6) * 0.01)
 			m.yaw = float(buf.decode_u8(o + 8)) / 255.0 * TAU
@@ -616,17 +652,25 @@ func ev_spawn(list: Array) -> void:
 		m.yaw = e[4]
 		m.anim_state = AN.SPAWN
 		u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
-		mobs[u.id] = m
+		if e.size() > 9 and int(e[9]) != 0:
+			# питомец охотника: союзник, в своём словаре
+			u.kind = "pet"
+			u.team = Unit.Team.PLAYERS
+			u.owner_id = int(e[9])
+			pets[u.id] = m
+		else:
+			mobs[u.id] = m
 		world.units[u.id] = u
 		_make_visual(m)
 
 @rpc("authority", "reliable")
 func ev_death(ids: PackedInt32Array) -> void:
 	for id in ids:
-		var m: Mob = mobs.get(id, null)
+		var m: Mob = mobs.get(id, pets.get(id, null))
 		if m == null:
 			continue
 		mobs.erase(id)
+		pets.erase(id)
 		world.units.erase(id)
 		m.unit.alive = false
 		_begin_dying(m)
@@ -698,7 +742,7 @@ func _process(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var cam_pos := cam.global_position if cam else Vector3.ZERO
 	var k := 1.0 - exp(-12.0 * delta)
-	for m: Mob in mobs.values():
+	for m: Mob in mobs.values() + pets.values():
 		m.vis_target = Vector3(m.pos2.x, 0, m.pos2.y)
 		m.node.position = m.node.position.lerp(m.vis_target, k)
 		m.node.rotation.y = lerp_angle(m.node.rotation.y, m.yaw, k)
@@ -1861,3 +1905,309 @@ func wave_near(p: Vector2) -> bool:
 		if gap > 0.2 and gap < 1.6:
 			return true
 	return false
+
+# ---------------------------------------------------------------- питомцы (сессия 06)
+## Союзные существа — в той же системе, что враги: Mob со стороной «игроки» (unit.team = PLAYERS, kind = "pet").
+## Живут в своём словаре pets: волны, счётчик врагов и заклинания по площади (query_radius) их не видят.
+## Враги выбирают питомца целью наравне с героями (с учётом угрозы — у медведя она выше).
+## Сервер ведёт состояние питомца каждого охотника: вид, режим, команду; владельцу шлёт ev_pet_state.
+
+const PET_KINDS := ["pet_wolf", "pet_bear", "pet_cat"]
+const PET_MODES := ["aggressive", "defensive", "passive"]
+const PET_LEASH := 30.0          # м: дальше от хозяина питомец бросает бой и возвращается
+const PET_AGGRO := 16.0          # м от хозяина: агрессивный питомец сам нападает
+
+var pets: Dictionary = {}        # id -> Mob (живые питомцы)
+## Сервер: hero_id -> {kind, id (0 — нет), dead, mode, cmd: follow|stay|attack, target, stay_pos}
+var pet_state: Dictionary = {}
+
+func pet_units() -> Array:
+	var out: Array = []
+	for m: Mob in pets.values():
+		out.append(m.unit)
+	return out
+
+func _pst(hid: int) -> Dictionary:
+	if not pet_state.has(hid):
+		pet_state[hid] = {"kind": "pet_wolf", "id": 0, "dead": false, "mode": "defensive", "cmd": "follow", "target": 0, "stay_pos": Vector2.ZERO}
+	return pet_state[hid]
+
+## Живой питомец героя (у всех: на клиенте — по owner_id из ev_spawn).
+func pet_of(hero_id: int) -> Unit:
+	for m: Mob in pets.values():
+		if m.unit.owner_id == hero_id and m.unit.alive:
+			return m.unit
+	return null
+
+## Сервер: можно ли сейчас произнести заклинание, связанное с питомцем. "" — можно.
+func pet_spell_error(hero, sp: Dictionary) -> String:
+	var d: String = sp.get("delivery", "")
+	var p := pet_of(hero.hero_id)
+	var st := _pst(hero.hero_id)
+	match d:
+		"pet_call":
+			if st["dead"]:
+				return "Питомец погиб — воскресите его"
+		"pet_revive":
+			if p:
+				return "Питомец жив"
+			if not st["dead"]:
+				return "Некого воскрешать — призовите питомца"
+		"pet_strike":
+			if p == null:
+				return "Нет питомца"
+			if p.pos.distance_to(hero.unit.pos) > 40.0:
+				return "Питомец слишком далеко"
+	if sp.has("pet_fx") and sp.get("effects", []).is_empty() and p == null:
+		return "Нет питомца"
+	return ""
+
+## Сервер: призвать (или воскресить) питомца выбранного вида рядом с охотником.
+func pet_summon(hero, revive: bool) -> void:
+	var st := _pst(hero.hero_id)
+	var old: Mob = pets.get(int(st["id"]), null)
+	if old:
+		_pet_remove(old)
+	var hu: Unit = hero.unit
+	var back := Vector2(sin(hero.rotation.y), cos(hero.rotation.y)) * 2.5
+	var pos := Vector2(hu.pos.x, hu.pos.z) + back
+	var id := spawn(st["kind"], 0, 1, 1, 1.0, {"pos": pos, "pet_owner": hero.hero_id})
+	st["id"] = id
+	st["dead"] = false
+	st["cmd"] = "follow"
+	st["target"] = 0
+	var m: Mob = pets[id]
+	_pet_refresh(m, hero)
+	m.unit.hp = m.unit.max_hp * (0.5 if revive else 1.0)
+	m.spawn_until = world.now() + 0.4
+	_send_pet_state(hero)
+
+func _pet_remove(m: Mob) -> void:
+	pets.erase(m.unit.id)
+	world.units.erase(m.unit.id)
+	m.unit.alive = false
+	_pending_deaths.append(m.unit.id)
+	_begin_dying(m)
+
+## Сервер: питомец погиб (spell_system._on_death) — ждёт Воскрешения питомца.
+func pet_died(u: Unit) -> void:
+	var m: Mob = pets.get(u.id, null)
+	if m == null:
+		return
+	var st := _pst(u.owner_id)
+	st["dead"] = true
+	st["id"] = 0
+	_pet_remove(m)
+	var h = world.heroes.get(u.owner_id, null)
+	if h:
+		_send_pet_state(h)
+
+## Сервер: характеристики питомца от хозяина — уровень, сила атаки, таланты (pet_hp, pet_dmg, pet_armor).
+func _pet_refresh(m: Mob, hero) -> void:
+	var u := m.unit
+	var hu: Unit = hero.unit
+	var frac := u.hp_frac() if u.max_hp > 0.0 else 1.0
+	u.level = hu.level
+	u.max_hp = float(m.def["hp"]) * (1.0 + 0.16 * float(hu.level - 1)) * (1.0 + hu.flag("pet_hp"))
+	u.hp = u.max_hp * frac
+	u.power = hu.phys_power * (1.0 + hu.flag("pet_dmg")) * 0.85
+	u.phys_power = u.power
+	u.crit_base = hu.crit_base
+	u.gear_mods = {"dmg_taken": -hu.flag("pet_armor")}
+
+## Сервер: команда питомцу (с панели питомца или от заклинания).
+func pet_command(hero, cmd: String, target_id: int) -> void:
+	var st := _pst(hero.hero_id)
+	match cmd:
+		"attack":
+			var tu: Unit = world.get_unit(target_id)
+			if tu and tu.alive and tu.team == Unit.Team.ENEMIES:
+				st["cmd"] = "attack"
+				st["target"] = target_id
+		"follow":
+			st["cmd"] = "follow"
+			st["target"] = 0
+		"stay":
+			var p := pet_of(hero.hero_id)
+			st["cmd"] = "stay"
+			st["target"] = 0
+			if p:
+				st["stay_pos"] = Vector2(p.pos.x, p.pos.z)
+	_send_pet_state(hero)
+
+## Просьба игрока: команда (attack/follow/stay), режим (aggressive/defensive/passive) или вид (kind:<id>).
+@rpc("any_peer", "reliable")
+func request_pet(cmd: String, arg: int) -> void:
+	if not Net.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	var hero = world.heroes.get(Net.hero_id_of_peer(sender), null)
+	if hero == null or hero.class_id != "hunter":
+		return
+	var st := _pst(hero.hero_id)
+	if PET_MODES.has(cmd):
+		st["mode"] = cmd
+		_send_pet_state(hero)
+	elif cmd.begins_with("kind:") and PET_KINDS.has(cmd.trim_prefix("kind:")):
+		st["kind"] = cmd.trim_prefix("kind:")       # новый вид появится при следующем призыве
+		_send_pet_state(hero)
+	elif cmd in ["attack", "follow", "stay"]:
+		pet_command(hero, cmd, arg)
+
+func send_pet(cmd: String, arg: int = 0) -> void:
+	if Net.is_server():
+		request_pet(cmd, arg)
+	else:
+		request_pet.rpc_id(1, cmd, arg)
+
+func _send_pet_state(hero) -> void:
+	var st := _pst(hero.hero_id)
+	var data := {"kind": st["kind"], "mode": st["mode"], "cmd": st["cmd"], "dead": st["dead"]}
+	if hero.peer_id == multiplayer.get_unique_id():
+		ev_pet_state(data)
+	else:
+		ev_pet_state.rpc_id(hero.peer_id, data)
+
+## У владельца: состояние своего питомца для панели питомца.
+var my_pet: Dictionary = {"kind": "pet_wolf", "mode": "defensive", "cmd": "follow", "dead": false}
+
+@rpc("authority", "reliable")
+func ev_pet_state(data: Dictionary) -> void:
+	my_pet = data
+
+## Сервер: шаг питомца — выбрать цель по режиму и команде, догнать, бить, применить свой приём.
+func _pet_sim(m: Mob, dt: float, t: float) -> void:
+	var u := m.unit
+	var hero = world.heroes.get(u.owner_id, null)
+	if hero == null:
+		_pet_remove(m)
+		return
+	if t < m.spawn_until:
+		return
+	if t >= m.next_think:
+		m.next_think = t + 1.0
+		_pet_refresh(m, hero)
+		if hero.unit.flag("spirit_bond") > 0.0:
+			u.hp = minf(u.max_hp, u.hp + u.max_hp * hero.unit.flag("spirit_bond") * 0.5)
+	if u.is_stunned(t):
+		m.anim_state = AN.FROZEN if u.is_frozen(t) else AN.STUN
+		return
+	var st := _pst(hero.hero_id)
+	var owner_p := Vector2(hero.unit.pos.x, hero.unit.pos.z)
+	var tu := _pet_target(m, hero, st, owner_p)
+	m.target = tu.id if tu else 0
+	if tu:
+		_pet_ability(m, tu, t)
+	var goal := m.pos2
+	var moving := false
+	if tu:
+		var tp := Vector2(tu.pos.x, tu.pos.z)
+		var need := float(m.def["range"]) + tu.radius + u.radius * 0.5 + (REACH_SLACK_MELEE if m.in_reach else 0.0)
+		if m.pos2.distance_to(tp) <= need:
+			m.in_reach = true
+			_pet_attack(m, tu, t)
+		else:
+			m.in_reach = false
+			goal = tp
+			moving = true
+	else:
+		# к ноге: за спиной хозяина; «стоять» — на своём месте
+		var home: Vector2 = st["stay_pos"] if st["cmd"] == "stay" else owner_p + Vector2(sin(hero.rotation.y), cos(hero.rotation.y)) * 2.2
+		if m.pos2.distance_to(home) > 1.2:
+			goal = home
+			moving = true
+		# совсем отстал (хозяин воскрес у замка) — появляется рядом
+		if m.pos2.distance_to(owner_p) > 45.0 and st["cmd"] != "stay":
+			m.pos2 = owner_p
+	if moving and not u.is_rooted(t):
+		_move(m, goal, dt, t)
+		m.anim_state = AN.MOVE
+	elif m.anim_state == AN.MOVE or m.anim_state == AN.STUN or m.anim_state == AN.SPAWN:
+		m.anim_state = AN.IDLE
+	u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
+
+## Цель питомца: приказ «атаковать» → иначе по режиму. Дальше PET_LEASH от хозяина — бой брошен.
+func _pet_target(m: Mob, hero, st: Dictionary, owner_p: Vector2) -> Unit:
+	if m.pos2.distance_to(owner_p) > PET_LEASH and st["cmd"] != "stay":
+		st["target"] = 0
+		if st["cmd"] == "attack":
+			st["cmd"] = "follow"
+		return null
+	if st["cmd"] == "attack":
+		var ct: Unit = world.get_unit(int(st["target"]))
+		if ct and ct.alive:
+			return ct
+		st["cmd"] = "follow"
+		st["target"] = 0
+	if st["mode"] == "passive":
+		return null
+	var cur: Unit = world.get_unit(m.target)
+	if cur and cur.alive and cur.team == Unit.Team.ENEMIES and Vector2(cur.pos.x, cur.pos.z).distance_to(owner_p) < PET_LEASH:
+		return cur
+	if st["mode"] == "aggressive":
+		var best: Unit = null
+		var bd := INF
+		for e: Unit in query_radius(owner_p, PET_AGGRO):
+			var d := Vector2(e.pos.x, e.pos.z).distance_to(m.pos2)
+			if d < bd:
+				best = e
+				bd = d
+		return best
+	# защитный: то, что бьёт охотник, или то, что бьёт охотника и питомца
+	var at: Unit = world.get_unit(int(world.spells._hstate(hero.hero_id).get("auto_target", 0)))
+	if at and at.alive and at.team == Unit.Team.ENEMIES and Vector2(at.pos.x, at.pos.z).distance_to(owner_p) < PET_AGGRO + 10.0:
+		return at
+	for e: Unit in query_radius(owner_p, PET_AGGRO):
+		var em: Mob = mobs.get(e.id, null)
+		if em and em.state == S.CHASE and (em.target == hero.hero_id or em.target == m.unit.id):
+			return e
+	return null
+
+func _pet_attack(m: Mob, tu: Unit, t: float) -> void:
+	_face(m, Vector2(tu.pos.x, tu.pos.z))
+	if t < m.attack_ready:
+		if m.anim_state != AN.ATTACK:
+			m.anim_state = AN.IDLE
+		return
+	m.attack_ready = t + float(m.def["atk_speed"]) * maxf(0.4, 1.0 - m.unit.mod("haste"))
+	m.swing = (m.swing + 1) % 32
+	m.anim_state = AN.ATTACK
+	world.spells.apply_effects(m.unit, tu, [{"type": "damage", "min": m.def["min"], "max": m.def["max"]}], "pet", "physical")
+
+## Приёмы питомцев (pet_abilities в данных): вой (бафф группе), рык (провокация), бросок (прыжок и кровотечение).
+func _pet_ability(m: Mob, tu: Unit, t: float) -> void:
+	for ab: Dictionary in m.def.get("pet_abilities", []):
+		var key: String = ab["type"]
+		if t < float(m.ab_ready.get(key, 0.0)):
+			continue
+		var dist := m.pos2.distance_to(Vector2(tu.pos.x, tu.pos.z))
+		match key:
+			"howl":
+				if dist > 12.0:
+					continue
+				for h in world.heroes.values():
+					if h.unit.alive and h.unit.pos.distance_to(m.unit.pos) <= float(ab["radius"]):
+						world.spells.apply_effects(m.unit, h.unit, [{"type": "buff", "key": ab["buff"], "dur": ab["dur"], "mods": ab["mods"]}], "wolf_howl", "nature")
+				world.spells.fx_at("taunt_aoe", m.unit.pos, m.unit.pos, float(ab["radius"]) * 0.3, m.unit.id)
+				world.spells.ev_sound.rpc("pet_howl", m.unit.pos)
+			"growl":
+				var near: Array = query_radius(m.pos2, float(ab["radius"]))
+				if near.is_empty():
+					continue
+				for e: Unit in near:
+					taunt(e, m.unit, t + float(ab["dur"]))
+				world.spells.fx_at("taunt_aoe", m.unit.pos, m.unit.pos, float(ab["radius"]), m.unit.id)
+				world.spells.ev_sound.rpc("pet_growl", m.unit.pos)
+			"pounce":
+				if dist < float(ab["min_dist"]) or dist > float(ab["max_dist"]):
+					continue
+				var dir := (Vector2(tu.pos.x, tu.pos.z) - m.pos2).normalized()
+				world.spells.fx_at("charge_trail", tu.pos, m.unit.pos, 0.0, m.unit.id)
+				m.pos2 = Vector2(tu.pos.x, tu.pos.z) - dir * (tu.radius + m.unit.radius)
+				m.unit.pos = Vector3(m.pos2.x, 0, m.pos2.y)
+				world.spells.apply_effects(m.unit, tu, [{"type": "dot", "total": ab["bleed"], "dur": ab["dur"], "tick": 1.0, "key": "cat_bleed"}], "cat_pounce", "physical")
+				world.spells.ev_sound.rpc("pet_growl", m.unit.pos)
+		m.ab_ready[key] = t + float(ab["cd"])
+		return

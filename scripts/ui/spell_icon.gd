@@ -105,7 +105,7 @@ static func tooltip(sid: String, u: Unit = null) -> String:
 		return GameData.item_tooltip(sid.trim_prefix("item:"))
 	var sp: Dictionary = GameData.SPELLS[sid]
 	var mana := float(sp["mana"]) if u == null else GameData.spell_cost(u, sid)
-	var res_name := "Ярость" if (u != null and u.resource == "rage") or _is_warrior_spell(sid) else "Мана"
+	var res_name: String = {"rage": "Ярость", "focus": "Концентрация"}.get(u.resource if u != null else _spell_resource(sid), "Мана")
 	var cast := float(sp["cast"]) if u == null else GameData.eff_cast(u, sid)
 	var cd := float(sp["cd"]) if u == null else GameData.eff_cd(u, sid)
 	var rng := float(sp["range"]) if u == null else GameData.eff_range(u, sid)
@@ -124,8 +124,17 @@ static func tooltip(sid: String, u: Unit = null) -> String:
 	lines.append(sp["desc"])
 	return "\n".join(lines)
 
-static func _is_warrior_spell(sid: String) -> bool:
-	for s in GameData.CLASSES["warrior"]["spells"]:
-		if s == sid:
-			return true
-	return sid in ["mortal_strike", "rampage", "shockwave", "challenging_shout"]
+
+## Ресурс класса, которому принадлежит заклинание (книга или талант): mana | rage | focus.
+static func _spell_resource(sid: String) -> String:
+	for cid in GameData.CLASSES:
+		var book: Dictionary = GameData.BOOKS.get(cid, {})
+		var own: bool = GameData.CLASSES[cid]["spells"].has(sid) or book.get("base", []).has(sid)
+		for r in book.get("rows", []):
+			own = own or r["options"].has(sid)
+		for tree in GameData.talent_trees(cid):
+			for t in tree["talents"]:
+				own = own or t.get("spell", "") == sid
+		if own:
+			return str(GameData.CLASSES[cid].get("resource", "mana"))
+	return "mana"

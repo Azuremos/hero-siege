@@ -15,7 +15,7 @@ enum A { IDLE, RUN, BACK, STRAFE_L, STRAFE_R, JUMP }
 const ACTION_ANIMS := {
 	"cast": "Spellcast_Shoot", "shoot": "Spellcast_Shoot", "raise": "Spellcast_Raise",
 	"melee": "1H_Melee_Attack_Slice_Diagonal", "melee2": "1H_Melee_Attack_Chop",
-	"wand": "Spellcast_Shoot", "hit": "Hit_A", "spin": "2H_Melee_Attack_Spinning",
+	"wand": "Spellcast_Shoot", "hit": "Hit_A", "spin": "2H_Melee_Attack_Spinning", "bow": "2H_Ranged_Shoot",
 }
 
 ## Двуручные удары, если в руках двуручное оружие (см. update_weapon_visual).
@@ -153,10 +153,10 @@ func apply_level_stats(full_restore: bool) -> void:
 	for k in cls["attrs"]:
 		attrs[k] = float(cls["attrs"][k]) + float(cls["grow"][k]) * l + float(gear.get(k, 0.0))
 	spell_power = attrs["int"] + float(gear.get("sp", 0.0))
-	attack_power = attrs["str"] + float(gear.get("ap", 0.0))
+	attack_power = attrs[cls.get("ap_attr", "str")] + float(gear.get("ap", 0.0))     # у охотника — от ловкости
 	unit.resource = cls.get("resource", "mana")
 	unit.max_hp = (float(cls["base_hp"]) + attrs["sta"] * 10.0) * float(race.get("hp_mult", 1.0)) * (1.0 + unit.mod("hp_pct"))
-	if unit.resource == "rage":
+	if unit.resource != "mana":       # ярость и концентрация — всегда 100
 		unit.max_mana = 100.0
 	else:
 		unit.max_mana = (float(cls["base_mana"]) + attrs["int"] * 15.0) * float(race.get("mana_mult", 1.0)) * (1.0 + unit.mod("mana_pct"))
@@ -497,7 +497,7 @@ func _update_anim(delta: float) -> void:
 		A.STRAFE_L: want = "Running_Strafe_Left"
 		A.STRAFE_R: want = "Running_Strafe_Right"
 		A.JUMP: want = "Jump_Idle"
-		_: want = "Spellcasting" if casting else "Idle"
+		_: want = (GameData.CLASSES[class_id].get("cast_idle", "Spellcasting") if casting else "Idle")
 	_play(want)
 
 func _play(n: String, blend: float = 0.15, force: bool = false) -> void:

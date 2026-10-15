@@ -62,6 +62,20 @@ const CLASSES := {
 		"auto": {"range": 4.0, "min": 26.0, "max": 34.0, "speed": 2.4, "school": "physical", "ranged": false},
 		"spells": ["heroic_strike", "charge", "battle_shout", "thunder_clap", "taunt", "bloodthirst", "whirlwind", "demoralizing_shout", "execute", "shield_wall", "recklessness", "pummel"],
 	},
+	# Охотник: концентрация вместо маны (100 ед., восполняется сама), питомец, ловушки. Модель — разбойник KayKit
+	# в зелёно-коричневой перекраске, в руках арбалет (лук — по надетой вещи).
+	"hunter": {
+		"name": "Охотник", "color": Color(0.67, 0.83, 0.45),
+		"desc": "Стрелок с питомцем. Ловушки перед волной, выстрелы издалека, зверь держит врагов на расстоянии.",
+		"model": "Rogue", "show": ["2H_Crossbow"], "hide": [], "recolor": "hunter",
+		"resource": "focus", "base_hp": 330.0, "base_mana": 100.0, "armor": 0.12, "dmg_mult": 1.0,
+		"attrs": {"str": 8, "agi": 22, "sta": 18, "int": 8, "spi": 10}, "grow": {"str": 0.6, "agi": 2.6, "sta": 2.9, "int": 0.5, "spi": 0.7},
+		"auto": {"range": 30.0, "min": 18.0, "max": 24.0, "speed": 2.2, "school": "physical", "ranged": true, "vfx": "arrow", "anim": "bow"},
+		"cast_idle": "2H_Ranged_Aiming",     # произнесение (Верный и Прицельный выстрелы) — прицеливание
+		"spells": ["steady_shot", "silencing_shot", "call_pet", "mend_pet", "revive_pet", "arcane_shot", "disengage", "multi_shot",
+			"concussive_shot", "kill_shot", "hunters_mark", "feign_death", "rapid_fire", "barrage"],
+		"ap_attr": "agi",     # сила атаки охотника — от ловкости
+	},
 }
 
 ## Атрибуты: названия и что дают.

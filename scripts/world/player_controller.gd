@@ -750,11 +750,26 @@ func bot_tick(delta: float) -> void:
 				continue
 			hero.use_ready[use] = now() + 1.0       # не слать повторно, пока сервер не ответит
 			world.economy.send("request_use_slot", [ts])
+	# питомцы охотников тоже союзники: лекарь подлечивает раненого зверя
+	for pu: Unit in world.mobs.pet_units():
+		if pu.alive and _dist_to(pu) < 30.0 and pu.hp_frac() < 0.6 and (weakest == null or pu.hp_frac() < weakest.hp_frac()):
+			weakest = pu
+	if hero.class_id == "hunter" and _bot_hunter_pet():
+		return
 	for sid in _bot_priority():
 		var sp: Dictionary = GameData.SPELLS[sid]
 		if hero.unit.level < GameData.spell_level(sid):
 			continue
+		if sp.get("delivery", "") in ["pet_call", "pet_revive"] or (sp.has("pet_fx") and sp.get("effects", []).is_empty()):
+			continue      # питомцем бот занимается отдельно (_bot_hunter_pet)
 		if now() < float(cd_until.get(sid, 0.0)) or hero.unit.mana < GameData.eff_mana(hero.unit, sid):
+			continue
+		if sp.get("delivery", "") == "trap":
+			# ловушку — под ноги навстречу врагу, когда он в 20 м
+			if tu and _dist_to(tu) < 20.0:
+				var tp: Vector3 = hero.global_position + (tu.pos - hero.global_position).normalized() * 4.0
+				_send_server("request_cast", [sid, 0, tp, 0.0])
+				return
 			continue
 		# условия, которые сервер всё равно отклонит: Рывок вплотную, Казнь по здоровой цели
 		if sp.has("min_range") and (tu == null or _dist_to(tu) < float(sp["min_range"])):
@@ -804,6 +819,33 @@ func bot_tick(delta: float) -> void:
 					_face(p)
 					_send_server("request_cast", [sid, 0, p, _wall_yaw(p)])
 					return
+
+## Бот-охотник: призвать или воскресить питомца, подлечить его, режим — агрессивный, вид — по ветке
+## (Стрельба — волк, Повелитель зверей — медведь, Выживание — кошка; --botpet=wolf|bear|cat). true — действие отправлено.
+var _bot_pet_setup := false
+
+func _bot_hunter_pet() -> bool:
+	var st: Dictionary = world.mobs.my_pet
+	if not _bot_pet_setup:
+		_bot_pet_setup = true
+		var tree: int = int(Net.cli["bottree"]) if Net.cli.has("bottree") else 0
+		var kind: String = "pet_" + str(Net.cli.get("botpet", ["wolf", "bear", "cat"][clampi(tree, 0, 2)]))
+		world.mobs.send_pet("kind:" + kind)
+		world.mobs.send_pet("aggressive")
+		return true
+	var pu: Unit = world.mobs.pet_of(hero.hero_id)
+	var want := ""
+	if pu == null:
+		want = "revive_pet" if st.get("dead", false) else "call_pet"
+	elif pu.hp_frac() < 0.5:
+		want = "mend_pet"
+	if want == "" or hero.unit.level < GameData.spell_level(want) or now() < float(cd_until.get(want, 0.0)) \
+			or hero.unit.mana < GameData.eff_mana(hero.unit, want):
+		return false
+	_send_server("request_cast", [want, hero.hero_id, Vector3.ZERO, 0.0])
+	if want == "call_pet" or want == "revive_pet":
+		cd_until[want] = now() + 3.0       # не слать повторно, пока идёт призыв
+	return true
 
 ## Бот изучает таланты: сначала «своя» ветка, потом остальные.
 const BOT_TREE := {"mage": 2, "paladin": 0, "priest": 1}

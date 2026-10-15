@@ -46,6 +46,7 @@ const SPELL_FILES := [
 	preload("res://scripts/data/spells/paladin.gd"),
 	preload("res://scripts/data/spells/priest.gd"),
 	preload("res://scripts/data/spells/warrior.gd"),
+	preload("res://scripts/data/spells/hunter.gd"),
 ]
 
 const SCHOOLS := ClassData.SCHOOLS
@@ -323,7 +324,7 @@ func active_proc(u: Unit, sid: String) -> Dictionary:
 
 func eff_mana(u: Unit, sid: String) -> float:
 	var sp: Dictionary = SPELLS[sid]
-	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0 and u.resource != "rage":
+	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0 and u.resource == "mana":
 		return 0.0
 	var pr := active_proc(u, sid)
 	if not pr.is_empty() and pr["data"].get("free", false):
@@ -335,7 +336,7 @@ func eff_mana(u: Unit, sid: String) -> float:
 func spell_cost(u: Unit, sid: String) -> float:
 	var sp: Dictionary = SPELLS[sid]
 	var cost := float(sp["mana"]) * maxf(0.0, 1.0 + u.mod("mana", sid, sp["school"]))
-	if u.resource != "rage" and u.kind == "hero" and CLASSES.has(u.type_id):
+	if u.resource == "mana" and u.kind == "hero" and CLASSES.has(u.type_id):
 		cost *= mana_scale(u.type_id, u.level)
 	return cost
 

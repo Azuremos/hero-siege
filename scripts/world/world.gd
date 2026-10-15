@@ -760,7 +760,7 @@ func _manalog_tick() -> void:
 		var u: Unit = h.unit
 		if u.stat_spent > 0.0 and not _ml_start.has(h.hero_id):
 			_ml_start[h.hero_id] = _test_t
-		if u.resource != "rage" and _ml_start.has(h.hero_id) and not _ml_empty.has(h.hero_id) and u.mana < u.max_mana * 0.1:
+		if u.resource == "mana" and _ml_start.has(h.hero_id) and not _ml_empty.has(h.hero_id) and u.mana < u.max_mana * 0.1:
 			_ml_empty[h.hero_id] = _test_t
 			print("MANA EMPTY %s (%s): через %.0f с боя, t=%.0f" % [h.player_name, h.class_id, _test_t - float(_ml_start[h.hero_id]), _test_t])
 	if _test_t - _ml_t < 5.0:

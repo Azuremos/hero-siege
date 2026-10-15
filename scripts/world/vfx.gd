@@ -229,6 +229,7 @@ class Projectile extends Node3D:
 				"frost": Sfx.play_at("ice_shatter", last_target, -4.0)
 				"fire": Sfx.play_at("fire_burn", last_target, -4.0)
 				"physical": Sfx.play_at("hit_bone", last_target)
+				"arrow": Sfx.play_at("arrow_hit", last_target)
 			queue_free()
 			return
 		global_position += to.normalized() * step
@@ -260,6 +261,9 @@ static func _ring(parent: Node3D, radius: float, col: Color, fill: float, runes:
 # ---------------------------------------------------------------- публичное API
 
 static func projectile(world: Node3D, kind: String, from_id: int, to_id: int, speed: float) -> void:
+	if kind == "arrow":
+		arrow(world, from_id, to_id, speed)
+		return
 	var start = unit_pos(world, from_id, 1.6)
 	if start == null:
 		return
@@ -352,6 +356,9 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 			burst(world, pos + Vector3(0, 1.2, 0), COL_HOLY)
 		"hit_fire":
 			burst(world, pos + Vector3(0, 1.2, 0), COL_FIRE, "fire")
+		"volley_cone":
+			Sfx.play_at("volley", pos + Vector3(0, 1, 0))
+			burst(world, pos + Vector3(0, 1.0, 0), Color(0.95, 0.85, 0.6))
 		"hit_phys":
 			burst(world, pos + Vector3(0, 1.2, 0), Color(1.0, 0.95, 0.8))
 		"hit_blood":
@@ -538,6 +545,9 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 
 ## Долгие эффекты на земле: области, стены, купол.
 static func zone(world: Node3D, id: int, kind: String, pos: Vector3, yaw: float, size: float, duration: float) -> void:
+	if kind == "zone_volley":
+		volley(world, id, pos, size, duration)
+		return
 	var n := _timed(world, Vector3(pos.x, 0, pos.z), duration)
 	n.fade_out = 0.6
 	n.rotation.y = yaw
@@ -795,3 +805,122 @@ static func mine(world: Node3D, pos: Vector3) -> Node3D:
 	tw.tween_property(lm, "emission_energy_multiplier", 6.0, 0.4)
 	tw.tween_property(lm, "emission_energy_multiplier", 0.5, 0.4)
 	return n
+
+# ---------------------------------------------------------------- охотник (сессия 06)
+
+static var traps: Dictionary = {}
+
+## Ловушка на земле: железные челюсти и огонёк цвета ловушки (огонь, лёд). on=false — убрать.
+static func trap(world: Node3D, id: int, kind: String, pos: Vector3, on: bool) -> void:
+	if not on:
+		var old: Node3D = traps.get(id, null)
+		if old and is_instance_valid(old):
+			old.queue_free()
+		traps.erase(id)
+		return
+	var col := COL_FROST if kind == "trap_frost" else COL_FIRE
+	var n := Node3D.new()
+	world.vfx_root.add_child(n)
+	n.global_position = Vector3(pos.x, 0.0, pos.z)
+	traps[id] = n
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.42
+	tm.outer_radius = 0.55
+	tm.rings = 16
+	tm.ring_segments = 6
+	ring.mesh = tm
+	ring.position.y = 0.06
+	var rm := StandardMaterial3D.new()
+	rm.albedo_color = Color(0.3, 0.3, 0.32)
+	rm.metallic = 0.7
+	rm.roughness = 0.4
+	ring.material_override = rm
+	n.add_child(ring)
+	for i in 8:
+		var tooth := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.0
+		cm.bottom_radius = 0.06
+		cm.height = 0.22
+		cm.radial_segments = 4
+		tooth.mesh = cm
+		var a := TAU * i / 8.0
+		tooth.position = Vector3(cos(a) * 0.48, 0.15, sin(a) * 0.48)
+		tooth.material_override = rm
+		n.add_child(tooth)
+	var lamp := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.12
+	sm.height = 0.24
+	lamp.mesh = sm
+	lamp.position.y = 0.12
+	var lm := StandardMaterial3D.new()
+	lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lm.albedo_color = col
+	lm.emission_enabled = true
+	lm.emission = col
+	lamp.material_override = lm
+	n.add_child(lamp)
+	var tw := n.create_tween().set_loops()
+	tw.tween_property(lm, "emission_energy_multiplier", 4.0, 0.6)
+	tw.tween_property(lm, "emission_energy_multiplier", 0.6, 0.6)
+	Sfx.play_at("trap_set", n.global_position + Vector3(0, 0.3, 0))
+
+## Стрела в полёте: тонкое древко с наконечником, без частиц.
+static func arrow(world: Node3D, from_id: int, to_id: int, speed: float) -> void:
+	var start = unit_pos(world, from_id, 1.5)
+	if start == null:
+		return
+	var pr := Projectile.new()
+	pr.world = world
+	pr.to_id = to_id
+	pr.speed = speed
+	pr.color = Color(0.9, 0.85, 0.7)
+	pr.kind = "arrow"
+	world.vfx_root.add_child(pr)
+	pr.global_position = start
+	var t = unit_pos(world, to_id, 1.1)
+	pr.last_target = t if t != null else pr.global_position
+	var shaft := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.025
+	cm.bottom_radius = 0.025
+	cm.height = 0.9
+	cm.radial_segments = 4
+	shaft.mesh = cm
+	shaft.rotation.x = PI * 0.5        # древко вдоль -Z (look_at)
+	var wm := StandardMaterial3D.new()
+	wm.albedo_color = Color(0.55, 0.38, 0.2)
+	shaft.material_override = wm
+	shaft.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pr.add_child(shaft)
+	var tip := MeshInstance3D.new()
+	var tc := CylinderMesh.new()
+	tc.top_radius = 0.0
+	tc.bottom_radius = 0.06
+	tc.height = 0.16
+	tc.radial_segments = 4
+	tip.mesh = tc
+	tip.rotation.x = -PI * 0.5
+	tip.position.z = -0.5
+	var mm := StandardMaterial3D.new()
+	mm.albedo_color = Color(0.75, 0.75, 0.8)
+	mm.metallic = 0.8
+	tip.material_override = mm
+	tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pr.add_child(tip)
+	Sfx.play_at("bow", start, 0.0, 1.5)       # свист выше тоном — выстрел
+
+## Град стрел: дождь стрел (частицы-штрихи) над кругом на всё время зоны.
+static func volley(world: Node3D, id: int, pos: Vector3, size: float, duration: float) -> void:
+	var n := _timed(world, Vector3(pos.x, 0, pos.z), duration)
+	n.fade_out = 0.6
+	zones[id] = n
+	n.tree_exiting.connect(func(): zones.erase(id))
+	_ring(n, size, Color(0.95, 0.85, 0.6), 0.12, false, 1.0, n)
+	particles(n, Color(0.85, 0.75, 0.55), int(size * 14), 0.6, {"shape": "box", "extents": Vector3(size * 0.7, 0.5, size * 0.7),
+		"pos": Vector3(0, 10, 0), "dir": Vector3(0, -1, 0), "spread": 3.0, "vmin": 18.0, "vmax": 22.0,
+		"smin": 0.4, "smax": 0.7, "size": 0.18, "aabb": size + 2.0})
+	n.stop_particles_at = duration - 0.5
+	Sfx.play_at("volley", n.global_position + Vector3(0, 1, 0))

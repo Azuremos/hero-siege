@@ -42,6 +42,14 @@ const SOUNDS := {
 	"coins": [["coins.ogg"], -14.0, 1, 0.3],
 	"proc_alert": [["proc_alert.ogg"], -6.0, 1, 0.3],
 	"ping": [["ping.ogg"], -4.0, 2, 0.2],
+	# охотник (сессия 06)
+	"bow": [["sword_swing_1.ogg", "sword_swing_2.ogg", "sword_swing_3.ogg"], -9.0, 3, 0.05],
+	"volley": [["sword_swing_1.ogg", "sword_swing_2.ogg", "sword_swing_3.ogg"], -4.0, 2, 0.1],
+	"arrow_hit": [["arrow_hit_1.ogg", "arrow_hit_2.ogg", "arrow_hit_3.ogg"], -9.0, 4, 0.04],
+	"trap_set": [["trap_set.ogg"], -6.0, 2, 0.1],
+	"trap": [["trap_snap.ogg"], -3.0, 2, 0.1],
+	"pet_growl": [["pet_growl_1.ogg", "pet_growl_2.ogg"], -5.0, 2, 0.3],
+	"pet_howl": [["pet_howl.ogg"], -4.0, 1, 0.5],
 }
 
 const POOL_2D := 8

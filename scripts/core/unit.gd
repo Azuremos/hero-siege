@@ -7,7 +7,8 @@ enum Team { PLAYERS, ENEMIES }
 
 var id: int = 0
 var team: int = Team.PLAYERS
-var kind: String = "mob"        # hero | mob | castle
+var kind: String = "mob"        # hero | mob | pet | castle
+var owner_id: int = 0           # питомец: id героя-хозяина (урон в счётчик, лечение, рамки)
 var type_id: String = ""        # класс героя или тип моба
 var display_name: String = ""
 var pos: Vector3 = Vector3.ZERO
@@ -24,7 +25,7 @@ var power: float = 1.0          # множитель заклинаний (ур�
 var phys_power: float = 1.0     # множитель физического урона (уровень × сила атаки)
 var crit_base: float = 0.05     # базовый шанс крита (ловкость, интеллект)
 var spirit: float = 0.0         # дух — восполнение маны и здоровья
-var resource: String = "mana"  # mana | rage
+var resource: String = "mana"  # mana | rage | focus (концентрация охотника)
 var combat_until: float = 0.0   # в бою до этого момента (ярость не угасает)
 var mana_spent_at := -100.0      # правило 5 секунд: когда последний раз тратил ману
 ## Счётчики для --manalog и баланса (урон, лечение, потраченная мана)

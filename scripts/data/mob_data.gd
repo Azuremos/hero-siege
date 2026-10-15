@@ -254,6 +254,30 @@ const MOBS := {
 		"hp": 3000.0, "min": 40.0, "max": 55.0, "atk_speed": 2.6, "range": 22.0, "speed": 3.2,
 		"xp": 0, "gold": 0, "scale": 1.9, "radius": 1.3, "armor": 0.1, "ranged": true},
 
+	# ======================= питомцы охотника (сессия 06) =======================
+	## Союзники в той же системе, что враги (mob_manager, сторона «игроки»). hp/min/max — на 1-м уровне хозяина,
+	## растут с его уровнем и силой атаки. pet_role — подпись на панели; pet_abilities — свои приёмы
+	## (тип, перезарядка, параметры), логика — mob_manager._pet_ability. Модель — волк Quaternius;
+	## медведь и кошка — перекраска и масштаб того же волка (нужен ассет).
+	"pet_wolf": {"name": "Волк", "faction": "beasts", "role": "pet", "cost": 0.0, "min_wave": 999, "pet_role": "урон",
+		"src": "monster", "model": "Wolf", "mats": {"Main": Color(0.45, 0.45, 0.48), "Main_Light": Color(0.7, 0.7, 0.72)},
+		"hp": 220.0, "min": 11.0, "max": 14.0, "atk_speed": 1.4, "range": 2.3, "speed": 7.8,
+		"xp": 0, "gold": 0, "scale": 0.95, "radius": 0.6, "armor": 0.1,
+		"pet_abilities": [{"type": "howl", "cd": 30.0, "radius": 25.0, "buff": "wolf_howl", "dur": 10.0, "mods": {"haste": 0.1},
+			"icon": "pet_howl", "desc": "Вой: 10 сек. охотник и союзники в 25 м атакуют и колдуют на 10% быстрее. Раз в 30 сек."}]},
+	"pet_bear": {"name": "Медведь", "faction": "beasts", "role": "pet", "cost": 0.0, "min_wave": 999, "pet_role": "танк",
+		"src": "monster", "model": "Wolf", "mats": {"Main": Color(0.3, 0.19, 0.11), "Main_Light": Color(0.45, 0.3, 0.18)},
+		"hp": 420.0, "min": 8.0, "max": 10.0, "atk_speed": 1.8, "range": 2.6, "speed": 7.0,
+		"xp": 0, "gold": 0, "scale": 1.45, "radius": 0.9, "armor": 0.35, "threat": 2.0,
+		"pet_abilities": [{"type": "growl", "cd": 8.0, "radius": 8.0, "dur": 4.0,
+			"icon": "pet_growl", "desc": "Рык: враги в 8 м бросаются на медведя на 4 сек. Раз в 8 сек. Враги и без того охотнее бьют медведя."}]},
+	"pet_cat": {"name": "Кошка", "faction": "beasts", "role": "pet", "cost": 0.0, "min_wave": 999, "pet_role": "рывок",
+		"src": "monster", "model": "Wolf", "mats": {"Main": Color(0.78, 0.55, 0.25), "Main_Light": Color(0.95, 0.82, 0.55)},
+		"hp": 190.0, "min": 13.0, "max": 16.0, "atk_speed": 1.2, "range": 2.2, "speed": 8.4,
+		"xp": 0, "gold": 0, "scale": 0.8, "radius": 0.55, "armor": 0.05,
+		"pet_abilities": [{"type": "pounce", "cd": 10.0, "min_dist": 4.0, "max_dist": 18.0, "bleed": 45.0, "dur": 6.0,
+			"icon": "pet_pounce", "desc": "Бросок: прыгает на цель с 4–18 м и пускает кровь — 45 урона за 6 сек. Раз в 10 сек."}]},
+
 	# ======================= для проверок =======================
 	## --casttest: стоит рядом с героем и бесконечно произносит сбиваемое заклинание
 	"cast_dummy": {"name": "Учебный заклинатель", "faction": "undead", "role": "test", "cost": 0.0, "min_wave": 999,

@@ -12,3 +12,7 @@ CC BY 3.0 (нужно указать автора — https://creativecommons.or
   - «3 Heal Spells» — DoKashiteru — https://opengameart.org/content/3-heal-spells  (heal_1..3; переведены из AIFF в WAV)
   - «Magic Smite» — spookymodem — https://opengameart.org/content/magic-smite  (holy_smite.wav)
   - «Magic Shield» — spookymodem — https://opengameart.org/content/magic-shield  (holy_shield.wav)
+
+Сессия 06 — Охотник (CC0, «80 CC0 RPG SFX», rubberduck): pet_growl_1..2 (creature_roar_01..02), pet_howl (creature_monster_01),
+trap_set (lock_01), trap_snap (chain_01), arrow_hit_1..3 (wood_01..03). Выстрел лука — свист клинка (sword_swing) выше тоном.
+Нужен ассет: настоящие звуки тетивы и выстрела.

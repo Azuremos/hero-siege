@@ -89,6 +89,10 @@ const TEMPLATES := {
 	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_C", "sword_D", "sword_E"]},
 	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
 	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
+	"bow": {"name": "лук", "g": 0, "slot": "weapon", "classes": ["hunter"], "icon": "bow", "role": "phys", "stats": {"agi": 5, "sta": 2, "ap": 6},
+		"models": ["bow_A_withString", "bow_A_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString"]},
+	"crossbow": {"name": "арбалет", "g": 0, "slot": "weapon", "classes": ["hunter"], "icon": "crossbow", "role": "phys", "stats": {"agi": 4, "str": 1, "ap": 8},
+		"models": ["Rogue/1H_Crossbow", "Rogue/1H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow"]},
 	"shield": {"name": "щит", "g": 0, "slot": "offhand", "classes": ["paladin", "warrior"], "icon": "shield", "role": "phys",
 		"stats": {"sta": 3, "str": 1, "armor": 0.015, "block": 0.012},
 		"models": ["Barbarian/Barbarian_Round_Shield", "Knight/Round_Shield", "Knight/Rectangle_Shield", "Knight/Badge_Shield", "Knight/Spike_Shield", "Knight/Spike_Shield"]},
@@ -526,7 +530,8 @@ const SELL_RATIO := 0.25
 const TIER_TINT := [Color(0.95, 0.62, 0.42), Color(0.72, 0.72, 0.75), Color(1.0, 1.0, 1.0),
 	Color(0.78, 0.92, 1.05), Color(0.75, 0.8, 1.15), Color(1.1, 0.7, 0.5)]
 ## Двуручные модели: левая рука пуста (без щита, книги и второго оружия), удары — двуручные.
-const TWO_HANDED := ["sword_D", "sword_E", "axe_C", "hammer_C", "staff_A", "staff_B", "halberd", "spear_A"]
+const TWO_HANDED := ["sword_D", "sword_E", "axe_C", "hammer_C", "staff_A", "staff_B", "halberd", "spear_A",
+	"bow_A_withString", "bow_B_withString", "Rogue/1H_Crossbow", "Rogue/2H_Crossbow"]      # луки и арбалеты — обе руки
 
 ## Свечение по качеству: фиолетовое мерцает, легендарное светится (и искрит).
 const QUALITY_GLOW := {3: Color(0.42, 0.18, 1.0), 4: Color(1.0, 0.55, 0.15)}

@@ -79,6 +79,8 @@ func on_damage(src: Unit, dst: Unit, amount: float, sid: String, crit: bool) -> 
 		return
 	if src and src.kind == "hero":
 		_add(src.id, "dmg", amount, _key(sid, src), crit)
+	elif src and src.kind == "pet" and src.owner_id != 0:
+		_add(src.owner_id, "dmg", amount, "pet:" + src.type_id, crit)     # питомец — в строку хозяина
 	if dst.kind == "hero":
 		_add(dst.id, "taken", amount, _key(sid, src), crit)
 
@@ -172,6 +174,9 @@ static func key_name(k: String) -> String:
 	if k.begins_with("mob:"):
 		var mid := k.trim_prefix("mob:")
 		return GameData.MOBS[mid]["name"] if GameData.MOBS.has(mid) else mid
+	if k.begins_with("pet:"):
+		var pid := k.trim_prefix("pet:")
+		return "Питомец: " + (GameData.MOBS[pid]["name"] if GameData.MOBS.has(pid) else pid)
 	if k.begins_with("affix:"):
 		return "Аффикс: " + str(GameData.AFFIXES.get(k.trim_prefix("affix:"), {}).get("name", k))
 	if k.begins_with("mab:"):

@@ -8,6 +8,7 @@ const SPELL_LEVELS := {
 	"crusader_strike": 1, "holy_light": 1, "judgement": 2, "consecration": 3, "blessing_of_kings": 4, "hammer_of_justice": 5, "avenging_wrath": 6, "holy_wrath": 7, "divine_guardian": 8, "divine_shield": 9, "lay_on_hands": 11,
 	"smite": 1, "flash_heal": 1, "renew": 2, "pw_shield": 3, "pw_fortitude": 4, "holy_fire": 5, "divine_spirit": 6, "circle_of_healing": 7, "prayer_of_healing": 8, "light_barrier": 9, "holy_nova": 11,
 	"heroic_strike": 1, "charge": 1, "battle_shout": 2, "thunder_clap": 3, "taunt": 4, "bloodthirst": 5, "whirlwind": 6, "demoralizing_shout": 7, "execute": 8, "shield_wall": 9, "recklessness": 11,
+	"steady_shot": 1, "call_pet": 1, "mend_pet": 2, "silencing_shot": 3, "revive_pet": 4,
 }
 
 # Иконки-подсказки для эффектов на героях (для рамок группы).
@@ -100,6 +101,25 @@ const BUFF_INFO := {
 	"sudden_death": {"name": "Внезапная смерть", "color": Color(1.0, 0.3, 0.3), "icon": "execute"},
 	"bloodsurge": {"name": "Прилив крови", "color": Color(1.0, 0.3, 0.3), "icon": "heroic_strike"},
 	"revenge": {"name": "Возмездие", "color": Color(0.9, 0.8, 0.6), "icon": "thunder_clap"},
+	# Охотник (сессия 06)
+	"serpent_sting": {"name": "Укус змеи", "color": Color(0.45, 0.9, 0.35), "icon": "serpent_sting", "debuff": true, "desc": "Яд: урон силами природы со временем."},
+	"black_arrow": {"name": "Черная стрела", "color": Color(0.55, 0.3, 0.75), "icon": "black_arrow", "debuff": true, "desc": "Урон тьмой со временем."},
+	"explosive_shot": {"name": "Разрывной выстрел", "color": Color(1.0, 0.5, 0.15), "icon": "explosive_shot", "debuff": true, "desc": "Заряд взрывается: урон огнём каждую секунду."},
+	"murder_of_crows": {"name": "Стая воронов", "color": Color(0.5, 0.5, 0.6), "icon": "murder_of_crows", "debuff": true, "desc": "Вороны терзают: урон каждую секунду."},
+	"trap_burn": {"name": "Горение", "color": Color(1.0, 0.5, 0.15), "icon": "explosive_trap", "debuff": true, "desc": "Горит после взрыва ловушки."},
+	"hunters_mark": {"name": "Метка охотника", "color": Color(1.0, 0.35, 0.25), "icon": "hunters_mark", "debuff": true, "desc": "Получает на 10% больше урона."},
+	"aspect_cheetah": {"name": "Дух гепарда", "color": Color(1.0, 0.85, 0.4), "icon": "aspect_cheetah", "break_on_hit": true},
+	"aspect_hawk": {"name": "Дух ястреба", "color": Color(1.0, 0.6, 0.3), "icon": "aspect_hawk"},
+	"deterrence": {"name": "Сдерживание", "color": Color(0.8, 0.8, 0.9), "icon": "deterrence"},
+	"rapid_fire": {"name": "Быстрая стрельба", "color": Color(1.0, 0.8, 0.3), "icon": "rapid_fire"},
+	"call_of_the_wild": {"name": "Зов дикой природы", "color": Color(0.6, 0.9, 0.4), "icon": "call_of_the_wild"},
+	"bestial_wrath": {"name": "Звериный гнев", "color": Color(1.0, 0.4, 0.2), "icon": "bestial_wrath"},
+	"mend_pet": {"name": "Лечение питомца", "color": Color(0.5, 1.0, 0.5), "icon": "mend_pet"},
+	"wolf_howl": {"name": "Вой волка", "color": Color(0.8, 0.8, 1.0), "icon": "call_pet", "desc": "Скорость атак и заклинаний +10%."},
+	"cat_bleed": {"name": "Разорванная плоть", "color": Color(0.85, 0.1, 0.08), "icon": "rend", "debuff": true, "desc": "Кровоточит после броска кошки."},
+	"lock_and_load": {"name": "Наготове", "color": Color(1.0, 0.6, 0.2), "icon": "lock_and_load"},
+	"master_marksman": {"name": "Меткий стрелок", "color": Color(1.0, 0.9, 0.5), "icon": "aimed_shot"},
+	"cobra_strikes": {"name": "Удары кобры", "color": Color(0.5, 0.9, 0.4), "icon": "kill_command"},
 }
 
 # ---------------------------------------------------------------- Проки (срабатывания)
@@ -114,6 +134,10 @@ const PROC_BUFFS := {
 	"sudden_death": {"spells": ["execute"], "free": true, "allow_execute": true},
 	"bloodsurge": {"spells": ["heroic_strike"], "free": true, "amp": 0.5, "reset_cd": true},
 	"revenge": {"spells": ["thunder_clap"], "free": true, "amp": 0.5, "reset_cd": true},
+	# Охотник: ветки Стрельба, Повелитель зверей, Выживание
+	"master_marksman": {"spells": ["aimed_shot", "arcane_shot", "chimera_shot"], "instant": true, "free": true, "amp": 0.3},
+	"cobra_strikes": {"spells": ["kill_command"], "free": true, "amp": 0.5, "reset_cd": true},
+	"lock_and_load": {"spells": ["arcane_shot", "kill_command", "serpent_sting", "kill_shot", "chimera_shot", "black_arrow", "explosive_shot"], "free": true, "amp": 0.25, "reset_cd": true},
 }
 
 ## Заклинания, которые срабатывают сами (от проков талантов).

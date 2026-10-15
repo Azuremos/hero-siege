@@ -25,7 +25,8 @@ var _root: Control
 var _overlay: Control
 var _frames: Dictionary = {}           # id -> Control (подвижные рамки)
 var _frame_titles := {"player": "Мой герой", "target": "Цель", "party": "Группа", "bar1": "Панель 1",
-	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима", "proc": "Сигнал прока", "meter": "Счётчик урона"}
+	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима", "proc": "Сигнал прока", "meter": "Счётчик урона",
+	"pet": "Питомец", "petbar": "Панель питомца"}
 var _layout_pos: Dictionary = {}       # id -> Vector2 (сохранённое)
 var _opts := {"party_horizontal": false, "bar2_vertical": false, "proc_border": true, "proc_center": true}
 
@@ -103,6 +104,7 @@ func setup(w: Node3D) -> void:
 	_build_meter()
 	_build_messages()
 	_build_boss_bar()
+	_build_pet_frames()
 	_build_menu()
 	_build_help()
 
@@ -434,7 +436,27 @@ func rebuild_party() -> void:
 		buffs.add_theme_constant_override("separation", 2)
 		buffs.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		frame.add_child(buffs)
-		_party_frames[hid] = {"frame": frame, "style": st, "hp": hp, "mp": mp, "info": info, "buffs": buffs, "name": nl}
+		var pet_bar: ProgressBar = null
+		if h.class_id == "hunter":
+			# питомец охотника — тонкая полоска под рамкой; клик выбирает питомца (лекарю — лечить)
+			frame.custom_minimum_size.y = 56
+			pet_bar = _bar(Color(0.55, 0.75, 0.3), 9)
+			pet_bar.position = Vector2(30, 43)
+			pet_bar.size = Vector2(176, 9)
+			pet_bar.max_value = 1.0
+			pet_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+			pet_bar.tooltip_text = "Питомец — ЛКМ: выбрать целью"
+			pet_bar.gui_input.connect(func(ev: InputEvent):
+				if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and world.local_hero:
+					var pu: Unit = world.mobs.pet_of(hid)
+					if pu:
+						world.local_hero.controller.target_id = pu.id
+					pet_bar.accept_event())
+			frame.add_child(pet_bar)
+			var pl := _label("пит.", 9, Color(0.7, 0.85, 0.5))
+			pl.position = Vector2(4, 41)
+			frame.add_child(pl)
+		_party_frames[hid] = {"frame": frame, "style": st, "hp": hp, "mp": mp, "info": info, "buffs": buffs, "name": nl, "pet": pet_bar}
 
 func party_order() -> Array:
 	var ids: Array = world.heroes.keys()
@@ -980,7 +1002,7 @@ func _default_pos(id: String, size: Vector2, vp: Vector2) -> Vector2:
 	match id:
 		"player": return Vector2(16, 12)
 		"target": return Vector2(360, 12)
-		"party": return Vector2(16, 175)
+		"party": return Vector2(16, 228)
 		"mode": return Vector2(vp.x - size.x - 16, 12)
 		"bar1": return Vector2((vp.x - size.x) * 0.5 + 80, bar1_y)
 		"bar2":
@@ -990,6 +1012,8 @@ func _default_pos(id: String, size: Vector2, vp: Vector2) -> Vector2:
 		"cast": return Vector2((vp.x - size.x) * 0.5, vp.y - 250)
 		"proc": return Vector2((vp.x - size.x) * 0.5, vp.y * 0.3)
 		"meter": return Vector2(vp.x - size.x - 16, vp.y - size.y - 175)
+		"pet": return Vector2(16, 172)
+		"petbar": return Vector2((vp.x - size.x) * 0.5 + 80, bar1_y - 2.0 * (SLOT + SLOT_GAP) - size.y - 14.0)
 	return Vector2.ZERO
 
 func _apply_layout() -> void:
@@ -1398,6 +1422,7 @@ func _process(delta: float) -> void:
 	var t: float = world.now()
 
 	_update_boss_bar()
+	_update_pet(lh)
 	# игрок
 	_fill_frame(_player, lh.unit, "%s  •  %s" % [lh.player_name, GameData.CLASSES[lh.class_id]["name"]], lh.net_absorb)
 	_player["level"].text = str(lh.unit.level)
@@ -1476,7 +1501,7 @@ func _process(delta: float) -> void:
 		f["hp"].value = u.hp if h.alive_visual else 0.0
 		f["mp"].max_value = maxf(1.0, u.max_mana)
 		f["mp"].value = u.mana
-		_bar_color(f["mp"], Color(0.85, 0.15, 0.12) if u.resource == "rage" else Color(0.2, 0.4, 0.95))
+		_bar_color(f["mp"], res_color(u.resource))
 		if not h.alive_visual:
 			f["info"].text = "Мёртв %d" % int(ceil(h.net_respawn_left))
 		elif u.hp < u.max_hp - 0.5:
@@ -1493,6 +1518,9 @@ func _process(delta: float) -> void:
 		fst.shadow_color = Color(1.0, 0.8, 0.3, 0.55) if selected else (Color(0.45, 0.8, 1.0, 0.35) if hovered else Color(0, 0, 0, 0))
 		fst.shadow_size = 6 if selected else (4 if hovered else 0)
 		_update_buff_icons(f["buffs"], h.net_buffs)
+		if f.get("pet") != null:
+			var pu: Unit = world.mobs.pet_of(hid)
+			(f["pet"] as ProgressBar).value = pu.hp_frac() if pu else 0.0
 
 	# панели заклинаний
 	var procs: Array = []
@@ -1623,7 +1651,7 @@ func _fill_frame(f: Dictionary, u: Unit, title: String, absorb: float) -> void:
 	f["name"].text = title
 	f["hp"].max_value = u.max_hp
 	f["hp"].value = u.hp
-	var hp_text := "%d / %d" % [int(u.hp), int(u.max_hp)] if u.kind != "mob" else "%d%%" % int(u.hp_frac() * 100.0)
+	var hp_text := "%d / %d" % [int(u.hp), int(u.max_hp)] if not u.kind in ["mob", "pet"] else "%d%%" % int(u.hp_frac() * 100.0)
 	if absorb > 0.0:
 		hp_text += "   (щит %d)" % int(absorb)
 	f["hp_l"].text = hp_text
@@ -1631,7 +1659,7 @@ func _fill_frame(f: Dictionary, u: Unit, title: String, absorb: float) -> void:
 	f["mp"].max_value = maxf(1.0, u.max_mana)
 	f["mp"].value = u.mana
 	f["mp_l"].text = "%d / %d" % [int(u.mana), int(u.max_mana)]
-	_bar_color(f["mp"], Color(0.85, 0.15, 0.12) if u.resource == "rage" else Color(0.2, 0.4, 0.95))
+	_bar_color(f["mp"], res_color(u.resource))
 
 func _update_buff_icons(box: HBoxContainer, buffs: Array) -> void:
 	var want: Array = []
@@ -2114,3 +2142,104 @@ func _update_boss_bar() -> void:
 	if st.get("shield", false):
 		info += "   •   НЕУЯЗВИМ — разбейте филактерии!"
 	_boss_info.text = info + "   •   наведите — механики"
+
+# ---------------------------------------------------------------- питомец охотника (сессия 06)
+
+## Цвет полосы ресурса: ярость — красная, концентрация — оранжевая, мана — синяя.
+static func res_color(res: String) -> Color:
+	match res:
+		"rage": return Color(0.85, 0.15, 0.12)
+		"focus": return Color(0.95, 0.6, 0.15)
+	return Color(0.2, 0.4, 0.95)
+
+var _pet_frame: Dictionary = {}
+var _pet_btns: Dictionary = {}       # команда/режим/вид -> Button
+
+const PET_BTNS := [
+	["kind:pet_wolf", "Волк", "pet_howl", "Волк — урон. Вой ускоряет группу.\nВыбрать для следующего Призыва питомца."],
+	["kind:pet_bear", "Медведь", "pet_growl", "Медведь — танк. Рык заставляет врагов бить его.\nВыбрать для следующего Призыва питомца."],
+	["kind:pet_cat", "Кошка", "pet_pounce", "Кошка — рывок к цели и кровотечение.\nВыбрать для следующего Призыва питомца."],
+	["aggressive", "Агрессия", "", "Агрессивный: сам нападает на врагов рядом с охотником."],
+	["defensive", "Защита", "", "Защитный: бьёт цель охотника и тех, кто напал на охотника или питомца."],
+	["passive", "Пассив", "", "Пассивный: не нападает сам, только по команде «Атака»."],
+	["attack", "Атака", "", "Атаковать текущую цель охотника."],
+	["follow", "К ноге", "", "Бросить бой и идти за охотником."],
+	["stay", "Стоять", "", "Стоять на месте (бьёт только по команде)."],
+]
+
+func _build_pet_frames() -> void:
+	# рамка питомца — под рамкой героя
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", _panel_style())
+	_frame("pet", p)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	v.custom_minimum_size = Vector2(200, 0)
+	p.add_child(v)
+	var name_l := _label("", 13, GOLD)
+	v.add_child(name_l)
+	var hp := _bar(Color(0.2, 0.75, 0.25), 14)
+	v.add_child(hp)
+	var hp_l := _label("", 11)
+	hp_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp_l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hp.add_child(hp_l)
+	_pet_frame = {"panel": p, "name": name_l, "hp": hp, "hp_l": hp_l}
+	# панель питомца — над панелью 1: вид, режим, команды
+	var bp := PanelContainer.new()
+	bp.add_theme_stylebox_override("panel", _panel_style(Color(0.4, 0.35, 0.25), Color(0, 0, 0, 0.55)))
+	_frame("petbar", bp)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 3)
+	bp.add_child(h)
+	for i in PET_BTNS.size():
+		var d: Array = PET_BTNS[i]
+		if i == 3 or i == 6:
+			h.add_child(VSeparator.new())
+		var b := Button.new()
+		b.text = d[1]
+		b.toggle_mode = i < 6
+		b.tooltip_text = d[3]
+		b.add_theme_font_size_override("font_size", 12)
+		b.focus_mode = Control.FOCUS_NONE
+		b.mouse_filter = Control.MOUSE_FILTER_STOP
+		if d[2] != "":
+			b.icon = load("res://assets/icons/spells/%s.svg" % d[2])
+			b.expand_icon = false
+			b.add_theme_constant_override("icon_max_width", 18)
+		var cmd: String = d[0]
+		b.pressed.connect(func(): _pet_button(cmd))
+		h.add_child(b)
+		_pet_btns[cmd] = b
+	bp.mouse_filter = Control.MOUSE_FILTER_STOP
+
+func _pet_button(cmd: String) -> void:
+	var lh = world.local_hero
+	if lh == null:
+		return
+	var arg: int = lh.controller.target_id if cmd == "attack" else 0
+	world.mobs.send_pet(cmd, arg)
+	Sfx.play("ui_click")
+
+func _update_pet(lh) -> void:
+	var hunter: bool = lh.class_id == "hunter"
+	_frames["petbar"].visible = hunter
+	var pu: Unit = world.mobs.pet_of(lh.hero_id) if hunter else null
+	_frames["pet"].visible = hunter and (pu != null or world.mobs.my_pet.get("dead", false) or is_editing())
+	if not hunter:
+		return
+	var st: Dictionary = world.mobs.my_pet
+	for cmd in _pet_btns:
+		var b: Button = _pet_btns[cmd]
+		if b.toggle_mode:
+			b.set_pressed_no_signal(cmd == "kind:" + str(st.get("kind", "")) or cmd == str(st.get("mode", "")))
+	var kind_name: String = GameData.MOBS.get(str(st.get("kind", "pet_wolf")), {}).get("name", "Питомец")
+	if pu:
+		_pet_frame["name"].text = "%s  •  %d ур.  •  %s" % [pu.display_name, lh.unit.level, {"follow": "к ноге", "stay": "стоит", "attack": "атакует"}.get(str(st.get("cmd", "")), "")]
+		_pet_frame["hp"].max_value = 1.0
+		_pet_frame["hp"].value = pu.hp_frac()
+		_pet_frame["hp_l"].text = "%d%%" % int(pu.hp_frac() * 100.0)
+	else:
+		_pet_frame["name"].text = "%s погиб — Воскрешение питомца" % kind_name if st.get("dead", false) else kind_name
+		_pet_frame["hp"].value = 0.0
+		_pet_frame["hp_l"].text = ""

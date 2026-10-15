@@ -14,6 +14,40 @@ var _regen_accum := 0.0
 func _ready() -> void:
 	world = get_parent()
 
+const RES_SHORTAGE := {"rage": "Недостаточно ярости", "focus": "Недостаточно концентрации", "mana": "Недостаточно маны"}
+## Концентрация охотника восполняется сама: столько единиц в секунду (скорость — от haste).
+const FOCUS_REGEN := 6.0
+
+# ---------------------------------------------------------------- заряды (Перекат)
+## st["charges"][sid] — когда восстановится каждый заряд. Заряд готов, если его время прошло.
+func _charge_ready(st: Dictionary, sid: String, n: int, t: float) -> bool:
+	var arr: Array = st.get("charges", {}).get(sid, [])
+	if arr.size() < n:
+		return true
+	return arr.any(func(x): return float(x) <= t)
+
+## Потратить заряд; вернуть, сколько ждать до следующего (0 — ещё есть готовый). Заряды копятся по очереди.
+func _use_charge(st: Dictionary, sid: String, n: int, cd: float, t: float) -> float:
+	if not st.has("charges"):
+		st["charges"] = {}
+	var arr: Array = st["charges"].get(sid, [])
+	while arr.size() < n:
+		arr.append(0.0)
+	var latest := t
+	for x in arr:
+		latest = maxf(latest, float(x))
+	for i in arr.size():
+		if float(arr[i]) <= t:
+			arr[i] = latest + cd
+			break
+	st["charges"][sid] = arr
+	var soonest := INF
+	for x in arr:
+		if float(x) <= t:
+			return 0.0
+		soonest = minf(soonest, float(x))
+	return soonest - t
+
 func _hstate(hid: int) -> Dictionary:
 	if not hs.has(hid):
 		hs[hid] = {"cds": {}, "gcd": 0.0, "cast": {}, "auto_target": 0, "auto_ready": 0.0}
@@ -71,12 +105,18 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 	if not st["cast"].is_empty():
 		return _feedback(peer, sid, "Вы уже произносите заклинание")
 	var proc := GameData.active_proc(u, sid)
-	if t < float(st["cds"].get(sid, 0.0)) and not (not proc.is_empty() and proc["data"].get("reset_cd", false)):
+	var not_ready := t < float(st["cds"].get(sid, 0.0))
+	if sp.has("charges"):
+		not_ready = not _charge_ready(st, sid, int(sp["charges"]), t)
+	if not_ready and not (not proc.is_empty() and proc["data"].get("reset_cd", false)):
 		return _feedback(peer, sid, "Заклинание ещё не готово")
 	if t < st["gcd"] - 0.15 and not sp.get("no_gcd", false):
 		return
 	if u.mana < GameData.eff_mana(u, sid):
-		return _feedback(peer, sid, "Недостаточно ярости" if u.resource == "rage" else "Недостаточно маны")
+		return _feedback(peer, sid, RES_SHORTAGE.get(u.resource, "Недостаточно маны"))
+	var perr: String = world.mobs.pet_spell_error(hero, sp)
+	if perr != "":
+		return _feedback(peer, sid, perr)
 	var max_range := GameData.eff_range(u, sid)
 	# проверка цели
 	match sp["target"]:
@@ -92,7 +132,7 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 				return _feedback(peer, sid, "Казнь — только по врагам с запасом здоровья ниже 25%")
 		"ally":
 			var tu: Unit = world.get_unit(target_id)
-			if tu == null or not tu.alive or tu.team != u.team or tu.kind != "hero":
+			if tu == null or not tu.alive or tu.team != u.team or not (tu.kind == "hero" or tu.kind == "pet"):
 				target_id = u.id
 			elif _dist(u, tu) > max_range + 2.0:
 				return _feedback(peer, sid, "Цель слишком далеко")
@@ -221,6 +261,7 @@ func server_tick(delta: float, t: float) -> void:
 		_auto_attack(hero, st, t)
 
 	_update_projectiles(t)
+	_update_traps(t)
 	_update_zones(t)
 	_update_auras(t)
 
@@ -232,7 +273,9 @@ func server_tick(delta: float, t: float) -> void:
 			var u: Unit = hero.unit
 			if not u.alive:
 				continue
-			if u.resource == "rage":
+			if u.resource == "focus":
+				u.mana = minf(u.max_mana, u.mana + FOCUS_REGEN * 0.5 * (1.0 + u.mod("haste")))
+			elif u.resource == "rage":
 				# ярость не восполняется сама и угасает вне боя
 				if t > u.combat_until:
 					u.mana = maxf(0.0, u.mana - 1.5)
@@ -243,13 +286,15 @@ func server_tick(delta: float, t: float) -> void:
 					per_s *= GameData.CASTING_REGEN if t - u.mana_spent_at < GameData.FIVE_SECOND_RULE else GameData.COMBAT_REGEN
 				u.mana = minf(u.max_mana, u.mana + per_s * 0.5 * (1.0 + u.mod("regen")) * rest)
 			u.hp = minf(u.max_hp, u.hp + (u.max_hp * 0.0025 + u.spirit * 0.05) * rest)
+			if u.flag("spirit_bond") > 0.0:       # Духовная связь: доля здоровья каждые 2 сек.
+				u.hp = minf(u.max_hp, u.hp + u.max_hp * u.flag("spirit_bond") * 0.25)
 	_update_bursts(t)
 	_send_watched_effects(delta, t)
 
 ## Списать ману (или ярость). Трата маны запускает правило 5 секунд: восполнение в бою ниже.
 func _spend_mana(u: Unit, cost: float, t: float) -> void:
 	u.mana -= cost
-	if cost > 0.0 and u.resource != "rage":
+	if cost > 0.0 and u.resource == "mana":
 		u.mana_spent_at = t
 		u.stat_spent += cost
 
@@ -268,8 +313,8 @@ func _auto_attack(hero, st: Dictionary, t: float) -> void:
 	st["auto_ready"] = t + float(auto["speed"]) * maxf(0.5, 1.0 - u.mod("haste"))
 	var fx := [{"type": "damage", "min": auto["min"], "max": auto["max"]}]
 	if auto["ranged"]:
-		_launch_projectile(u, tu, fx, "auto", auto["school"], 32.0, "bolt_" + auto["school"], t)
-		ev_action.rpc(u.id, "wand")
+		_launch_projectile(u, tu, fx, "auto", auto["school"], 40.0, auto.get("vfx", "bolt_" + auto["school"]), t)
+		ev_action.rpc(u.id, auto.get("anim", "wand"))
 	else:
 		apply_effects(u, tu, fx, "auto", auto["school"])
 		ev_action.rpc(u.id, "melee2")
@@ -317,15 +362,23 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 	if sp["target"] == "enemy" and (tu == null or not tu.alive):
 		ev_cast_end.rpc(u.id, "", false)
 		return
+	if world.mobs.pet_spell_error(hero, sp) != "":
+		ev_cast_end.rpc(u.id, "", false)
+		return
 	var mana_cost := GameData.eff_mana(u, sid)
-	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0 and u.resource != "rage":
+	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0 and u.resource == "mana":
 		u.remove_buff("clearcasting")
 	_spend_mana(u, mana_cost, world.now())
 	if sp.has("target_lockout") and tu:
 		tu.add_buff(sp["target_lockout"]["key"], t + float(sp["target_lockout"]["dur"]), {})
 	var cd := GameData.eff_cd(u, sid)
-	if cd > 0.0:
+	if sp.has("charges"):
+		cd = _use_charge(st, sid, int(sp["charges"]), cd, t)     # Перекат: на кнопке — ожидание следующего заряда
 		st["cds"][sid] = t + cd
+	elif cd > 0.0:
+		st["cds"][sid] = t + cd
+	if sp.has("focus_gain") and u.resource == "focus":
+		u.mana = minf(u.max_mana, u.mana + float(sp["focus_gain"]))
 	_feedback(hero.peer_id, sid, "", cd, maxf(0.0, st["gcd"] - t))
 	ev_cast_end.rpc(u.id, sid, true)
 	var school: String = sp["school"]
@@ -543,6 +596,100 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var hp := float(sp["wall_hp"]) * u.power * (1.0 + u.mod("wall_hp", sid, school))
 			var wid: int = world.mobs.add_wall(Vector2(a.x, a.z), Vector2(b.x, b.z), hp, t + duration)
 			ev_zone.rpc(wid, sp["vfx"], ground, yaw, length, duration)
+		"trap":
+			_place_trap(u, sid, sp, Vector3(ground.x, 0, ground.z), t)
+		"pet_call":
+			world.mobs.pet_summon(hero, false)
+		"pet_revive":
+			world.mobs.pet_summon(hero, true)
+		"pet_strike":
+			# Команда «Взять!»: питомец бросается на цель, удар считается от охотника (его сила и таланты)
+			var pet: Unit = world.mobs.pet_of(hero.hero_id)
+			if pet:
+				world.mobs.pet_command(hero, "attack", tu.id)
+				apply_effects(u, tu, sp["effects"], sid, school)
+				fx_at(sp["vfx"], tu.pos, pet.pos, 0.0, tu.id)
+				st["auto_target"] = tu.id
+	# эффекты на своего питомца (Лечение питомца, Звериный гнев, Бодрость)
+	if sp.has("pet_fx"):
+		var mypet: Unit = world.mobs.pet_of(hero.hero_id)
+		if mypet:
+			apply_effects(u, mypet, sp["pet_fx"], sid, school)
+			fx_at("heal_small" if sid == "mend_pet" else "proc", mypet.pos, u.pos, 0.0, mypet.id)
+
+# ---------------------------------------------------------------- ловушки охотника
+## Ловушка лежит на земле до life сек., срабатывает, когда враг подходит на trigger м: эффекты enemy_fx всем
+## в radius м (или зона горения trap.zone). Не больше MAX_TRAPS на охотника — новая заменяет самую старую.
+const MAX_TRAPS := 3
+var traps: Array = []       # {id, caster, sid, pos, until, arm}
+var _next_trap := 1
+
+func _place_trap(u: Unit, sid: String, sp: Dictionary, pos: Vector3, t: float) -> void:
+	# ловушку ставят под ноги, не дальше 5 м
+	var to := Vector2(pos.x - u.pos.x, pos.z - u.pos.z)
+	if to.length() > 5.0:
+		to = to.normalized() * 5.0
+	pos = Vector3(u.pos.x + to.x, 0, u.pos.z + to.y)
+	var mine: Array = traps.filter(func(tr): return tr["caster"] == u.id)
+	if mine.size() >= MAX_TRAPS:
+		_remove_trap(mine[0])
+	var id := _next_trap
+	_next_trap += 1
+	traps.append({"id": id, "caster": u.id, "sid": sid, "pos": pos, "until": t + float(sp["trap"]["life"]), "arm": t + 1.0})
+	ev_trap.rpc(id, str(sp["trap"]["vfx"]), pos, true)
+
+func _remove_trap(tr: Dictionary) -> void:
+	traps.erase(tr)
+	ev_trap.rpc(int(tr["id"]), "", tr["pos"], false)
+
+func _update_traps(t: float) -> void:
+	for tr: Dictionary in traps.duplicate():
+		if t >= float(tr["until"]):
+			_remove_trap(tr)
+			continue
+		if t < float(tr["arm"]):
+			continue
+		var sp: Dictionary = GameData.SPELLS[tr["sid"]]
+		var p: Vector3 = tr["pos"]
+		if world.mobs.query_radius(Vector2(p.x, p.z), float(sp["trap"]["trigger"])).is_empty():
+			continue
+		var caster: Unit = world.get_unit(int(tr["caster"]))
+		_remove_trap(tr)
+		if caster == null:
+			continue
+		_trigger_trap(caster, tr["sid"], sp, p, t)
+
+func _trigger_trap(u: Unit, sid: String, sp: Dictionary, p: Vector3, t: float) -> void:
+	var tp: Dictionary = sp["trap"]
+	var power := 1.0 + u.flag("trap_power")
+	var fx: Array = _amplified(sp, power)["enemy_fx"] if power > 1.0 else sp["enemy_fx"]
+	if power > 1.0:
+		fx = fx.duplicate(true)
+		for e in fx:
+			if e["type"] in ["freeze", "stun", "root", "incapacitate"]:
+				e["dur"] = float(e["dur"]) * power
+	var r := float(tp["radius"])
+	if tp.has("zone"):
+		# Обжигающая ловушка: горящая земля, как Огненный столб
+		var z: Dictionary = tp["zone"]
+		_add_zone({"sid": sid, "kind": "circle", "pos": p, "radius": r, "reach": r, "caster": u.id,
+			"until": t + float(z["dur"]) * power, "tick": float(z["tick"]), "next": t + 0.05, "ally_dr": 0.0}, z["vfx"], 0.0, r, float(z["dur"]) * power)
+	else:
+		for m in world.mobs.query_radius(Vector2(p.x, p.z), r):
+			apply_effects(u, m, fx, sid, sp["school"])
+		fx_at(sp["vfx"], p, p, r, 0)
+	if u.flag("entrapment") > 0.0:
+		for m in world.mobs.query_radius(Vector2(p.x, p.z), r):
+			apply_effects(u, m, [{"type": "root", "dur": u.flag("entrapment")}], sid, sp["school"])
+	ev_sound.rpc("trap", p)
+
+@rpc("authority", "call_local", "reliable")
+func ev_trap(id: int, kind: String, pos: Vector3, on: bool) -> void:
+	Vfx.trap(world, id, kind, pos, on)
+
+@rpc("authority", "call_local", "unreliable")
+func ev_sound(name: String, pos: Vector3) -> void:
+	Sfx.play_at(name, pos + Vector3(0, 0.5, 0))
 
 func _buff_duration(sp: Dictionary) -> float:
 	for e in sp.get("effects", []):
@@ -618,6 +765,7 @@ func _in_zone(z: Dictionary, u: Unit) -> bool:
 func _update_auras(t: float) -> void:
 	_tick_auras_for(world.heroes.values().map(func(h): return h.unit), t)
 	_tick_auras_for(world.mobs.alive_units(), t)
+	_tick_auras_for(world.mobs.pet_units(), t)
 
 func _tick_auras_for(list: Array, t: float) -> void:
 	for u: Unit in list:
@@ -797,7 +945,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				target.auras = target.auras.filter(func(a): return a["kind"] != "dot")
 			"mana_burn":
 				# выжигание маны: сгорает мана, половина сгоревшего — урон тьмой
-				if target.kind == "hero" and target.resource != "rage":
+				if target.kind == "hero" and target.resource == "mana":
 					var burn := minf(target.mana, float(e["amount"]) * pw)
 					target.mana -= burn
 					if burn > 0.0:
@@ -805,7 +953,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 						world.fx_number(target.id, burn, "mana_burn", "shadow", caster.id if caster else 0, false)
 			"mana_burn_pct":
 				# выжигание доли запаса маны (Буря Скверны); ярость воина не трогает
-				if target.kind == "hero" and target.resource != "rage":
+				if target.kind == "hero" and target.resource == "mana":
 					var pburn := minf(target.mana, target.max_mana * float(e["pct"]))
 					target.mana -= pburn
 					if pburn > 0.0:
@@ -827,8 +975,18 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				target.root_until = 0.0
 			"rage":
 				gain_rage(target, float(e["amount"]), t)
+			"reset_cds":
+				# Готовность: все заклинания, кроме самой Готовности, сразу готовы
+				var rh = world.heroes.get(target.id, null)
+				if rh:
+					var rst := _hstate(target.id)
+					for k in rst["cds"].keys():
+						if k != sid:
+							rst["cds"][k] = 0.0
+							_feedback(rh.peer_id, k, "", -1.0, 0.0)
+					rst.erase("charges")
 			"mana_return_pct":
-				if caster and caster.resource != "rage":
+				if caster and caster.resource == "mana":
 					caster.mana = minf(caster.max_mana, caster.mana + caster.max_mana * float(e["pct"]))
 			"hot_pct":
 				# лечение долей здоровья со временем (Безудержное восстановление)
@@ -1162,6 +1320,12 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		dst.last_attacker = src.id
 		src.combat_until = t + GameData.COMBAT_TIME
 	dst.combat_until = t + GameData.COMBAT_TIME
+	# Дух гепарда и т.п.: любой удар снимает эффект (break_on_hit в BUFF_INFO)
+	if not dst.buffs.is_empty() and amount > 0.0:
+		var kept: Array = dst.buffs.filter(func(b): return not GameData.BUFF_INFO.get(b["key"], {}).get("break_on_hit", false))
+		if kept.size() != dst.buffs.size():
+			dst.buffs = kept
+			_refresh_stats(dst)
 	if dst.kind == "hero":
 		if dst.resource == "rage":
 			gain_rage(dst, amount / maxf(dst.max_hp, 1.0) * 60.0, t)
@@ -1219,6 +1383,8 @@ func _on_death(dst: Unit, src: Unit) -> void:
 				_interrupt(h)
 				world.announce_all("%s погибает!" % h.player_name, Color(1, 0.5, 0.4))
 				world.mode.on_hero_died(h)
+		"pet":
+			world.mobs.pet_died(dst)
 		_:
 			world.mode.on_unit_destroyed(dst)
 
