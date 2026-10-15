@@ -297,6 +297,6 @@ func _test_react() -> void:
 			print("TRADE test offer me=%d item=%s gold=%d" % [Net.my_id(), lh.bag[idx]["id"], g])
 			send.call_deferred("request_offer", [[idx], g])      # не изнутри чужого RPC: иначе хост примет себя за отправителя
 		return
-	if not state["theirs"].is_empty() and not state["my_ok"]:
+	if not state["theirs"].is_empty() and not state["my_ok"] and not (Net.cli.has("tradehold") and Net.is_server()):
 		print("TRADE test accept me=%d" % Net.my_id())
 		send.call_deferred("request_accept", [])

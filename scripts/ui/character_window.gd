@@ -151,6 +151,8 @@ func refresh() -> void:
 				n.add_theme_constant_override("outline_size", 4)
 				n.position = Vector2(CELL - 22, CELL - 22)
 				cell.add_child(n)
+		if not world.trade.state.is_empty() and world.trade.state["slots"].has(i):
+			cell.modulate = Color(0.45, 0.45, 0.45)     # лежит в окне обмена
 		var idx: int = i
 		cell.gui_input.connect(func(ev: InputEvent):
 			if ev is InputEventMouseButton and ev.pressed:

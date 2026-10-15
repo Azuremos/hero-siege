@@ -1230,6 +1230,7 @@ func on_trade_state(st: Dictionary) -> void:
 		_trade_win = preload("res://scripts/ui/trade_window.gd").new()
 		_trade_win.setup(world)
 		_root.add_child(_trade_win)
+		_trade_win.visible = false
 	var first: bool = not _trade_win.visible
 	_trade_win.visible = true
 	_trade_win.refresh(st)

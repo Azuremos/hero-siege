@@ -629,6 +629,11 @@ func _process(delta: float) -> void:
 		siege._next_wave_at = now()
 	if Net.cli.has("shot-at") and absf(_test_t - float(Net.cli["shot-at"])) < delta * 0.5 + 0.001:
 		_save_shot(Net.cli.get("shot", "user://shot.png"))
+	# --balancelog: партия кончилась — итог и выход через 2 сек.
+	if Net.cli.has("balancelog") and siege and is_server() and mode.is_over() and not Net.cli.has("bal-done"):
+		Net.cli["bal-done"] = "1"
+		print(siege.balance_summary())
+		Net.cli["quit-after"] = str(_test_t + 2.0)
 	if Net.cli.has("quit-after") and _test_t >= float(Net.cli["quit-after"]) and not Sfx._quitting:
 		if Net.cli.has("shot"):
 			_save_shot(Net.cli["shot"].get_basename() + "_end.png")
@@ -643,6 +648,8 @@ func _process(delta: float) -> void:
 			print("METER total=", meter.view["total"]["rows"], " current=", meter.view["current"]["name"], " last=", meter.view["last"]["name"])
 			print("METER detail=", meter.detail.get("list", []).map(func(e): return [meter.key_name(e[0]), int(e[1]), e[2], e[3]]))
 		print("TEST END: wave=%d state=%s castle=%d" % [siege.wave if siege else 0, mode.state, int(siege.castle.hp) if siege else 0])
+		if Net.cli.has("balancelog") and siege and not Net.cli.has("bal-done"):
+			print(siege.balance_summary())
 		Sfx.quit_game()
 
 func _save_shot(path: String) -> void:

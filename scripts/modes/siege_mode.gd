@@ -80,6 +80,8 @@ func is_combat() -> bool:
 # ---------------------------------------------------------------- волны (сервер)
 
 func server_tick(_delta: float, t: float) -> void:
+	if Net.cli.has("balancelog") and _started:
+		_balance_tick(t)
 	if not _started or is_over():
 		return
 	while not _queue.is_empty() and t >= _queue[0][0]:
@@ -280,3 +282,30 @@ func _assign_factions() -> void:
 			for f in GameData.FACTIONS:
 				if int(GameData.FACTIONS[f]["lane"]) == lane:
 					lane_faction[lane] = f
+
+# ---------------------------------------------------------------- --balancelog
+
+## Время зачистки каждой волны, смерти героев, здоровье замка. Итог — в конце партии.
+var _bal := {"wave_t": {}, "deaths": 0, "alive": {}, "cleared": {}, "min_castle": 1.0}
+
+func _balance_tick(t: float) -> void:
+	for h in world.heroes.values():
+		var was: bool = _bal["alive"].get(h.hero_id, true)
+		if was and not h.unit.alive:
+			_bal["deaths"] += 1
+			print("BAL death t=%.0f wave=%d hero=%s lvl=%d" % [t, wave, h.class_id, h.unit.level])
+		_bal["alive"][h.hero_id] = h.unit.alive
+	_bal["min_castle"] = minf(_bal["min_castle"], castle.hp / castle.max_hp)
+	if wave > 0 and state != "prep" and not _bal["wave_t"].has(wave):
+		_bal["wave_t"][wave] = t
+		print("BAL wave %d start t=%.0f castle=%d%%" % [wave, t, int(castle.hp / castle.max_hp * 100.0)])
+	if _bal["wave_t"].has(wave) and not _bal["cleared"].has(wave) and _queue.is_empty() and world.mobs.alive_count() == 0:
+		_bal["cleared"][wave] = t
+		print("BAL wave %d cleared in %.0f s, castle=%d%%, deaths=%d" % [wave, t - float(_bal["wave_t"][wave]), int(castle.hp / castle.max_hp * 100.0), _bal["deaths"]])
+
+func balance_summary() -> String:
+	var parts: Array = []
+	for w in _bal["wave_t"]:
+		parts.append("в%d: %s" % [w, ("%.0f с" % (float(_bal["cleared"][w]) - float(_bal["wave_t"][w]))) if _bal["cleared"].has(w) else "не зачищена"])
+	return "BAL END state=%s wave=%d castle=%d%% (мин. %d%%) deaths=%d | %s" % [state, wave, int(castle.hp / castle.max_hp * 100.0),
+		int(_bal["min_castle"] * 100.0), _bal["deaths"], ", ".join(parts)]
