@@ -635,8 +635,8 @@ func _make_visual(m: Mob) -> void:
 	m.anim_lock = 0.0
 	if m.ice:
 		m.ice.visible = false
-	if m.def.get("src", "enemy") == "hero":
-		_play(m, "Cheer", 0.0)          # у моделей героев нет подъёма из земли — боевой клич
+	if m.def.get("src", "enemy") != "enemy":
+		_play(m, "Cheer", 0.0)          # у моделей героев и монстров нет подъёма из земли — боевой клич
 	else:
 		_play(m, "Spawn_Ground_Skeletons", 0.0)
 	m.anim_lock = 1.2
@@ -669,7 +669,7 @@ func _begin_dying(m: Mob) -> void:
 	Sfx.play_at(fs["death"], m.node.position + Vector3(0, 0.5, 0), 0.0, float(fs["pitch"]))
 	m.death_time = 2.6
 	m.unit.alive = false
-	_play(m, "Death_A" if m.def.get("src", "enemy") == "hero" else "Death_C_Skeletons", 0.1)
+	_play(m, "Death_C_Skeletons" if m.def.get("src", "enemy") == "enemy" else "Death_A", 0.1)
 	dying.append(m)
 
 func _process(delta: float) -> void:
@@ -760,6 +760,8 @@ const ANIM_FALLBACK := {"Idle_Combat": "Idle", "Unarmed_Melee_Attack_Punch_A": "
 	"2H_Melee_Attack_Spinning": "2H_Melee_Attack_Chop", "Dualwield_Melee_Attack_Stab": "1H_Melee_Attack_Stab"}
 
 func _play(m: Mob, n: String, blend: float, force: bool = false) -> void:
+	if m.anim and m.def.get("src", "") == "monster" and not m.anim.has_animation(n):
+		n = ModelFactory.monster_anim(m.unit.type_id, n)     # своя схема анимаций (модели Quaternius)
 	if m.anim and not m.anim.has_animation(n) and ANIM_FALLBACK.has(n):
 		n = ANIM_FALLBACK[n]
 	if m.anim == null or (m.cur_anim == n and not force):

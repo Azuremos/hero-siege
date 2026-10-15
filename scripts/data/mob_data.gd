@@ -5,15 +5,50 @@ extends RefCounted
 ## Поля:
 ##   faction, role — swarm (массовка) | heavy | fast | ranged | support | special | boss
 ##   cost — сколько стоит в бюджете волны; min_wave — с какой волны появляется
-##   облик: src «enemy» (скелеты KayKit, оружие — weapons) или «hero» (модели героев KayKit на той же
-##     схеме костей: show — что держит в руках, hide — что спрятать), recolor — схема перекраски,
-##     scale; spawn_anim / death_anim — анимации появления и смерти
+##   облик: src «enemy» (скелеты KayKit, оружие — weapons), «monster» (модели Quaternius из MODELS:
+##     mats — цвет по имени материала, tint — общий оттенок, glow — свечение, hide — убрать часть,
+##     weapons — оружие KayKit в руки, anims — замены анимаций) или «hero» (модели героев KayKit:
+##     show — что держит в руках, hide — что спрятать), recolor — схема перекраски KayKit, scale; spawn_anim / death_anim — анимации появления и смерти
 ##   бой: hp, min/max — урон за удар, atk_speed, range, speed, armor, ranged (+ proj — снаряд, school),
 ##     cleave — удар по соседям, on_hit — эффекты при каждом ударе (как у заклинаний героев)
 ##   abilities — id из mob_abilities.gd
 ##
-## Облики орков, демонов, гоблинов и огров — временные: перекрашенные модели героев KayKit
-## (нужны настоящие модели, см. отчёт сессии 02).
+## Облики врагов, кроме скелетов, — модели Quaternius (assets/monsters, CC0 / CC BY) со своей схемой костей.
+## MODELS: fit — множитель, приводящий модель к росту героя KayKit (scale моба = 1 — рост героя);
+##   lift — подъём над землёй; set — набор анимаций; grip_r / grip_l — куда крепить оружие из рук
+##   (кость, смещение, поворот в градусах, масштаб оружия).
+## ANIM_SETS: какая анимация модели отвечает за действие (idle, run, attack, cast, hit, death, spawn).
+##   Логика мобов просит анимации KayKit по имени; model_factory.monster_anim() переводит их в действие.
+##   Моб может заменить анимацию действия полем anims ({"attack": "Punch"}).
+const MODELS := {
+	"Orc": {"fit": 0.72, "set": "beast",
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 2.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 2.0}},
+	"Demon": {"fit": 0.75, "set": "beast",
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 2.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 2.0}},
+	"BlueDemon": {"fit": 0.46, "set": "beast",
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 3.0},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 3.0}},
+	"Yeti": {"fit": 0.85, "set": "beast",
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, -90), "scale": 1.8},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.75, 0.0), "rot": Vector3(0, 0, 90), "scale": 1.8}},
+	"WingedDemon": {"fit": 0.85, "lift": -0.6, "set": "flyer"},
+	"Ghost": {"fit": 0.75, "lift": -0.1, "set": "flyer"},
+	"Wolf": {"fit": 0.55, "set": "wolf"},
+	"Goblin": {"fit": 1.7, "set": "zombie",
+		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.3, 0.0), "rot": Vector3(0, 0, -90), "scale": 0.8},
+		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.3, 0.0), "rot": Vector3(0, 0, 90), "scale": 0.8}},
+	"Ghoul": {"fit": 1.45, "set": "zombie"},
+}
+
+const ANIM_SETS := {
+	"beast": {"idle": "Idle", "run": "Run", "attack": "Weapon", "cast": "Wave", "hit": "HitReact", "death": "Death", "spawn": "Yes"},
+	"flyer": {"idle": "Flying_Idle", "run": "Fast_Flying", "attack": "Headbutt", "cast": "Yes", "hit": "HitReact", "death": "Death", "spawn": "Yes"},
+	"wolf": {"idle": "Idle", "run": "Gallop", "attack": "Attack", "cast": "Idle_2", "hit": "Idle_HitReact_Left", "death": "Death", "spawn": "Idle_2_HeadLow"},
+	"zombie": {"idle": "Idle", "run": "Run", "attack": "Run_Attack", "cast": "Wave", "hit": "HitReact", "death": "Death", "spawn": "Yes"},
+}
+
 
 const MOBS := {
 	# ======================= НЕЖИТЬ =======================
@@ -42,11 +77,11 @@ const MOBS := {
 		"hp": 150.0, "min": 10.0, "max": 13.0, "atk_speed": 2.4, "range": 18.0, "speed": 3.6,
 		"xp": 40, "gold": 6, "scale": 1.05, "radius": 0.6, "armor": 0.0, "ranged": true, "abilities": ["raise_dead"]},
 	"ghoul": {"name": "Вурдалак", "faction": "undead", "role": "special", "cost": 2.2, "min_wave": 5,
-		"model": "Skeleton_Minion", "weapons": {}, "recolor": "ghoul", "attack_anim": "Unarmed_Melee_Attack_Punch_A",
+		"src": "monster", "model": "Ghoul", "tint": Color(0.72, 0.95, 0.7), "anims": {"attack": "Punch"},
 		"hp": 170.0, "min": 11.0, "max": 15.0, "atk_speed": 1.3, "range": 2.3, "speed": 5.2,
 		"xp": 28, "gold": 4, "scale": 1.12, "radius": 0.65, "armor": 0.05, "abilities": ["devour"]},
 	"banshee": {"name": "Банши", "faction": "undead", "role": "special", "cost": 3.0, "min_wave": 8,
-		"model": "Skeleton_Mage", "weapons": {}, "recolor": "banshee",
+		"src": "monster", "model": "Ghost", "mats": {"Ghost_Main": Color(0.62, 0.8, 0.95)}, "glow": Color(0.45, 0.75, 1.0), "glow_energy": 0.45,
 		"hp": 130.0, "min": 12.0, "max": 16.0, "atk_speed": 2.2, "range": 16.0, "speed": 4.2,
 		"xp": 36, "gold": 5, "scale": 1.0, "radius": 0.6, "armor": 0.0, "ranged": true, "abilities": ["wail"]},
 	"boss_warlord": {"name": "Костяной полководец", "faction": "undead", "role": "boss", "cost": 0.0, "min_wave": 1,
@@ -60,78 +95,78 @@ const MOBS := {
 
 	# ======================= ОРКИ =======================
 	"grunt": {"name": "Орк-рубака", "faction": "orcs", "role": "swarm", "cost": 1.3, "min_wave": 1,
-		"src": "hero", "model": "Barbarian", "show": ["1H_Axe", "Barbarian_Round_Shield"], "hide": ["Barbarian_Hat"], "recolor": "orc",
+		"src": "monster", "model": "Orc", "mats": {"Orc_Hair": Color(0.12, 0.1, 0.1)},
 		"hp": 125.0, "min": 9.0, "max": 12.0, "atk_speed": 1.7, "range": 2.5, "speed": 4.2,
 		"xp": 18, "gold": 3, "scale": 1.0, "radius": 0.65, "armor": 0.05},
 	"berserker": {"name": "Орк-берсерк", "faction": "orcs", "role": "heavy", "cost": 2.8, "min_wave": 3,
-		"src": "hero", "model": "Barbarian", "show": ["2H_Axe"], "hide": ["Barbarian_Hat", "Barbarian_Cape"], "recolor": "orc", "attack_anim": "2H_Melee_Attack_Chop",
+		"src": "monster", "model": "Orc", "hide": ["Orc_Weapon"], "weapons": {"r": "axe_B"}, "mats": {"Orc_Main": Color(0.36, 0.48, 0.2), "Orc_Hair": Color(0.7, 0.12, 0.08), "Belt": Color(0.4, 0.1, 0.08)},
 		"hp": 260.0, "min": 15.0, "max": 20.0, "atk_speed": 2.1, "range": 2.8, "speed": 3.8,
 		"xp": 34, "gold": 5, "scale": 1.18, "radius": 0.8, "armor": 0.1, "abilities": ["enrage"]},
 	"raider": {"name": "Орк-налётчик", "faction": "orcs", "role": "fast", "cost": 1.8, "min_wave": 4,
-		"src": "hero", "model": "Rogue", "show": ["Knife", "Knife_Offhand"], "hide": ["Rogue_Cape"], "recolor": "orc", "attack_anim": "Dualwield_Melee_Attack_Slice",
+		"src": "monster", "model": "Orc", "hide": ["Orc_Weapon"], "weapons": {"r": "sword_C", "l": "dagger_A"}, "mats": {"Orc_Main": Color(0.45, 0.55, 0.25), "Orc_Hair": Color(0.35, 0.22, 0.1), "Orc_Secondary": Color(0.3, 0.42, 0.2)},
 		"hp": 115.0, "min": 10.0, "max": 13.0, "atk_speed": 1.2, "range": 2.4, "speed": 6.0,
 		"xp": 22, "gold": 3, "scale": 0.98, "radius": 0.6, "armor": 0.0, "abilities": ["raider_charge"]},
 	"axe_thrower": {"name": "Орк-метатель топоров", "faction": "orcs", "role": "ranged", "cost": 2.0, "min_wave": 3,
-		"src": "hero", "model": "Barbarian", "show": ["1H_Axe"], "hide": ["Barbarian_Hat"], "recolor": "orc", "attack_anim": "Throw",
+		"src": "monster", "model": "Orc", "hide": ["Orc_Weapon"], "weapons": {"r": "axe_A"}, "mats": {"Orc_Hair": Color(0.2, 0.15, 0.1), "Belt": Color(0.3, 0.2, 0.12)},
 		"hp": 110.0, "min": 13.0, "max": 16.0, "atk_speed": 2.2, "range": 16.0, "speed": 4.0,
 		"xp": 24, "gold": 4, "scale": 0.95, "radius": 0.6, "armor": 0.0, "ranged": true, "school": "physical", "proj": "bolt_physical"},
 	"shaman": {"name": "Орк-шаман", "faction": "orcs", "role": "support", "cost": 3.5, "min_wave": 5,
-		"src": "hero", "model": "Mage", "show": ["2H_Staff"], "hide": ["Mage_Hat"], "recolor": "orc_shaman",
+		"src": "monster", "model": "Orc", "hide": ["Orc_Weapon"], "weapons": {"r": "staff_B"}, "mats": {"Orc_Hair": Color(0.88, 0.86, 0.8), "Belt": Color(0.85, 0.8, 0.65), "Gold": Color(0.2, 0.6, 0.65)},
 		"hp": 150.0, "min": 11.0, "max": 14.0, "atk_speed": 2.4, "range": 18.0, "speed": 3.7,
 		"xp": 40, "gold": 6, "scale": 1.0, "radius": 0.6, "armor": 0.0, "ranged": true, "school": "nature", "proj": "bolt_nature",
 		"abilities": ["chain_lightning", "bloodlust"]},
 	"drummer": {"name": "Вождь-барабанщик", "faction": "orcs", "role": "support", "cost": 3.0, "min_wave": 7,
-		"src": "hero", "model": "Barbarian", "show": ["1H_Axe", "Barbarian_Round_Shield"], "hide": [], "recolor": "orc_chief",
+		"src": "monster", "model": "Orc", "hide": ["Orc_Weapon"], "weapons": {"r": "hammer_B"}, "mats": {"Orc_Hair": Color(0.1, 0.08, 0.08), "Belt": Color(0.55, 0.1, 0.08), "Gold": Color(1.0, 0.75, 0.25)},
 		"hp": 240.0, "min": 13.0, "max": 17.0, "atk_speed": 2.0, "range": 2.6, "speed": 3.8,
 		"xp": 38, "gold": 6, "scale": 1.25, "radius": 0.8, "armor": 0.15, "abilities": ["war_drums"]},
 
 	# ======================= ДЕМОНЫ =======================
 	"imp": {"name": "Бес", "faction": "demons", "role": "swarm", "cost": 0.8, "min_wave": 1,
-		"src": "hero", "model": "Rogue", "show": [], "hide": ["Rogue_Cape"], "recolor": "imp", "attack_anim": "Spellcast_Shoot",
+		"src": "monster", "model": "WingedDemon", "mats": {"Demon_Main": Color(0.85, 0.32, 0.1)}, "glow": Color(1.0, 0.35, 0.05), "anims": {"attack": "Punch"},
 		"hp": 55.0, "min": 6.0, "max": 9.0, "atk_speed": 1.8, "range": 14.0, "speed": 5.0,
 		"xp": 11, "gold": 2, "scale": 0.6, "radius": 0.45, "armor": 0.0, "ranged": true, "school": "fire", "proj": "bolt_fire"},
 	"felhound": {"name": "Гончая Скверны", "faction": "demons", "role": "fast", "cost": 1.8, "min_wave": 3,
-		"model": "Skeleton_Minion", "weapons": {}, "recolor": "felhound", "attack_anim": "Unarmed_Melee_Attack_Punch_B",
+		"src": "monster", "model": "Wolf", "mats": {"Main": Color(0.35, 0.1, 0.1), "Main_Light": Color(0.55, 0.2, 0.12), "Nose": Color(0.3, 1.0, 0.2), "Eyes_Black": Color(0.4, 1.0, 0.2)}, "glow": Color(0.25, 0.6, 0.1), "glow_energy": 0.12,
 		"hp": 125.0, "min": 8.0, "max": 11.0, "atk_speed": 1.3, "range": 2.3, "speed": 6.2,
 		"xp": 22, "gold": 3, "scale": 0.92, "radius": 0.6, "armor": 0.05,
 		"on_hit": [{"type": "mana_burn", "amount": 18.0}]},
 	"felguard": {"name": "Страж Скверны", "faction": "demons", "role": "heavy", "cost": 3.0, "min_wave": 3,
-		"src": "hero", "model": "Knight", "show": ["2H_Sword"], "hide": ["Knight_Cape"], "recolor": "demon", "attack_anim": "2H_Melee_Attack_Slice",
+		"src": "monster", "model": "Demon", "mats": {"Demon_Main": Color(0.45, 0.08, 0.1), "Black": Color(0.12, 0.12, 0.12)}, "glow": Color(0.3, 0.8, 0.1), "glow_energy": 0.08,
 		"hp": 320.0, "min": 17.0, "max": 23.0, "atk_speed": 2.3, "range": 3.0, "speed": 3.5,
 		"xp": 40, "gold": 6, "scale": 1.25, "radius": 0.85, "armor": 0.25, "cleave": 3.0},
 	"succubus": {"name": "Суккуба", "faction": "demons", "role": "support", "cost": 3.0, "min_wave": 5,
-		"src": "hero", "model": "Rogue_Hooded", "show": ["Knife"], "hide": [], "recolor": "succubus",
+		"src": "monster", "model": "BlueDemon", "mats": {"BlueDemon_Main": Color(0.78, 0.38, 0.62), "BlueDemon_Secondary": Color(0.3, 0.08, 0.25), "Wood": Color(0.25, 0.06, 0.2), "Straps": Color(0.2, 0.05, 0.18)},
 		"hp": 150.0, "min": 12.0, "max": 15.0, "atk_speed": 1.6, "range": 2.5, "speed": 4.6,
 		"xp": 36, "gold": 5, "scale": 1.0, "radius": 0.6, "armor": 0.0, "abilities": ["seduce"]},
 	"infernal": {"name": "Инфернал", "faction": "demons", "role": "special", "cost": 4.5, "min_wave": 7,
-		"model": "Skeleton_Warrior", "weapons": {}, "recolor": "infernal", "attack_anim": "Unarmed_Melee_Attack_Punch_A",
+		"src": "monster", "model": "Yeti", "mats": {"Yeti_Main": Color(0.22, 0.2, 0.19), "Yeti_Secondary": Color(1.0, 0.45, 0.1), "Yeti_Teeth": Color(1.0, 0.7, 0.2)}, "glow": Color(1.0, 0.35, 0.05), "glow_energy": 0.3,
 		"hp": 420.0, "min": 20.0, "max": 26.0, "atk_speed": 2.4, "range": 3.2, "speed": 3.2,
 		"xp": 55, "gold": 8, "scale": 1.6, "radius": 1.1, "armor": 0.3, "abilities": ["infernal_drop"]},
 
 	# ======================= ГОБЛИНЫ И ОГРЫ =======================
 	"gunner": {"name": "Гоблин-стрелок", "faction": "goblins", "role": "swarm", "cost": 1.1, "min_wave": 1,
-		"src": "hero", "model": "Rogue", "show": ["2H_Crossbow"], "hide": ["Rogue_Cape"], "recolor": "goblin", "attack_anim": "2H_Ranged_Shoot",
+		"src": "monster", "model": "Goblin", "weapons": {"r": "Skeleton_Crossbow"}, "anims": {"attack": "Punch"},
 		"hp": 65.0, "min": 8.0, "max": 11.0, "atk_speed": 2.0, "range": 18.0, "speed": 4.6,
 		"xp": 14, "gold": 3, "scale": 0.68, "radius": 0.45, "armor": 0.0, "ranged": true, "school": "physical", "proj": "bolt_physical"},
 	"sapper": {"name": "Гоблин-подрывник", "faction": "goblins", "role": "special", "cost": 1.6, "min_wave": 2,
-		"src": "hero", "model": "Rogue_Hooded", "show": ["Throwable"], "hide": ["Rogue_Cape"], "recolor": "goblin",
+		"src": "monster", "model": "Goblin", "tint": Color(1.0, 0.8, 0.65), "anims": {"attack": "Run_Attack"},
 		"hp": 60.0, "min": 5.0, "max": 7.0, "atk_speed": 1.5, "range": 2.2, "speed": 6.2,
 		"xp": 16, "gold": 3, "scale": 0.65, "radius": 0.45, "armor": 0.0, "abilities": ["goblin_explode"]},
 	"tinker": {"name": "Гоблин-техник", "faction": "goblins", "role": "support", "cost": 2.5, "min_wave": 4,
-		"src": "hero", "model": "Rogue_Hooded", "show": ["Knife"], "hide": [], "recolor": "goblin_tinker",
+		"src": "monster", "model": "Goblin", "weapons": {"r": "hammer_C"}, "tint": Color(1.0, 0.95, 0.7), "anims": {"attack": "Punch"},
 		"hp": 90.0, "min": 8.0, "max": 10.0, "atk_speed": 1.6, "range": 2.4, "speed": 4.4,
 		"xp": 26, "gold": 4, "scale": 0.7, "radius": 0.5, "armor": 0.05, "abilities": ["goblin_mine"]},
 	"thief": {"name": "Гоблин-вор", "faction": "goblins", "role": "fast", "cost": 1.5, "min_wave": 3,
-		"src": "hero", "model": "Rogue", "show": ["Knife", "Knife_Offhand"], "hide": ["Rogue_Cape"], "recolor": "goblin", "attack_anim": "Dualwield_Melee_Attack_Stab",
+		"src": "monster", "model": "Goblin", "weapons": {"r": "dagger_A", "l": "dagger_B"}, "tint": Color(0.8, 0.85, 0.75), "anims": {"attack": "Punch"},
 		"hp": 75.0, "min": 6.0, "max": 8.0, "atk_speed": 1.0, "range": 2.2, "speed": 6.8,
 		"xp": 18, "gold": 2, "scale": 0.65, "radius": 0.45, "armor": 0.0,
 		"on_hit": [{"type": "steal_gold", "amount": 12.0}]},
 	"ogre": {"name": "Огр-громила", "faction": "goblins", "role": "heavy", "cost": 3.5, "min_wave": 3,
-		"src": "hero", "model": "Barbarian", "show": ["2H_Axe"], "hide": ["Barbarian_Hat", "Barbarian_Cape"], "recolor": "ogre", "attack_anim": "2H_Melee_Attack_Chop",
+		"src": "monster", "model": "Yeti", "weapons": {"r": "hammer_A"}, "mats": {"Yeti_Main": Color(0.78, 0.55, 0.38), "Yeti_Secondary": Color(0.42, 0.28, 0.16)}, "anims": {"attack": "Punch"},
 		"hp": 480.0, "min": 21.0, "max": 28.0, "atk_speed": 2.6, "range": 3.2, "speed": 3.4,
 		"xp": 50, "gold": 7, "scale": 1.6, "radius": 1.0, "armor": 0.15, "abilities": ["ogre_smash"]},
 	"ogre_mage": {"name": "Огр-маг", "faction": "goblins", "role": "support", "cost": 3.5, "min_wave": 6,
-		"src": "hero", "model": "Mage", "show": ["2H_Staff"], "hide": ["Mage_Hat"], "recolor": "ogre",
+		"src": "monster", "model": "Yeti", "weapons": {"r": "staff_A"}, "mats": {"Yeti_Main": Color(0.38, 0.5, 0.75), "Yeti_Secondary": Color(0.35, 0.18, 0.45)}, "anims": {"attack": "Punch"},
 		"hp": 300.0, "min": 14.0, "max": 18.0, "atk_speed": 2.4, "range": 16.0, "speed": 3.5,
 		"xp": 46, "gold": 7, "scale": 1.45, "radius": 0.9, "armor": 0.05, "ranged": true, "school": "arcane", "proj": "bolt_arcane",
 		"abilities": ["ogre_shield", "ogre_haste"]},

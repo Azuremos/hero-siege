@@ -546,7 +546,7 @@ func _process(delta: float) -> void:
 			var mu: Unit = get_unit(uid)
 			if not Net.cli.has("near"):
 				mu.root_until = now() + 1e6     # стоят на месте для осмотра
-		print("MOBTEST ", types)
+		print("MOBTEST ", types, " центр ", local_hero.global_position + fwd * (4.0 if Net.cli.has("near") else 9.0), " взгляд ", fwd)
 	if Net.cli.has("casttest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		var cfwd := -local_hero.global_transform.basis.z
 		var cp := local_hero.global_position + cfwd * 8.0

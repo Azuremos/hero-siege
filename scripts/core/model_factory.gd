@@ -50,6 +50,10 @@ static func build_hero(class_id: String, race_id: String) -> Node3D:
 static func build_mob(mob_id: String) -> Node3D:
 	var def: Dictionary = GameData.MOBS[mob_id]
 	var holder := Node3D.new()
+	if def.get("src", "enemy") == "monster":
+		_build_monster(def, mob_id, holder)
+		holder.scale = Vector3.ONE * float(def.get("scale", 1.0))
+		return holder
 	var from_hero: bool = def.get("src", "enemy") == "hero"
 	var path := ("res://assets/heroes/%s.glb" if from_hero else "res://assets/enemies/%s.glb") % def["model"]
 	var inst := _scene(path).instantiate() as Node3D
@@ -139,6 +143,200 @@ static func _merge_skinned_parts(skel: Skeleton3D, key: String) -> void:
 	for p in parts:
 		skel.remove_child(p)
 		p.free()
+
+# ---------------------------------------------------------------- монстры (src «monster»)
+## Модели Quaternius: своя схема костей и свои анимации (MobData.MODELS, ANIM_SETS).
+## Части тела с разными материалами склеиваются в один меш, цвет материала — в вершинах:
+## один вызов отрисовки на моба, перекраска фракции — заменой цвета материала (mats в данных моба).
+static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> void:
+	var mdl: Dictionary = GameData.MONSTER_MODELS[def["model"]]
+	var inst := _scene("res://assets/monsters/%s.glb" % def["model"]).instantiate() as Node3D
+	inst.scale = Vector3.ONE * float(mdl["fit"])
+	inst.position.y = float(mdl.get("lift", 0.0))
+	holder.add_child(inst)
+	var skel := inst.find_child("Skeleton3D", true, false) as Skeleton3D
+	for hide_name: String in def.get("hide", []):
+		var h := skel.find_child(hide_name, true, false)
+		if h:
+			skel.remove_child(h)
+			h.free()
+	if Net.cli.has("nomerge") or not _merge_monster(skel, mob_id, def):
+		for mi in skel.find_children("*", "MeshInstance3D", true, false):
+			var m := mi as MeshInstance3D
+			for s in m.mesh.get_surface_count():
+				m.set_surface_override_material(s, _monster_material(mob_id + "|" + str(s) + m.name, def, m.mesh.surface_get_material(s), true))
+	var weapons: Dictionary = def.get("weapons", {})
+	for side: String in weapons:
+		var grip: Dictionary = mdl["grip_" + side]
+		var att := BoneAttachment3D.new()
+		att.bone_name = grip["bone"]
+		skel.add_child(att)
+		var w := weapon_scene(weapons[side]).instantiate() as Node3D
+		w.position = grip["pos"]
+		w.rotation_degrees = grip["rot"]
+		w.scale = Vector3.ONE * float(grip["scale"]) * float(def.get("weapon_scale", 1.0))
+		att.add_child(w)
+	_setup_monster_anims(inst, mdl)
+
+## Оружие KayKit: Fantasy Weapons Bits (assets/weapons) или оружие скелетов (assets/enemies/weapons).
+static func weapon_scene(wname: String) -> PackedScene:
+	var p := "res://assets/weapons/%s.gltf" % wname
+	return _scene(p if ResourceLoader.exists(p) else "res://assets/enemies/weapons/%s.gltf" % wname)
+
+static func _monster_color(def: Dictionary, src: Material) -> Color:
+	var mname := src.resource_name if src else ""
+	var mats: Dictionary = def.get("mats", {})
+	if mats.has(mname):
+		return mats[mname]
+	var base := (src as StandardMaterial3D).albedo_color if src is StandardMaterial3D else Color.WHITE
+	return base * def.get("tint", Color.WHITE)
+
+## Материал склеенного меша: цвет из вершин, текстура атласа (если была), матовый, как у KayKit.
+static func _monster_material(key: String, def: Dictionary, src: Material, flat: bool) -> StandardMaterial3D:
+	if _material_cache.has(key):
+		return _material_cache[key]
+	var mat := StandardMaterial3D.new()
+	mat.roughness = 1.0
+	mat.metallic = 0.0
+	if src is StandardMaterial3D and (src as StandardMaterial3D).albedo_texture:
+		mat.albedo_texture = (src as StandardMaterial3D).albedo_texture
+	if flat:
+		mat.albedo_color = _monster_color(def, src)
+	else:
+		mat.vertex_color_use_as_albedo = true
+		mat.vertex_color_is_srgb = true
+	if def.has("glow"):
+		mat.emission_enabled = true
+		mat.emission = def["glow"]
+		mat.emission_energy_multiplier = float(def.get("glow_energy", 0.25))
+	_material_cache[key] = mat
+	return mat
+
+static func _merge_monster(skel: Skeleton3D, key: String, def: Dictionary) -> bool:
+	var parts: Array = []
+	for c in skel.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).skin != null:
+			parts.append(c)
+	if parts.is_empty():
+		return false
+	var first: MeshInstance3D = parts[0]
+	if not _merged.has(key):
+		# у частей могут быть разные Skin (тело и оружие) — переводим индексы костей в Skin первой части
+		var skin0: Skin = first.skin
+		var bind_of := {}
+		for i in skin0.get_bind_count():
+			bind_of[skin0.get_bind_name(i) if skin0.get_bind_name(i) != &"" else str(skin0.get_bind_bone(i))] = i
+		var verts := PackedVector3Array()
+		var normals := PackedVector3Array()
+		var uvs := PackedVector2Array()
+		var colors := PackedColorArray()
+		var bones := PackedInt32Array()
+		var weights := PackedFloat32Array()
+		var indices := PackedInt32Array()
+		var tex_mat: Material = null
+		for p: MeshInstance3D in parts:
+			var remap := PackedInt32Array()
+			for i in p.skin.get_bind_count():
+				var bn: String = p.skin.get_bind_name(i) if p.skin.get_bind_name(i) != &"" else str(p.skin.get_bind_bone(i))
+				remap.append(int(bind_of.get(bn, 0)))
+			for s in p.mesh.get_surface_count():
+				var a := p.mesh.surface_get_arrays(s)
+				var src_mat := p.mesh.surface_get_material(s)
+				if p.get_surface_override_material(s):
+					src_mat = p.get_surface_override_material(s)
+				if src_mat is StandardMaterial3D and (src_mat as StandardMaterial3D).albedo_texture:
+					tex_mat = src_mat
+				var n: int = (a[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+				var b: PackedInt32Array = a[Mesh.ARRAY_BONES]
+				if b.size() != n * 4:
+					return false      # 8 весов на вершину — не склеиваем
+				var base := verts.size()
+				verts.append_array(a[Mesh.ARRAY_VERTEX])
+				normals.append_array(a[Mesh.ARRAY_NORMAL])
+				if a[Mesh.ARRAY_TEX_UV] != null:
+					uvs.append_array(a[Mesh.ARRAY_TEX_UV])
+				else:
+					var z := PackedVector2Array()
+					z.resize(n)
+					uvs.append_array(z)
+				var col := _monster_color(def, src_mat)
+				for i in n:
+					colors.append(col)
+				for i in b.size():
+					bones.append(remap[b[i]] if b[i] < remap.size() else 0)
+				weights.append_array(a[Mesh.ARRAY_WEIGHTS])
+				for i: int in a[Mesh.ARRAY_INDEX]:
+					indices.append(i + base)
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_BONES] = bones
+		arrays[Mesh.ARRAY_WEIGHTS] = weights
+		arrays[Mesh.ARRAY_INDEX] = indices
+		var merged := ArrayMesh.new()
+		merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		merged.surface_set_material(0, _monster_material(key + "|merged", def, tex_mat, false))
+		_merged[key] = merged
+	var mi := MeshInstance3D.new()
+	mi.name = "MergedBody"
+	mi.mesh = _merged[key]
+	mi.skin = first.skin
+	mi.skeleton = NodePath("..")
+	skel.add_child(mi)
+	for p in parts:
+		skel.remove_child(p)
+		p.free()
+	return true
+
+## Короткие имена анимаций («CharacterArmature|Run» → «Run») и зацикливание — один раз на библиотеку.
+static func _setup_monster_anims(inst: Node, mdl: Dictionary) -> void:
+	var ap := find_anim(inst)
+	if ap == null:
+		return
+	var lib := ap.get_animation_library("")
+	if lib == null or _looped.has(lib.get_instance_id()):
+		return
+	_looped[lib.get_instance_id()] = true
+	for n: StringName in lib.get_animation_list():
+		var short := String(n).get_slice("|", String(n).get_slice_count("|") - 1)
+		if not lib.has_animation(short):
+			lib.add_animation(short, lib.get_animation(n))
+	var aset: Dictionary = GameData.ANIM_SETS[mdl["set"]]
+	for k in ["idle", "run"]:
+		if lib.has_animation(aset[k]):
+			lib.get_animation(aset[k]).loop_mode = Animation.LOOP_LINEAR
+
+## Анимация KayKit, которую просит логика мобов («Running_A», «2H_Melee_Attack_Chop»…) → анимация монстра.
+## Сначала по действию (бег, удар, каст…), затем замены из данных моба (anims).
+static var _anim_alias: Dictionary = {}
+
+static func monster_anim(mob_id: String, kaykit_name: String) -> String:
+	var key := mob_id + "|" + kaykit_name
+	if _anim_alias.has(key):
+		return _anim_alias[key]
+	var def: Dictionary = GameData.MOBS[mob_id]
+	var aset: Dictionary = GameData.ANIM_SETS[GameData.MONSTER_MODELS[def["model"]]["set"]]
+	var act := "idle"
+	var n := kaykit_name
+	if n.begins_with("Death"):
+		act = "death"
+	elif n.begins_with("Hit"):
+		act = "hit"
+	elif n.begins_with("Running") or n.begins_with("Walking"):
+		act = "run"
+	elif "Attack" in n or "Shoot" in n or n == "Throw":
+		act = "attack"
+	elif n.begins_with("Spellcast") or n == "Interact":
+		act = "cast"
+	elif n == "Cheer" or n.begins_with("Spawn"):
+		act = "spawn"
+	var over: Dictionary = def.get("anims", {})
+	var out: String = over.get(act, aset.get(act, aset["idle"]))
+	_anim_alias[key] = out
+	return out
 
 static func find_anim(model: Node) -> AnimationPlayer:
 	return model.find_child("AnimationPlayer", true, false) as AnimationPlayer
