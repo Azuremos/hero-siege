@@ -18,6 +18,9 @@ const ACTION_ANIMS := {
 	"wand": "Spellcast_Shoot", "hit": "Hit_A", "spin": "2H_Melee_Attack_Spinning",
 }
 
+## Двуручные удары, если в руках двуручное оружие (см. update_weapon_visual).
+const ACTION_ANIMS_2H := {"melee": "2H_Melee_Attack_Slice", "melee2": "2H_Melee_Attack_Chop"}
+
 var world: Node3D
 var hero_id := 0
 var peer_id := 0
@@ -41,6 +44,7 @@ var net_buffs: Array = []
 var net_respawn_left := 0.0
 
 var model: Node3D
+var two_hand := false     # в руках двуручное оружие
 var anim: AnimationPlayer
 var controller: Node = null
 var anim_state: int = A.IDLE
@@ -110,20 +114,23 @@ func _sync_gear_procs() -> void:
 			procs.append(pd)
 	unit.mods["procs"] = procs
 
-## Внешний вид: воин с оружием в левой руке держит второй топор вместо щита.
-func update_weapon_visual(dual: bool) -> void:
-	if class_id != "warrior" or model == null:
+## Внешний вид по снаряжению: в правой руке — модель надетого оружия (ступень металла, качество),
+## в левой — второе оружие воина с талантом (вместо щита). Без вещи — оружие класса по умолчанию.
+## Вызывается при смене снаряжения (economy.ev_appearance), не каждый кадр.
+func update_weapon_visual(dual: bool, main_id: String = "", off_id: String = "") -> void:
+	if model == null:
 		return
-	var skel := model.find_child("Skeleton3D", true, false)
-	if skel == null:
-		return
-	for att in skel.get_children():
-		if att is BoneAttachment3D and att.bone_name == "handslot.l":
-			for m in att.get_children():
-				if m.name == "1H_Axe_Offhand":
-					(m as Node3D).visible = dual
-				elif m.name == "Barbarian_Round_Shield":
-					(m as Node3D).visible = not dual
+	var defaults: Array = GameData.CLASSES[class_id]["show"]
+	var main_look := GameData.ItemData.look(main_id)
+	two_hand = bool(main_look.get("two_hand", false))
+	ModelFactory.set_hand_item(model, "r", main_look, defaults)
+	var left := defaults.duplicate()
+	if class_id == "warrior" and dual:
+		left = ["1H_Axe_Offhand"]
+	if two_hand:
+		left = []           # двуручное: левая рука пуста — ни щита, ни книги
+		dual = false
+	ModelFactory.set_hand_item(model, "l", GameData.ItemData.look(off_id) if dual else {}, left)
 
 func apply_level_stats(full_restore: bool) -> void:
 	var cls: Dictionary = GameData.CLASSES[class_id]
@@ -443,6 +450,8 @@ func play_action(key: String) -> void:
 	if not alive_visual:
 		return
 	var n: String = ACTION_ANIMS.get(key, "Spellcast_Shoot")
+	if two_hand and ACTION_ANIMS_2H.has(key):
+		n = ACTION_ANIMS_2H[key]
 	if class_id == "paladin" and (key == "shoot" or key == "cast"):
 		n = "Spellcast_Shoot"
 	if anim and anim.has_animation(n):

@@ -144,6 +144,83 @@ static func _merge_skinned_parts(skel: Skeleton3D, key: String) -> void:
 		skel.remove_child(p)
 		p.free()
 
+# ---------------------------------------------------------------- оружие героя по надетой вещи
+## Рука героя KayKit (handslot.r / handslot.l): если look не пуст — родные предметы модели в этой руке прячутся
+## и в руку ставится модель вещи (оттенок металла по ступени, свечение по качеству). Пустой look — облик класса
+## по умолчанию: видны предметы из defaults (show класса).
+static func set_hand_item(model: Node3D, side: String, look: Dictionary, defaults: Array) -> void:
+	var skel := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skel == null:
+		return
+	for att in skel.get_children():
+		if not (att is BoneAttachment3D and att.bone_name == "handslot." + side):
+			continue
+		var old := att.get_node_or_null("ItemWeapon")
+		if old:
+			att.remove_child(old)
+			old.queue_free()
+		for m in att.get_children():
+			(m as Node3D).visible = look.is_empty() and defaults.has(m.name)
+		if look.is_empty():
+			return
+		var w := weapon_scene(look["model"]).instantiate() as Node3D
+		w.name = "ItemWeapon"
+		w.scale = Vector3.ONE * 0.8      # оружие Fantasy Weapons Bits крупнее родного оружия героев KayKit
+		att.add_child(w)
+		var q: int = look["q"]
+		var key := "item|%s|%s|%d" % [look["model"], str(look["tint"]), q]
+		for mi in w.find_children("*", "MeshInstance3D", true, false):
+			var m := mi as MeshInstance3D
+			for s in m.mesh.get_surface_count():
+				m.set_surface_override_material(s, _item_material(key + "|" + str(s), m.mesh.surface_get_material(s), look["tint"], q))
+		if q >= 4:
+			w.add_child(_legend_sparks())
+		return
+
+static func _item_material(key: String, src: Material, tint: Color, q: int) -> Material:
+	if _material_cache.has(key):
+		return _material_cache[key]
+	var mat := (src.duplicate() if src is StandardMaterial3D else StandardMaterial3D.new()) as StandardMaterial3D
+	mat.albedo_color = mat.albedo_color * tint
+	var glow: Color = GameData.ItemData.QUALITY_GLOW.get(q, Color.BLACK)
+	if q == 3:
+		mat.albedo_color = mat.albedo_color.lerp(Color(0.45, 0.25, 0.95), 0.45)   # эпическое — фиолетовое, не розовое
+	if q >= 3:
+		mat.emission_enabled = true
+		mat.emission = glow
+		mat.emission_energy_multiplier = 0.45 if q == 3 else 0.8
+	_material_cache[key] = mat
+	return mat
+
+## Искры легендарного оружия: немного частиц на GPU.
+static func _legend_sparks() -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	p.name = "LegendSparks"
+	p.amount = 12
+	p.lifetime = 0.9
+	p.local_coords = false
+	p.position.y = 0.5
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(0.08, 0.4, 0.08)
+	pm.gravity = Vector3(0, 0.6, 0)
+	pm.initial_velocity_min = 0.05
+	pm.initial_velocity_max = 0.25
+	pm.color = Color(1.0, 0.7, 0.25)
+	p.process_material = pm
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.06, 0.06)
+	var sm := StandardMaterial3D.new()
+	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	sm.vertex_color_use_as_albedo = true
+	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	sm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	qm.material = sm
+	p.draw_pass_1 = qm
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
 # ---------------------------------------------------------------- монстры (src «monster»)
 ## Модели Quaternius: своя схема костей и свои анимации (MobData.MODELS, ANIM_SETS).
 ## Части тела с разными материалами склеиваются в один меш, цвет материала — в вершинах:
@@ -153,7 +230,7 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 	var inst := _scene("res://assets/monsters/%s.glb" % def["model"]).instantiate() as Node3D
 	inst.scale = Vector3.ONE * float(mdl["fit"])
 	inst.position.y = float(mdl.get("lift", 0.0))
-	inst.rotation_degrees.y = float(mdl.get("yaw", 0.0))
+	inst.rotation_degrees.y = 180.0 + float(mdl.get("yaw", 0.0))   # как у KayKit: модель смотрит вдоль +Z
 	holder.add_child(inst)
 	var skel := inst.find_child("Skeleton3D", true, false) as Skeleton3D
 	for hide_name: String in def.get("hide", []):

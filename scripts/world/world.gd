@@ -448,6 +448,25 @@ func _process(delta: float) -> void:
 			h.bag_add(GameData.make_gear("staff", 12, 4))
 			h.bag_add(GameData.make_gear("robe", 12, 3))
 			economy._sync(h)
+	# --outfit=<уровень>:<качество>: надеть оружие класса (у каждого героя — своё по порядку шаблонов) и броню
+	if Net.cli.has("outfit") and is_server() and _test_t >= 1.5 and _test_t - delta < 1.5:
+		var op: PackedStringArray = (Net.cli["outfit"] + ":").split(":")
+		var oil: int = int(op[0]) if op[0].is_valid_int() else 25
+		var oq: int = int(op[1]) if op[1].is_valid_int() else 4
+		var hi := 0
+		for h in heroes.values():
+			var bases: Array = []
+			for b in GameData.ItemData.TEMPLATES:
+				if GameData.ItemData.TEMPLATES[b].get("classes", []).has(h.class_id):
+					bases.append(b)
+			bases = [bases[hi % bases.size()], "plate" if h.class_id in ["warrior", "paladin"] else "robe", "helm", "boots"]
+			hi += 1
+			for b in bases:
+				h.bag_add(GameData.make_gear(b, oil, oq))
+			for i in h.bag.size():
+				if h.bag[i] != null and GameData.item(h.bag[i]["id"])["kind"] == "gear":
+					economy._equip(h, i)
+			print("OUTFIT ", h.class_id, " ", h.equip)
 	if Net.cli.has("equip") and is_server() and _test_t >= float(Net.cli["equip"]) and _test_t - delta < float(Net.cli["equip"]):
 		for h in heroes.values():
 			for i in h.bag.size():

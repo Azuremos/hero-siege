@@ -72,12 +72,13 @@ static func material(ilvl: int, gender: int) -> String:
 
 ## Шаблоны снаряжения: g — род (0 м, 1 ж, 2 с, 3 мн), stats — на 1-м уровне белого качества,
 ## role — какие дополнительные свойства подходят (phys / caster / any), suffix — добавлять ли «…медведя».
+## models — модель в руке героя по ступени металла (TIERS), файлы из assets/weapons (KayKit Fantasy Weapons Bits).
 const TEMPLATES := {
-	"staff": {"name": "посох", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "staff", "role": "caster", "stats": {"int": 4, "spi": 2, "sp": 6}},
-	"wand": {"name": "жезл", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "wand", "role": "caster", "stats": {"int": 3, "sp": 8}},
-	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}},
-	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}},
-	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}},
+	"staff": {"name": "посох", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "staff", "role": "caster", "stats": {"int": 4, "spi": 2, "sp": 6}, "models": ["staff_A", "staff_A", "staff_B", "staff_B", "staff_B", "staff_B"]},
+	"wand": {"name": "жезл", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "wand", "role": "caster", "stats": {"int": 3, "sp": 8}, "models": ["wand_A"]},
+	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_C", "sword_D", "sword_E"]},
+	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
+	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
 	"robe": {"name": "мантия", "g": 1, "slot": "chest", "icon": "robe", "role": "caster", "stats": {"int": 3, "spi": 3, "sta": 2, "armor": 0.01}},
 	"mail": {"name": "кольчуга", "g": 1, "slot": "chest", "icon": "mail", "role": "phys", "stats": {"str": 2, "agi": 2, "sta": 3, "armor": 0.02}},
 	"plate": {"name": "кираса", "g": 1, "slot": "chest", "icon": "plate", "role": "phys", "stats": {"str": 3, "sta": 4, "armor": 0.03}},
@@ -292,3 +293,40 @@ const CONSUMABLES := {
 
 const STACK := 20
 const SELL_RATIO := 0.25
+
+# ---------------------------------------------------------------- облик вещи на герое
+
+## Оттенок металла по ступени (TIERS): медь, железо, сталь, мифрил, руны, драконья.
+const TIER_TINT := [Color(0.95, 0.62, 0.42), Color(0.72, 0.72, 0.75), Color(1.0, 1.0, 1.0),
+	Color(0.78, 0.92, 1.05), Color(0.75, 0.8, 1.15), Color(1.1, 0.7, 0.5)]
+## Двуручные модели: левая рука пуста (без щита, книги и второго оружия), удары — двуручные.
+const TWO_HANDED := ["sword_D", "sword_E", "axe_C", "hammer_C", "staff_A", "staff_B", "halberd", "spear_A"]
+
+## Свечение по качеству: фиолетовое мерцает, легендарное светится (и искрит).
+const QUALITY_GLOW := {3: Color(0.42, 0.18, 1.0), 4: Color(1.0, 0.55, 0.15)}
+
+static func tier_index(ilvl: int) -> int:
+	var idx := 0
+	for i in TIERS.size():
+		if ilvl >= int(TIERS[i]["level"]):
+			idx = i
+	return idx
+
+## Как выглядит вещь в руке: модель, оттенок металла, качество. {} — у вещи нет модели.
+static func look(id: String) -> Dictionary:
+	if id == "" or not is_gear_id(id):
+		return {}
+	var it := describe(id)
+	if it.is_empty():
+		return {}
+	var tp: Dictionary = TEMPLATES.get(it["base"], {})
+	if not tp.has("models"):
+		return {}
+	var ti := tier_index(int(it["ilvl"]))
+	var models: Array = tp["models"]
+	var mdl: String = models[mini(ti, models.size() - 1)]
+	return {"model": mdl, "tint": TIER_TINT[ti], "q": int(it["q"]), "two_hand": TWO_HANDED.has(mdl)}
+
+## Двуручная ли вещь (по её модели).
+static func is_two_handed(id: String) -> bool:
+	return bool(look(id).get("two_hand", false))

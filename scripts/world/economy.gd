@@ -240,8 +240,23 @@ func _equip(hero, idx: int) -> void:
 		return _say(hero, "Нужен %d уровень" % it["level"])
 	var slot: String = it["slot"]
 	# воин с «Боем двумя руками»: второе оружие идёт в левую руку
-	if slot == "weapon" and hero.unit.flag("dual_wield") > 0.0 and hero.equip.has("weapon") and not hero.equip.has("offhand"):
+	# двуручное оружие во вторую руку не берётся и само занимает обе руки
+	var two: bool = slot == "weapon" and GameData.ItemData.is_two_handed(it["id"])
+	if slot == "weapon" and not two and hero.unit.flag("dual_wield") > 0.0 and hero.equip.has("weapon") \
+			and not hero.equip.has("offhand") and not GameData.ItemData.is_two_handed(hero.equip["weapon"]):
 		slot = "offhand"
+	if two and hero.equip.has("offhand"):
+		var free: int = hero.bag.find(null)
+		if free < 0 or free == idx:
+			free = -1
+			for i in hero.bag.size():
+				if hero.bag[i] == null and i != idx:
+					free = i
+					break
+		if free < 0:
+			return _say(hero, "Сумка полна: некуда убрать второе оружие")
+		hero.bag[free] = {"id": hero.equip["offhand"], "n": 1}
+		hero.equip.erase("offhand")
 	var old = hero.equip.get(slot, null)
 	hero.equip[slot] = it["id"]
 	hero.bag[idx] = {"id": old, "n": 1} if old != null else null
@@ -288,7 +303,7 @@ func check_offhand(hero) -> void:
 		_sync(hero)
 
 func _sync(hero) -> void:
-	ev_appearance.rpc(hero.hero_id, hero.equip.has("offhand"))
+	ev_appearance.rpc(hero.hero_id, hero.equip.has("offhand"), str(hero.equip.get("weapon", "")), str(hero.equip.get("offhand", "")))
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_inventory(hero.hero_id, hero.bag, hero.equip)
 	else:
@@ -440,10 +455,10 @@ func ev_loot_remove(lid: int) -> void:
 	_loot_nodes.erase(lid)
 
 @rpc("authority", "call_local", "reliable")
-func ev_appearance(hero_id: int, dual: bool) -> void:
+func ev_appearance(hero_id: int, dual: bool, main_id: String, off_id: String) -> void:
 	var h = world.heroes.get(hero_id, null)
 	if h:
-		h.update_weapon_visual(dual)
+		h.update_weapon_visual(dual, main_id, off_id)
 # ---------------------------------------------------------------- уровень добычи
 
 ## Уровни живых героев рядом с местом выпадения (если рядом никого — всех героев).
