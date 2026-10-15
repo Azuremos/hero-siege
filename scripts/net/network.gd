@@ -26,7 +26,39 @@ var cli: Dictionary = {}
 ## Настройки партии (выбирает хост): число волн, направления, длительность передышки (сек.).
 var settings: Dictionary = {"waves": 20, "lanes": 4, "break": 60}
 
+## Личность игрока: стабильный id (UUID) в user://profile.cfg. peer_id — только транспорт, ключ состояния — uid.
+## Там же — адрес последнего хоста и флаг «партия оборвалась» (кнопка «Переподключиться»).
+const PROFILE_PATH := "user://profile.cfg"
+var uid := ""
+
+func _load_profile() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(PROFILE_PATH)
+	uid = str(cfg.get_value("player", "uid", ""))
+	if uid.length() < 8:
+		uid = new_uid()
+		cfg.set_value("player", "uid", uid)
+		cfg.save(PROFILE_PATH)
+
+static func new_uid() -> String:
+	var c := Crypto.new()
+	return c.generate_random_bytes(16).hex_encode()
+
+func profile_get(key: String, def: Variant) -> Variant:
+	var cfg := ConfigFile.new()
+	cfg.load(PROFILE_PATH)
+	return cfg.get_value("player", key, def)
+
+func profile_set(key: String, value: Variant) -> void:
+	if cli.has("playerid"):
+		return      # тестовые запуски не трогают профиль
+	var cfg := ConfigFile.new()
+	cfg.load(PROFILE_PATH)
+	cfg.set_value("player", key, value)
+	cfg.save(PROFILE_PATH)
+
 func _ready() -> void:
+	_load_profile()
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_ok)

@@ -437,7 +437,7 @@ func _toggle_keys() -> void:
 
 func _apply_local_info() -> void:
 	var n := _name_edit.text.strip_edges()
-	Net.local_info = {"name": n if n != "" else "Герой", "class": _selected_class(), "race": _selected_race()}
+	Net.local_info = {"name": n if n != "" else "Герой", "class": _selected_class(), "race": _selected_race(), "uid": Net.uid}
 	Net.settings = {"waves": int(_waves_option.get_item_metadata(_waves_option.selected)), "lanes": _lanes_option.selected + 1,
 		"break": int(_break_option.get_item_metadata(_break_option.selected)),
 		"marks_host_only": _marks_check.button_pressed or _cli.has("markshost"),
@@ -563,6 +563,8 @@ func _parse_cli() -> void:
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_cli[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	Net.cli = _cli
+	if _cli.has("playerid"):
+		Net.uid = str(_cli["playerid"])      # тест: свой id игрока (переподключение тем же игроком)
 
 func _run_cli() -> void:
 	if _cli.is_empty():
