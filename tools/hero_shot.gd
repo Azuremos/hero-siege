@@ -42,9 +42,6 @@ func _ready() -> void:
 			if map:
 				var an: String = cli.get("anim", "idle")
 				map.play(ModelFactory.monster_anim(mid, "Idle") if an == "idle" else an)
-				if cli.has("animt"):       # --animt= — кадр анимации (сек.), например середина удара
-					map.seek(float(cli["animt"]), true)
-					map.pause()
 			n += 1
 	var hi: int = int(op[2]) if op[2].is_valid_int() else 0
 	for cid: String in classes:
