@@ -42,6 +42,12 @@ static func build_hero(class_id: String, race_id: String) -> Node3D:
 	var recolor_key := "%s|%s|%s" % [cls["model"], cls["recolor"], race.get("skin", "")]
 	if cls["recolor"] != "" or race.get("skin", "") != "":
 		_apply_recolor(inst, recolor_key, cls["recolor"], race.get("skin", ""))
+	if skel:
+		# без шлема видна голова: головной убор показывает только надетая вещь
+		for att in skel.get_children():
+			if att is BoneAttachment3D and att.bone_name == "head":
+				for m in att.get_children():
+					(m as Node3D).visible = false
 	holder.set_meta("class_id", class_id)
 	holder.set_meta("race_id", race_id)
 	_setup_anims(inst)
@@ -153,9 +159,9 @@ static func apply_outfit(model: Node3D, class_id: String, looks: Dictionary) -> 
 			continue
 		var bn: String = att.bone_name
 		if bn == "head":
-			# без шлема — родной головной убор класса (если класс его не прячет)
+			# без шлема видна голова: родные головные уборы модели показывает только надетая вещь
 			for m in att.get_children():
-				(m as Node3D).visible = not helm.has("wear") and not cls["hide"].has(m.name)
+				(m as Node3D).visible = false
 			if helm.has("wear") and not hooded:
 				var h := _donor(str(hw["head"]))
 				if h:
