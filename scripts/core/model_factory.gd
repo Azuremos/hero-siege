@@ -608,7 +608,8 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 		skel.add_child(att)
 		var w := weapon_scene(weapons[side]).instantiate() as Node3D
 		var sc := float(grip["scale"]) * float(def.get("weapon_scale", 1.0)) / (arm * float(mdl["fit"]))
-		var fist_xf := _fist_grip(skel, grip["bone"], side.to_upper())
+		var hand: String = str(grip["bone"]).get_slice(".", 1)      # сторона кости, а не ключа данных
+		var fist_xf := _fist_grip(skel, grip["bone"], hand)
 		if fist_xf != Transform3D.IDENTITY:
 			# как у героев KayKit: рукоять поперёк кулака (от мизинца к большому пальцу), клинок — со стороны
 			# большого пальца; крепление к кисти (предплечью), поэтому оружие идёт за ударом в любой анимации
@@ -620,7 +621,7 @@ static func _build_monster(def: Dictionary, mob_id: String, holder: Node3D) -> v
 		att.add_child(w)
 		# пальцы этой руки — в кулак вокруг рукояти
 		var fist := FistModifier.new()
-		fist.setup(skel, side.to_upper())
+		fist.setup(skel, hand)
 		skel.add_child(fist)
 	_setup_monster_anims(inst, mdl)
 
