@@ -50,6 +50,9 @@ static func build_hero(class_id: String, race_id: String) -> Node3D:
 static func build_mob(mob_id: String) -> Node3D:
 	var def: Dictionary = GameData.MOBS[mob_id]
 	var holder := Node3D.new()
+	if def.get("src", "enemy") == "object":
+		_build_object(def, holder)
+		return holder
 	if def.get("src", "enemy") == "monster":
 		_build_monster(def, mob_id, holder)
 		holder.scale = Vector3.ONE * float(def.get("scale", 1.0))
@@ -555,3 +558,68 @@ static func _faction_pixel(rules: Dictionary, c: Color, h: float, s: float, v: f
 		return c
 	var r: Array = rules[key]
 	return Color.from_hsv(float(r[0]), float(r[1]), clampf(v * float(r[2]), 0.0, 1.0), c.a)
+
+## Объекты боссов (филактерия, портал, ледяная гробница) — простые светящиеся фигуры без анимаций.
+## Временная замена: нужен ассет.
+static func _build_object(def: Dictionary, holder: Node3D) -> void:
+	var col: Color = def.get("color", Color(0.5, 1.0, 0.6))
+	var mi := MeshInstance3D.new()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = col
+	mat.emission_enabled = true
+	mat.emission = col
+	mat.emission_energy_multiplier = 1.6
+	match def.get("shape", "crystal"):
+		"crystal":
+			var pm := PrismMesh.new()
+			pm.size = Vector3(0.9, 2.2, 0.9)
+			mi.mesh = pm
+			mi.position.y = 1.4
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.albedo_color.a = 0.85
+			var base := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.5
+			cm.bottom_radius = 0.7
+			cm.height = 0.4
+			base.mesh = cm
+			base.position.y = 0.2
+			var bm := StandardMaterial3D.new()
+			bm.albedo_color = Color(0.3, 0.3, 0.32)
+			base.material_override = bm
+			holder.add_child(base)
+		"portal":
+			var tm := TorusMesh.new()
+			tm.inner_radius = 1.1
+			tm.outer_radius = 1.4
+			mi.mesh = tm
+			mi.rotation.x = PI * 0.5
+			mi.position.y = 1.5
+			mat.emission_energy_multiplier = 3.0
+			var disc := MeshInstance3D.new()
+			var dm := CylinderMesh.new()
+			dm.top_radius = 1.1
+			dm.bottom_radius = 1.1
+			dm.height = 0.05
+			disc.mesh = dm
+			disc.rotation.x = PI * 0.5
+			disc.position.y = 1.5
+			var dmat := StandardMaterial3D.new()
+			dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			dmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			dmat.albedo_color = Color(col.r * 0.4, col.g * 0.6, col.b * 0.3, 0.7)
+			disc.material_override = dmat
+			holder.add_child(disc)
+		"ice":
+			var cy := CylinderMesh.new()
+			cy.top_radius = 0.8
+			cy.bottom_radius = 1.0
+			cy.height = 2.6
+			cy.radial_segments = 6
+			mi.mesh = cy
+			mi.position.y = 1.3
+			mi.material_override = Vfx.ice_material()
+			holder.add_child(mi)
+			return
+	mi.material_override = mat
+	holder.add_child(mi)

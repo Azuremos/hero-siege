@@ -698,18 +698,23 @@ static func end_zone(world: Node3D, id: int) -> void:
 const TELEGRAPH_SHADER := preload("res://shaders/telegraph.gdshader")
 
 ## Фигура на земле, заливка растёт к моменту удара (через dur секунд), затем быстро гаснет.
-## shape: "circle" (pos — центр) или "cone" (pos — моб, yaw — направление, angle — полный угол, градусы).
+## shape: "circle" (pos — центр), "cone" (pos — моб, yaw — направление, angle — полный угол, градусы),
+## "line" (полоса от pos вдоль yaw: radius — длина, angle — ширина), "ring" (кольцо: angle — внутренний радиус).
 static func telegraph(world: Node3D, shape: String, pos: Vector3, yaw: float, radius: float, angle: float, dur: float, col: Color = Color(1.0, 0.25, 0.1)) -> void:
 	var n := _timed(world, Vector3(pos.x, 0.07, pos.z), dur + 0.25)
 	n.rotation.y = yaw
 	var mi := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(radius * 2.0, radius * 2.0)
+	if shape == "line":
+		pm.size = Vector2(angle, radius)       # полоса: angle — ширина, radius — длина вперёд от pos
+		mi.position.z = -radius * 0.5
 	mi.mesh = pm
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var mat := ShaderMaterial.new()
 	mat.shader = TELEGRAPH_SHADER
-	mat.set_shader_parameter("shape", 1.0 if shape == "cone" else 0.0)
+	mat.set_shader_parameter("shape", {"cone": 1.0, "line": 2.0, "ring": 3.0}.get(shape, 0.0))
+	mat.set_shader_parameter("inner", angle / maxf(radius, 0.01) if shape == "ring" else 0.0)
 	mat.set_shader_parameter("half_angle", deg_to_rad(angle) * 0.5)
 	mat.set_shader_parameter("color", col)
 	mat.set_shader_parameter("progress", 0.0)
@@ -729,3 +734,64 @@ static func hazard_fire(world: Node3D, pos: Vector3, r: float, dur: float) -> vo
 	n.add_child(ring)
 	particles(n, COL_FIRE, 14, 0.9, {"shape": "ring", "radius": r * 0.7, "vmin": 0.6, "vmax": 1.6, "spread": 15.0,
 		"gravity": Vector3(0, 2.5, 0), "smin": 0.4, "smax": 0.9, "aabb": r + 2.0})
+
+## Расходящаяся волна землетрясения: через delay сек. гребень шириной width бежит от pos со скоростью speed до max_r.
+static func shockwave(world: Node3D, pos: Vector3, delay: float, speed: float, width: float, max_r: float) -> void:
+	var life := (max_r - 2.0) / maxf(speed, 0.1)
+	var n := _timed(world, Vector3(pos.x, 0.08, pos.z), delay + life + 0.1)
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(max_r * 2.0, max_r * 2.0)
+	mi.mesh = pm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := ShaderMaterial.new()
+	mat.shader = TELEGRAPH_SHADER
+	mat.set_shader_parameter("shape", 3.0)
+	mat.set_shader_parameter("progress", 1.0)
+	mat.set_shader_parameter("color", Color(1.0, 0.6, 0.15))
+	mat.set_shader_parameter("inner", 0.0)
+	mat.set_shader_parameter("outer", 0.0)
+	mi.material_override = mat
+	n.add_child(mi)
+	var set_r := func(r: float):
+		mat.set_shader_parameter("inner", maxf(0.0, r - width * 0.5) / max_r)
+		mat.set_shader_parameter("outer", (r + width * 0.5) / max_r)
+	var tw := n.create_tween()
+	tw.tween_interval(maxf(delay, 0.0))
+	tw.tween_callback(func(): Sfx.play_at("boss_roar", pos, -6.0, 1.6))
+	tw.tween_method(set_r, 2.0, max_r, life)
+
+## Мина механоогра: тёмный корпус с мигающим красным огоньком (пока не взорвётся или не пропадёт).
+static func mine(world: Node3D, pos: Vector3) -> Node3D:
+	var n := Node3D.new()
+	world.vfx_root.add_child(n)
+	n.global_position = Vector3(pos.x, 0.0, pos.z)
+	var body := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.35
+	cm.bottom_radius = 0.45
+	cm.height = 0.22
+	body.mesh = cm
+	body.position.y = 0.11
+	var bm := StandardMaterial3D.new()
+	bm.albedo_color = Color(0.25, 0.25, 0.28)
+	bm.metallic = 0.6
+	body.material_override = bm
+	n.add_child(body)
+	var lamp := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.1
+	sm.height = 0.2
+	lamp.mesh = sm
+	lamp.position.y = 0.26
+	var lm := StandardMaterial3D.new()
+	lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lm.albedo_color = Color(1, 0.15, 0.1)
+	lm.emission_enabled = true
+	lm.emission = Color(1, 0.1, 0.05)
+	lamp.material_override = lm
+	n.add_child(lamp)
+	var tw := n.create_tween().set_loops()
+	tw.tween_property(lm, "emission_energy_multiplier", 6.0, 0.4)
+	tw.tween_property(lm, "emission_energy_multiplier", 0.5, 0.4)
+	return n

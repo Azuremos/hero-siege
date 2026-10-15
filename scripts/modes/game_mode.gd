@@ -60,6 +60,10 @@ func hero_spawn_yaw() -> float:
 func respawn_point(_hero) -> Vector3:
 	return hero_spawn_point(0, 1)
 
+## Где держится бот автотестов (--bot), если не задан --post.
+func bot_post() -> Vector3:
+	return Vector3(0, 0, 26)
+
 # ---------------------------------------------------------------- события (сервер)
 
 func on_mob_killed(_u: Unit, _killer: Unit, _boss: bool) -> void:

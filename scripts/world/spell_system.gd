@@ -789,6 +789,13 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					if burn > 0.0:
 						deal_damage(caster, target, burn * 0.5, "shadow", false, sid)
 						world.fx_number(target.id, burn, "mana_burn", "shadow", caster.id if caster else 0, false)
+			"mana_burn_pct":
+				# выжигание доли запаса маны (Буря Скверны); ярость воина не трогает
+				if target.kind == "hero" and target.resource != "rage":
+					var pburn := minf(target.mana, target.max_mana * float(e["pct"]))
+					target.mana -= pburn
+					if pburn > 0.0:
+						world.fx_number(target.id, pburn, "mana_burn", "shadow", caster.id if caster else 0, false)
 			"knockback":
 				_knockback(caster, target, float(e["dist"]), t)
 			"incapacitate":

@@ -26,7 +26,8 @@ var heroes: Dictionary = {}       # hero_id -> Hero
 var local_hero: CharacterBody3D = null
 
 ## Режимы игры. Выбор режима — Net.settings["mode"]: осада и предпросмотр интерфейса из главного меню.
-const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd"), "preview": preload("res://scripts/modes/preview_mode.gd")}
+const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd"), "preview": preload("res://scripts/modes/preview_mode.gd"),
+	"arena": preload("res://scripts/modes/arena_mode.gd")}
 
 var _snap_accum := 0.0
 var _state_accum := 0.0
@@ -54,7 +55,8 @@ func _ready() -> void:
 	spells = SpellSystemScript.new()
 	spells.name = "Spells"
 	add_child(spells)
-	var mode_script: GDScript = MODES.get(str(Net.settings.get("mode", "siege")), MODES["siege"])
+	var mode_name := "arena" if Net.cli.has("bossarena") else str(Net.settings.get("mode", "siege"))    # --bossarena: босс без осады
+	var mode_script: GDScript = MODES.get(mode_name, MODES["siege"])
 	mode = mode_script.new()
 	mode.name = "Mode"
 	add_child(mode)
@@ -556,7 +558,7 @@ func _process(delta: float) -> void:
 		var types: Array = []
 		for mid in GameData.MOBS:
 			var md: Dictionary = GameData.MOBS[mid]
-			if mid == want or (md.get("faction", "") == want and not md["role"] in ["boss", "test"]) \
+			if mid == want or (md.get("faction", "") == want and not md["role"] in ["boss", "test", "summon"]) \
 					or (want == "bosses" and (md["role"] == "boss" or md.get("boss_look", false))):
 				types.append(mid)
 		var fwd := -local_hero.global_transform.basis.z
@@ -646,6 +648,10 @@ func _update_music(delta: float) -> void:
 	var track := "rest"
 	if mode.is_combat():
 		track = "battle"
+		for bid in mobs.boss_state:
+			if mobs.mobs.has(bid):
+				track = "boss"      # на время боя с боссом — своя музыка
+				break
 	Sfx.play_music(track)
 ## --focustest: клик мышью по кнопкам у панели, закрытие окон, затем Пробел —
 ## герой должен прыгнуть, а окна не открыться (кнопки HUD не берут фокус).

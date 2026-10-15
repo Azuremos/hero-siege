@@ -350,6 +350,27 @@ func roll_loot(pos: Vector3, wave: int, source: String) -> void:
 		_loot[lid] = {"item": id, "pos": p, "until": world.now() + LOOT_TIME}
 		ev_loot_spawn.rpc(lid, id, p)
 
+## Сервер: добыча с босса — одна именная вещь из его списка (главный — эпическая, лейтенант — редкая и выше)
+## плюс обычная добыча босса (две вещи и два зелья).
+func roll_boss_loot(pos: Vector3, wave: int, uniques: Array, rank: String) -> void:
+	roll_loot(pos, wave, "boss")
+	if uniques.is_empty():
+		return
+	var uid: String = uniques[randi() % uniques.size()]
+	var ud: Dictionary = GameData.ItemData.UNIQUES[uid]
+	var q := maxi(int(ud["q"]), GameData.ItemData.roll_quality(GameData.Formulas.typical_level(_levels_near(pos)), "boss", randf()))
+	if rank != "main":
+		q = mini(q, 3)
+	var d: Dictionary = GameData.ItemData.roll(ud["base"], GameData.Formulas.gear_ilvl(wave, _levels_near(pos), "boss") + 1, q, randi() % 1000000)
+	d["unique_id"] = uid
+	var id: String = GameData.ItemData.encode(d)
+	var lid := _next_loot
+	_next_loot += 1
+	var p := pos + Vector3(randf_range(-0.8, 0.8), 0, randf_range(-0.8, 0.8))
+	_loot[lid] = {"item": id, "pos": p, "until": world.now() + LOOT_TIME}
+	ev_loot_spawn.rpc(lid, id, p)
+	world.announce_all("Добыча: %s" % GameData.item(id)["name"], GameData.ItemData.QUALITY[q])
+
 ## Вещь: уровень — по уровню героев рядом (номер волны ограничивает сверху), качество — отдельным броском
 ## по уровню героев и источнику. Требуемый уровень = уровень предмета.
 func _random_gear(wave: int, pos: Vector3, source: String) -> String:

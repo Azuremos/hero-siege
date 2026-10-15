@@ -164,6 +164,7 @@ var _music_name := ""
 var _music_idx := 0
 
 ## Трек из assets/music: menu, battle, rest. Пустое имя — тишина.
+## boss — бой с боссом: пока своего трека нет (нужен ассет), боевой трек ниже и медленнее, с колоколом.
 func play_music(track: String) -> void:
 	if _quitting:
 		return
@@ -179,7 +180,13 @@ func play_music(track: String) -> void:
 		tw.tween_callback(from.stop)
 	if track == "":
 		return
-	var st := load("res://assets/music/%s.mp3" % track) as AudioStreamMP3
+	var file := track
+	to.pitch_scale = 1.0
+	if track == "boss" and not ResourceLoader.exists("res://assets/music/boss.mp3"):
+		file = "battle"
+		to.pitch_scale = 0.84
+		play("bell")
+	var st := load("res://assets/music/%s.mp3" % file) as AudioStreamMP3
 	if st == null:
 		return
 	st.loop = true

@@ -28,6 +28,8 @@ const WAVE_INTERVAL := 42.0
 ## spells/<класс>.gd  — заклинания класса (вместе с заклинаниями из его талантов)
 ## spell_effects.gd   — уровни открытия заклинаний, баффы, проки, автозаклинания
 ## mob_data.gd        — враги четырёх фракций; factions.gd — фракции и стороны; mob_abilities.gd — способности врагов
+## boss_data.gd       — боссы: фазы, механики, реплики, добыча
+## boss_data.gd       — боссы: фазы, механики, реплики, добыча
 ## formulas.gd        — опыт, рост силы, состав волн, сила врагов
 ## talent_data.gd, item_data.gd — таланты и предметы
 
@@ -37,6 +39,7 @@ const MobData := preload("res://scripts/data/mob_data.gd")
 const FactionData := preload("res://scripts/data/factions.gd")
 const MobAbilities := preload("res://scripts/data/mob_abilities.gd")
 const AffixData := preload("res://scripts/data/affixes.gd")
+const BossData := preload("res://scripts/data/boss_data.gd")
 const Formulas := preload("res://scripts/data/formulas.gd")
 const SPELL_FILES := [
 	preload("res://scripts/data/spells/mage.gd"),
@@ -59,6 +62,7 @@ const ANIM_SETS := MobData.ANIM_SETS
 const FACTIONS := FactionData.FACTIONS
 const MOB_ABILITIES := MobAbilities.ABILITIES
 const AFFIXES := AffixData.AFFIXES
+const BOSSES := BossData.BOSSES
 
 # ---------------------------------------------------------------- Заклинания
 # target: enemy | ally | self | ground | wall

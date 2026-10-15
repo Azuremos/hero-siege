@@ -32,7 +32,7 @@ static func wave_plan(wave: int, lane_factions: Array, players: int, final_boss:
 		var roster: Array = []
 		for id in Mobs.MOBS:
 			var d: Dictionary = Mobs.MOBS[id]
-			if d.get("faction", "") == f and not d["role"] in ["boss", "test"] and int(d["min_wave"]) <= wave:
+			if d.get("faction", "") == f and not d["role"] in ["boss", "test", "summon"] and int(d["min_wave"]) <= wave:
 				roster.append(id)
 		var budget := wave_budget(wave, players)
 		var support_cap := 1 + wave / 6
@@ -68,17 +68,18 @@ static func wave_plan(wave: int, lane_factions: Array, players: int, final_boss:
 			if Mobs.MOBS[pick]["role"] == "support":
 				supports += 1
 			list.append([pick, li, ""])
-	# «босс-волна»: у нежити — босс, у остальных фракций — чемпион (элитный с тремя аффиксами)
+	# босс-волна (каждая 5-я): лейтенант одной из сторон по очереди; каждая 10-я и финальная — главный босс.
+	# Остальные стороны выводят чемпиона (элитный с тремя аффиксами).
 	if wave % 5 == 0 or final_boss:
-		var boss_given := false
+		var Bosses = load("res://scripts/data/boss_data.gd")
+		var main := wave % 10 == 0 or final_boss
+		var boss_lane: int = (maxi(wave / (10 if main else 5), 1) - 1) % maxi(lane_factions.size(), 1)
 		for li in lane_factions.size():
-			var fd: Dictionary = Factions.FACTIONS[lane_factions[li]]
-			if not fd["bosses"].is_empty():
-				if not boss_given:
-					list.append([fd["bosses"][1 if wave % 10 == 0 else 0], li, ""])
-					boss_given = true
-			elif fd["champion"] != "":
-				list.append([fd["champion"], li, "champion"])
+			var f: String = lane_factions[li]
+			if li == boss_lane:
+				list.append([Bosses.BY_FACTION[f]["main" if main else "lieutenant"], li, ""])
+			elif Factions.FACTIONS[f]["champion"] != "":
+				list.append([Factions.FACTIONS[f]["champion"], li, "champion"])
 	return {"list": list, "special": special}
 
 static func mob_hp_mult(wave: int, players: int) -> float:

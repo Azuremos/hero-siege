@@ -315,6 +315,10 @@ func _local_move(delta: float) -> void:
 			rotation.y = atan2(-away.x, -away.z)
 		fwd = 1.0
 		strafe = 0.0
+	var rooted: bool = world.now() < _root_until     # ледяная гробница: стоит, но может колдовать
+	if rooted:
+		fwd = 0.0
+		strafe = 0.0
 	var dir := (-transform.basis.z * fwd + transform.basis.x * strafe)
 	if dir.length() > 1.0:
 		dir = dir.normalized()
@@ -322,7 +326,7 @@ func _local_move(delta: float) -> void:
 	velocity.x = dir.x * spd
 	velocity.z = dir.z * spd
 	if is_on_floor():
-		if can_move and c.consume_jump():
+		if can_move and c.consume_jump() and not rooted:
 			velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
@@ -361,9 +365,13 @@ func net_move(p: Vector3, yaw: float, st: int) -> void:
 ## Контроль от врагов (сервер решил — клиент героя выполняет). fear: герой бежит прочь от источника.
 var _fear_until := 0.0
 var _fear_from := Vector3.ZERO
+var _root_until := 0.0
 
 @rpc("authority", "call_local", "reliable")
 func ev_control(kind: String, dur: float, from: Vector3) -> void:
+	if kind == "root":
+		_root_until = world.now() + dur
+		return
 	if kind == "fear":
 		_fear_until = world.now() + dur
 		_fear_from = from

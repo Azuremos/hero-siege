@@ -60,6 +60,11 @@ class Mob:
 	var trail_at := 0.0               # огненный след элитного
 	var stolen := 0
 	var stolen_from := 0
+	# боссы (boss_data.gd): состояние фаз только на сервере
+	var boss: Dictionary = {}
+	var owner := 0                    # кто призвал (босс) — его объекты пропадают вместе с ним
+	var bind := 0                     # ледяная гробница: id вмороженного героя
+	var until := 0.0                  # объект пропадает сам в это время (0 — нет)
 
 var world: Node3D
 var mobs: Dictionary = {}          # id -> Mob (живые)
@@ -170,7 +175,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	m.unit = u
 	m.def = def
 	m.route = source
-	var want_elite: bool = opts.get("champion", false) or (not def.get("boss", false) and (not opts.has("pos") or Net.cli.has("elite")) and def["role"] != "test"
+	var want_elite: bool = opts.get("champion", false) or (not def.get("boss", false) and (not opts.has("pos") or Net.cli.has("elite")) and not def["role"] in ["test", "summon"]
 		and (Net.cli.has("elite") or randf() < GameData.AffixData.elite_chance(wave)))
 	if want_elite:
 		_make_elite(m, opts.get("champion", false), wave)
@@ -184,6 +189,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	m.next_think = t + 1.3 + randf() * 0.4
 	for aid in def.get("abilities", []):
 		m.ab_ready[aid] = t + 2.0 + randf() * 3.0     # не все разом в первую же секунду
+	m.owner = int(opts.get("owner", 0))
 	var nxt: Vector2 = ends[1]
 	world.mode.mob_spawned(m)
 	m.yaw = atan2(-(nxt.x - start.x), -(nxt.y - start.y))
@@ -192,6 +198,8 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	world.units[u.id] = u
 	_make_visual(m)
 	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave, u.affixes, u.elite])
+	if GameData.BOSSES.has(type):
+		_boss_init(m, wave, players, hp_scale, t)
 	return u.id
 
 func kill(u: Unit, killer: Unit) -> void:
@@ -203,7 +211,14 @@ func kill(u: Unit, killer: Unit) -> void:
 	var reward := GameData.AffixData.ELITE_REWARD if u.elite > 0 else 1.0
 	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)) * reward)
 	world.award_kill(u.pos, xp, int(float(m.def["gold"]) * reward))
-	world.economy.roll_loot(u.pos, u.level, "boss" if m.def.get("boss", false) else ("champion" if u.elite == 2 else ("elite" if u.elite == 1 else "mob")))
+	if not m.boss.is_empty():
+		_boss_died(m)
+	elif m.def.get("object", false):
+		pass        # объекты (филактерии, порталы, гробницы) добычи не дают
+	else:
+		world.economy.roll_loot(u.pos, u.level, "champion" if u.elite == 2 else ("elite" if u.elite == 1 else "mob"))
+	if m.bind != 0:
+		_release_tomb(m)
 	if u.affixes.has("explosive"):
 		_delayed.append({"at": world.now() + 1.5, "pos": m.pos2, "r": 5.0, "min": 30.0, "max": 40.0, "power": u.power})
 		ev_telegraph.rpc("circle", u.pos, 0.0, 5.0, 0.0, 1.5)
@@ -304,6 +319,11 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 		return
 	if m.state == S.SPAWNING:
 		m.state = S.MOVE
+	if not m.boss.is_empty():
+		_boss_tick(m, t)
+	if m.def.get("object", false):
+		_object_tick(m, t)
+		return
 	if u.is_stunned(t):
 		_cancel_cast(m, false)
 		m.anim_state = AN.FROZEN if u.is_frozen(t) else AN.STUN
@@ -644,6 +664,7 @@ func _make_visual(m: Mob) -> void:
 		Sfx.play_at("boss_roar", m.node.position + Vector3(0, 2, 0), 6.0)
 	m.unit.node = m.node
 	_elite_visual(m)
+	_boss_visual(m)
 	m.geoms = m.node.find_children("*", "GeometryInstance3D", true, false)    # аура элитного могла смениться
 
 func _set_ice(m: Mob, on: bool) -> void:
@@ -815,24 +836,51 @@ func _ability_ready(m: Mob, aid: String, t: float) -> bool:
 func _try_abilities(m: Mob, t: float) -> void:
 	if not m.cast.is_empty() or m.fleeing:
 		return
-	for aid in m.def.get("abilities", []) + m.extra_abilities:
+	var is_boss := not m.boss.is_empty()
+	if is_boss and (m.state != S.CHASE or t < float(m.boss["busy_until"])):
+		return      # босс колдует только в бою и не во время перехода фазы
+	for aid in _abilities_of(m) + m.extra_abilities:
 		if not _ability_ready(m, aid, t):
 			continue
 		var ab: Dictionary = GameData.MOB_ABILITIES[aid]
 		if t < float(m.locked.get(ab.get("school", ""), 0.0)) or t < m.unit.silence_until:
+			continue
+		if world.heroes.size() < int(ab.get("min_players", 1)):
+			continue    # механики «на группу» — только при 2+ героях
+		if ab.get("hard", false) and is_boss and t < float(m.boss["hard_ready"]):
 			continue
 		var cond: Dictionary = ab.get("cond", {})
 		if cond.get("once", false) and m.used.has(aid):
 			continue
 		if cond.has("hp_below") and m.unit.hp_frac() >= float(cond["hp_below"]):
 			continue
+		if cond.has("enemy_near") and not _hero_within(m.pos2, float(cond["enemy_near"])):
+			continue
 		var pick := _pick_target(m, ab)
 		if pick.is_empty():
 			continue
 		m.used[aid] = true
 		m.ab_ready[aid] = t + float(ab["cd"])
+		if ab.get("hard", false) and is_boss:
+			m.boss["hard_ready"] = t + GameData.BossData.HARD_GAP
 		_begin_cast(m, aid, ab, pick, t)
 		return
+
+## Способности моба: у босса — способности текущей фазы (или текущего набора чередования).
+func _abilities_of(m: Mob) -> Array:
+	if m.boss.is_empty():
+		return m.def.get("abilities", [])
+	var ph: Dictionary = _phase(m)
+	if ph.has("rotate"):
+		var sets: Array = ph["rotate"]["sets"]
+		return sets[int(m.boss["rot"]) % sets.size()]
+	return ph.get("abilities", [])
+
+func _hero_within(p: Vector2, r: float) -> bool:
+	for h in world.heroes.values():
+		if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(p) <= r + h.unit.radius:
+			return true
+	return false
 
 ## Цель способности: {"unit": id, "point": Vector2, "corpse": индекс} или {} — не нашлось.
 func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
@@ -857,6 +905,15 @@ func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
 			if ab.get("cond", {}).has("min_dist") and _d(m, best) < float(ab["cond"]["min_dist"]):
 				return {}
 			return {"unit": best.id, "point": Vector2(best.pos.x, best.pos.z)}
+		"enemy_random":
+			var pool: Array = []
+			for h in world.heroes.values():
+				if h.unit.alive and _d(m, h.unit) <= rng:
+					pool.append(h.unit)
+			if pool.is_empty():
+				return {}
+			var ru: Unit = pool[randi() % pool.size()]
+			return {"unit": ru.id, "point": Vector2(ru.pos.x, ru.pos.z)}
 		"ally_hurt", "ally":
 			var best_m: Unit = null
 			var bf := 0.7 if ab["target"] == "ally_hurt" else 2.0
@@ -891,15 +948,39 @@ func _begin_cast(m: Mob, aid: String, ab: Dictionary, pick: Dictionary, t: float
 	if Net.cli.has("castlog"):
 		print("MOBCAST ", m.unit.type_id, " ", aid)
 	var dur := float(ab.get("cast", 0.0))
+	# в поздних фазах телеграфы короче (сбиваемые касты не трогаем — их должно успеть сбить)
+	if not m.boss.is_empty() and not ab.get("interrupt", false):
+		dur *= float(_phase(m).get("tele", 1.0))
 	m.cast = {"ab": aid, "until": t + dur, "pick": pick}
 	_face(m, pick["point"])
 	if ab.has("telegraph"):
 		var tg: Dictionary = ab["telegraph"]
-		var center: Vector2 = pick["point"] if tg["shape"] == "circle" else m.pos2
-		if ab["delivery"] == "self_explode":
+		var shape: String = tg["shape"]
+		var center: Vector2 = pick["point"] if shape == "circle" else m.pos2
+		if ab["delivery"] == "self_explode" or ab["delivery"] == "shockwave":
 			center = m.pos2
 		m.cast["center"] = center
-		ev_telegraph.rpc(tg["shape"], Vector3(center.x, 0, center.y), m.yaw, float(tg["radius"]), float(tg.get("angle", 0.0)), maxf(dur, 0.3))
+		# у кольца angle — внутренний радиус, у линии — ширина (тот же ev_telegraph)
+		var extra := float(tg.get("angle", tg.get("inner", tg.get("width", 0.0))))
+		match ab["delivery"]:
+			"lines":
+				var yaws: Array = []
+				var n := int(ab.get("count", 1))
+				for i in n:
+					yaws.append(m.yaw + deg_to_rad(float(ab.get("spread", 0.0)) * (float(i) - float(n - 1) * 0.5)))
+				m.cast["yaws"] = yaws
+				for y in yaws:
+					ev_telegraph.rpc(shape, Vector3(center.x, 0, center.y), y, float(tg["radius"]), extra, maxf(dur, 0.3))
+			"barrage":
+				var pts := _barrage_points(m, ab)
+				m.cast["points"] = pts
+				for p: Vector2 in pts:
+					ev_telegraph.rpc(shape, Vector3(p.x, 0, p.y), 0.0, float(tg["radius"]), extra, maxf(dur, 0.3))
+			"charge":
+				m.cast["yaw"] = m.yaw
+				ev_telegraph.rpc(shape, Vector3(center.x, 0, center.y), m.yaw, float(tg["radius"]), extra, maxf(dur, 0.3))
+			_:
+				ev_telegraph.rpc(shape, Vector3(center.x, 0, center.y), m.yaw, float(tg["radius"]), extra, maxf(dur, 0.3))
 	if dur > 0.0:
 		ev_mob_cast.rpc(m.unit.id, aid, dur, bool(ab.get("interrupt", false)))
 	else:
@@ -934,6 +1015,7 @@ func _finish_cast(m: Mob, t: float) -> void:
 	var ab: Dictionary = GameData.MOB_ABILITIES[aid]
 	var pick: Dictionary = m.cast["pick"]
 	var center: Vector2 = m.cast.get("center", pick["point"])
+	var cast_data: Dictionary = m.cast
 	m.cast = {}
 	if float(ab.get("cast", 0.0)) > 0.0:
 		ev_mob_cast_end.rpc(m.unit.id, false)
@@ -941,8 +1023,9 @@ func _finish_cast(m: Mob, t: float) -> void:
 	m.anim_state = AN.ATTACK
 	var sid := "mab:" + aid
 	var school: String = ab.get("school", "physical")
-	var fx: Array = ab.get("effects", [])
+	var fx: Array = _solo_fx(ab, ab.get("effects", []))
 	var tu: Unit = world.get_unit(int(pick.get("unit", 0)))
+	var nova := _nova_kind(school)
 	match ab["delivery"]:
 		"target":
 			if tu and tu.alive:
@@ -979,21 +1062,26 @@ func _finish_cast(m: Mob, t: float) -> void:
 				m.pos2 = dest
 				m.unit.pos = Vector3(dest.x, 0, dest.y)
 				center = dest
-			var r: float = float(ab.get("telegraph", {}).get("radius", 3.0))
+			var tg: Dictionary = ab.get("telegraph", {})
+			var r: float = float(tg.get("radius", ab.get("radius", 3.0)))
+			var inner := float(tg.get("inner", 0.0))
 			for h in world.heroes.values():
 				var hu: Unit = h.unit
 				if not hu.alive:
 					continue
 				var hp2 := Vector2(hu.pos.x, hu.pos.z)
-				if hp2.distance_to(center) > r + hu.radius:
+				var dc := hp2.distance_to(center)
+				if dc > r + hu.radius or (inner > 0.0 and dc < inner - hu.radius):
 					continue
 				if ab["delivery"] == "cone":
 					var to := hp2 - m.pos2
 					var fwd := Vector2(-sin(m.yaw), -cos(m.yaw))
-					if to.length() > 0.5 and rad_to_deg(absf(fwd.angle_to(to.normalized()))) > float(ab["telegraph"].get("angle", 90.0)) * 0.5:
+					if to.length() > 0.5 and rad_to_deg(absf(fwd.angle_to(to.normalized()))) > float(tg.get("angle", 90.0)) * 0.5:
 						continue
 				world.spells.apply_effects(m.unit, hu, fx, sid, school)
-			world.spells.fx_at("explosion_fire" if school == "fire" else "nova_phys", Vector3(center.x, 0, center.y), m.unit.pos, r, 0)
+			world.spells.fx_at(nova, Vector3(center.x, 0, center.y), m.unit.pos, r, 0)
+			if ab.has("hazard"):
+				_add_hazard(center, ab["hazard"], m.unit, t)
 			if ab["delivery"] == "self_explode":
 				var wd := float(ab.get("wall_damage", 0.0))
 				for wid in walls.keys():
@@ -1013,9 +1101,20 @@ func _finish_cast(m: Mob, t: float) -> void:
 			var kind: String = ab.get("summon", "")
 			if kind == "":
 				kind = _swarm_of(m.def.get("faction", "undead"))
-			for i in int(ab.get("count", 2)):
+			var cnt := int(ab.get("count", 2))
+			if _solo() and ab.has("solo"):
+				cnt = int(ab["solo"].get("count", cnt))
+			if ab.has("max_alive"):
+				cnt = mini(cnt, int(ab["max_alive"]) - _owned_count(m, kind))
+			var ring := float(ab.get("ring", 0.0))
+			var base_a := randf() * TAU
+			for i in cnt:
 				var p: Vector2 = pick["point"] + Vector2(randf_range(-1.5, 1.5), randf_range(-1.5, 1.5))
-				var sid2: int = spawn(kind, m.route, m.unit.level, world.heroes.size(), 0.7, {"pos": p})
+				if ring > 0.0:
+					var a := base_a + TAU * float(i) / float(cnt)
+					p = m.pos2 + Vector2(cos(a), sin(a)) * ring
+				var hp_k := 1.0 if GameData.MOBS[kind].get("object", false) else 0.7
+				var sid2: int = spawn(kind, m.route, m.unit.level, world.heroes.size(), hp_k, {"pos": p, "owner": m.unit.id})
 				var sm: Mob = mobs.get(sid2, null)
 				if sm:
 					sm.wp = m.wp
@@ -1024,6 +1123,8 @@ func _finish_cast(m: Mob, t: float) -> void:
 			world.spells.heal(m.unit, m.unit, m.unit.max_hp * float(ab.get("heal_pct", 0.3)), false, sid)
 			world.spells.fx_at("hit_blood", m.unit.pos, m.unit.pos, 0.0, m.unit.id)
 			_take_corpse(pick)
+		_:
+			_finish_boss_cast(m, ab, sid, school, fx, pick, center, cast_data, t)
 
 func _take_corpse(pick: Dictionary) -> void:
 	if pick.has("corpse"):
@@ -1042,7 +1143,7 @@ func _swarm_of(faction: String) -> String:
 ## Отбрасывание моба (эффект knockback): толчок от источника, сбивает каст.
 func push(u: Unit, vec: Vector2) -> void:
 	var m: Mob = mobs.get(u.id, null)
-	if m == null:
+	if m == null or m.def.get("object", false):
 		return
 	m.pos2 += vec
 	u.pos = Vector3(m.pos2.x, 0, m.pos2.y)
@@ -1075,9 +1176,13 @@ func ev_mob_cast_end(id: int, interrupted: bool) -> void:
 @rpc("authority", "call_local", "reliable")
 func ev_telegraph(shape: String, pos: Vector3, yaw: float, radius: float, angle: float, dur: float) -> void:
 	Vfx.telegraph(world, shape, pos, yaw, radius, angle, dur)
+	teles.append([shape, Vector2(pos.x, pos.z), yaw, radius, angle, world.now() + dur])
 
 ## Убрать моба без награды (вор добежал до логова).
 func _despawn(m: Mob) -> void:
+	if m.bind != 0:
+		_release_tomb(m)
+	casts.erase(m.unit.id)
 	mobs.erase(m.unit.id)
 	world.units.erase(m.unit.id)
 	m.unit.alive = false
@@ -1147,12 +1252,17 @@ func _tick_hazards(delta: float, t: float) -> void:
 			i += 1
 			continue
 		_delayed.remove_at(i)
+		if d.has("fx") or d.has("transform"):
+			_explode_boss(d, t)
+			continue
 		var c: Vector2 = d["pos"]
 		for h in world.heroes.values():
 			var hu: Unit = h.unit
 			if hu.alive and Vector2(hu.pos.x, hu.pos.z).distance_to(c) <= float(d["r"]) + hu.radius:
 				world.spells.deal_damage(null, hu, randf_range(d["min"], d["max"]) * float(d["power"]), "fire", false, "affix:explosive")
 		world.spells.fx_at("explosion_fire", Vector3(c.x, 0, c.y), Vector3(c.x, 0, c.y), float(d["r"]), 0)
+	_tick_waves(t)
+	_tick_mines(t)
 	_hazard_acc += delta
 	if _hazard_acc < 0.5:
 		return
@@ -1197,3 +1307,557 @@ func drop_aggro_on(u: Unit, radius: float) -> void:
 	for m: Mob in mobs.values():
 		if m.target == u.id and m.state == S.CHASE and m.pos2.distance_to(Vector2(u.pos.x, u.pos.z)) <= radius:
 			_drop_chase(m, true)
+
+# ---------------------------------------------------------------- боссы
+## Фазы, способности фаз и действия при входе в фазу — scripts/data/boss_data.gd. Здесь — общий движок:
+## порог здоровья → новая фаза (реплика, неуязвимость на переход, призыв, бафф, смена арены);
+## «неуязвим, пока стоят его объекты»; чередование наборов способностей; пульс и аура; ярость;
+## превращение вместо смерти (механоогр → король огров). Всё считает сервер; клиентам — ev_boss_state.
+
+const BOSS_COLOR := Color(1.0, 0.45, 0.25)
+var boss_state: Dictionary = {}    # у всех: id босса -> {phase, shield, aura, rot}
+var teles: Array = []              # у всех: телеграфы на земле [shape, центр, yaw, radius, extra, до] — для бота
+var shockwaves: Array = []         # у всех: волны землетрясения [центр, начало, скорость, ширина, предел]
+var mine_spots: Dictionary = {}    # у всех: id мины -> [Vector2, узел]
+var mines: Dictionary = {}         # сервер: id -> {pos, trig, blast, until, armed, fuse, fx, school, src}
+var _waves: Array = []             # сервер: расходящиеся волны
+var _next_mine := 1
+var _transform_pending := 0
+
+func _phase(m: Mob) -> Dictionary:
+	var phases: Array = GameData.BOSSES[m.unit.type_id]["phases"]
+	return phases[clampi(int(m.boss.get("phase", 0)), 0, phases.size() - 1)]
+
+## Идёт превращение босса (взрыв машины, вот-вот выйдет король огров).
+func boss_pending() -> bool:
+	return _transform_pending > 0
+
+func _solo() -> bool:
+	return world.heroes.size() <= 1
+
+## В одиночке наказание за несбитый каст мягче: урон и лечение способности × solo.mult.
+func _solo_fx(ab: Dictionary, fx: Array) -> Array:
+	if not _solo() or not ab.get("solo", {}).has("mult"):
+		return fx
+	var k := float(ab["solo"]["mult"])
+	var out: Array = []
+	for e in fx:
+		var c: Dictionary = e.duplicate()
+		if c.has("min"):
+			c["min"] = float(c["min"]) * k
+			c["max"] = float(c["max"]) * k
+		if c.has("pct"):
+			c["pct"] = float(c["pct"]) * k
+		out.append(c)
+	return out
+
+static func _nova_kind(school: String) -> String:
+	match school:
+		"fire": return "explosion_fire"
+		"frost": return "nova_frost"
+		"shadow", "arcane": return "nova_arcane"
+		"holy": return "nova_holy"
+	return "nova_phys"
+
+func _owned_count(m: Mob, kind: String) -> int:
+	var n := 0
+	for o: Mob in mobs.values():
+		if o.owner == m.unit.id and o.unit.type_id == kind:
+			n += 1
+	return n
+
+## Сообщение одному игроку (метка, гробница).
+func _tell(hero_unit: Unit, text: String) -> void:
+	var h = world.heroes.get(hero_unit.id, null)
+	if h == null:
+		return
+	if h.peer_id == multiplayer.get_unique_id():
+		world.ev_announce(text, Color(1.0, 0.4, 0.3))
+	else:
+		world.ev_announce.rpc_id(h.peer_id, text, Color(1.0, 0.4, 0.3))
+
+func _boss_init(m: Mob, wave: int, players: int, hp_scale: float, t: float) -> void:
+	var bd: Dictionary = GameData.BOSSES[m.unit.type_id]
+	m.boss = {"phase": -1, "busy_until": 0.0, "hard_ready": 0.0, "rot": 0, "rot_at": 0.0, "pulse_at": 0.0, "aura_at": 0.0,
+		"start": t, "enraged": false, "shield": false, "wave": wave, "players": players, "hp_scale": hp_scale}
+	if str(bd.get("intro", "")) != "":
+		world.announce_all(bd["intro"], BOSS_COLOR)
+	_boss_enter(m, 0, t)
+
+func _boss_enter(m: Mob, idx: int, t: float) -> void:
+	var st: Dictionary = m.boss
+	st["phase"] = idx
+	var ph: Dictionary = _phase(m)
+	var u := m.unit
+	if ph.has("say"):
+		world.announce_all(ph["say"], BOSS_COLOR)
+	if idx > 0:
+		world.ev_sound_at.rpc("boss_roar", u.pos + Vector3(0, 2, 0), 6.0, 0.8)
+	if Net.cli.has("castlog") or Net.cli.has("bossarena"):
+		print("BOSS PHASE ", u.type_id, " ", idx, " hp=", snappedf(u.hp_frac(), 0.01))
+	var inv := float(ph.get("invuln", 0.0))
+	if inv > 0.0:
+		u.immune_until = maxf(u.immune_until, t + inv)
+		st["busy_until"] = t + inv
+		_cancel_cast(m, false)
+		world.spells.fx_at("bubble", u.pos, u.pos, inv, u.id)
+	for s in ph.get("summon", []):
+		var cnt := int(s["count"])
+		var a0 := randf() * TAU
+		for i in cnt:
+			var a := a0 + TAU * float(i) / float(cnt)
+			var p: Vector2 = m.pos2 + Vector2(cos(a), sin(a)) * float(s.get("ring", 4.0))
+			var hp_k := 1.0 if GameData.MOBS[s["type"]].get("object", false) else 0.8
+			spawn(s["type"], m.route, u.level, world.heroes.size(), hp_k, {"pos": p, "owner": u.id})
+	if ph.has("buff"):
+		u.add_buff(ph["buff"]["key"], t + 1e6, ph["buff"].get("mods", {}))
+	if ph.has("hazard_ring"):
+		# смена арены: кольцо горящей земли вокруг места боя
+		var hr: Dictionary = ph["hazard_ring"]
+		for i in int(hr["count"]):
+			var a := TAU * float(i) / float(hr["count"])
+			_add_hazard(m.pos2 + Vector2(cos(a), sin(a)) * float(hr["r"]), {"r": float(hr["size"]), "dur": 900.0, "dps": 16.0}, u, t)
+	# новые способности фазы — не все разом: небольшая пауза
+	var all: Array = ph.get("abilities", []).duplicate()
+	if ph.has("rotate"):
+		for set_list in ph["rotate"]["sets"]:
+			all.append_array(set_list)
+		st["rot"] = 0
+		st["rot_at"] = t + float(ph["rotate"]["period"])
+	for aid in all:
+		m.ab_ready[aid] = maxf(float(m.ab_ready.get(aid, 0.0)), t + inv + 1.5 + randf() * 2.5)
+	if ph.has("pulse"):
+		st["pulse_at"] = t + float(ph["pulse"]["every"])
+	_send_boss_state(m)
+
+func _send_boss_state(m: Mob) -> void:
+	var ph: Dictionary = _phase(m)
+	ev_boss_state.rpc(m.unit.id, int(m.boss["phase"]), bool(m.boss["shield"]), float(ph.get("aura", {}).get("r", 0.0)), int(m.boss["rot"]))
+
+func _boss_tick(m: Mob, t: float) -> void:
+	var st: Dictionary = m.boss
+	var u := m.unit
+	var phases: Array = GameData.BOSSES[u.type_id]["phases"]
+	var nxt := int(st["phase"]) + 1
+	if nxt < phases.size() and u.hp_frac() <= float(phases[nxt]["hp"]):
+		_boss_enter(m, nxt, t)
+	var ph: Dictionary = _phase(m)
+	if ph.has("invuln_while"):
+		var sh := _owned_count(m, ph["invuln_while"]) > 0
+		if sh:
+			u.immune_until = maxf(u.immune_until, t + 0.3)
+		if sh != bool(st["shield"]):
+			st["shield"] = sh
+			_send_boss_state(m)
+			if not sh:
+				world.announce_all("%s снова уязвим!" % u.display_name, Color(0.6, 1.0, 0.6))
+	if ph.has("rotate") and t >= float(st["rot_at"]):
+		var rt: Dictionary = ph["rotate"]
+		st["rot"] = int(st["rot"]) + 1
+		st["rot_at"] = t + float(rt["period"])
+		var says: Array = rt.get("say", [])
+		if not says.is_empty():
+			world.announce_all(says[int(st["rot"]) % says.size()], BOSS_COLOR)
+		_send_boss_state(m)
+	if ph.has("pulse") and t >= float(st["pulse_at"]):
+		var pl: Dictionary = ph["pulse"]
+		st["pulse_at"] = t + float(pl["every"])
+		for h in world.heroes.values():
+			if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(m.pos2) <= float(pl["radius"]):
+				world.spells.apply_effects(u, h.unit, pl["effects"], "mab:pulse", pl.get("school", "shadow"))
+		world.spells.fx_at("nova_arcane", u.pos, u.pos, 12.0, 0)
+	if ph.has("aura") and t >= float(st["aura_at"]):
+		st["aura_at"] = t + 0.5
+		var ar := float(ph["aura"]["r"])
+		for h in world.heroes.values():
+			var hu: Unit = h.unit
+			if hu.alive and Vector2(hu.pos.x, hu.pos.z).distance_to(m.pos2) <= ar + hu.radius:
+				world.spells.deal_damage(u, hu, float(ph["aura"]["dps"]) * 0.5 * u.power, "fire", false, "mab:aura")
+	var bd: Dictionary = GameData.BOSSES[u.type_id]
+	if not bool(st["enraged"]) and bd.has("enrage") and world.heroes.size() >= 2 and t - float(st["start"]) > float(bd["enrage"]):
+		st["enraged"] = true
+		u.add_buff("boss_enrage", t + 1e6, {"dmg": 1.5, "haste": 0.5})
+		world.announce_all("%s впадает в ярость!" % u.display_name, Color(1, 0.2, 0.1))
+
+## Объект (филактерия, портал, гробница): стоит на месте, только способности; гробница держит героя.
+func _object_tick(m: Mob, t: float) -> void:
+	m.anim_state = AN.IDLE
+	if m.until > 0.0 and t >= m.until:
+		_despawn(m)
+		return
+	if m.bind != 0:
+		var hu: Unit = world.get_unit(m.bind)
+		if hu == null or not hu.alive:
+			_despawn(m)
+			return
+		if t >= m.trail_at:
+			m.trail_at = t + 1.0
+			world.spells.deal_damage(world.get_unit(m.owner), hu, hu.max_hp * 0.02, "frost", false, "mab:lich_tomb")
+	if t >= m.next_think:
+		m.next_think = t + 0.5
+		_try_abilities(m, t)
+	if not m.cast.is_empty() and t >= float(m.cast["until"]):
+		_finish_cast(m, t)
+
+func _release_tomb(m: Mob) -> void:
+	var h = world.heroes.get(m.bind, null)
+	m.bind = 0
+	if h:
+		h.unit.remove_buff("ice_tomb")
+		h.ev_control.rpc("root", 0.0, Vector3.ZERO)
+
+func _boss_died(m: Mob) -> void:
+	var u := m.unit
+	var t: float = world.now()
+	var bd: Dictionary = GameData.BOSSES[u.type_id]
+	var gone: Array = []
+	for o: Mob in mobs.values():
+		if o.owner == u.id and o.def.get("object", false):
+			gone.append(o)
+	for o in gone:
+		_despawn(o)
+	var od: Dictionary = bd.get("on_death", {})
+	if od.has("transform"):
+		var delay := float(od.get("delay", 2.5))
+		var r := float(od.get("radius", 6.0))
+		ev_telegraph.rpc("circle", u.pos, 0.0, r, 0.0, delay)
+		world.announce_all("%s взрывается! Отойдите!" % u.display_name, BOSS_COLOR)
+		_transform_pending += 1
+		_delayed.append({"at": t + delay, "pos": m.pos2, "r": r, "fx": [{"type": "damage", "min": 40.0, "max": 50.0}], "school": "fire",
+			"power": u.power, "transform": od["transform"], "say": od.get("say", ""), "route": m.route,
+			"wave": m.boss["wave"], "players": m.boss["players"], "hp_scale": m.boss["hp_scale"]})
+		return
+	world.economy.roll_boss_loot(u.pos, u.level, bd.get("loot", []), bd.get("rank", "lieutenant"))
+	world.announce_all("%s повержен!" % u.display_name, Color(1, 0.85, 0.3))
+
+## Отложенный удар босса: метка (следует за героем), мина, взрыв машины (и превращение).
+func _explode_boss(d: Dictionary, _t: float) -> void:
+	var c: Vector2 = d["pos"]
+	var carrier: Unit = null
+	if d.has("follow"):
+		carrier = world.get_unit(int(d["follow"]))
+		if carrier == null or not carrier.alive:
+			return
+		carrier.remove_buff("fel_mark")
+		c = Vector2(carrier.pos.x, carrier.pos.z)
+	var src: Unit = world.get_unit(int(d.get("src", 0)))
+	var school: String = d.get("school", "fire")
+	var sid: String = d.get("sid", "mab:delayed")
+	for h in world.heroes.values():
+		var hu: Unit = h.unit
+		if not hu.alive or Vector2(hu.pos.x, hu.pos.z).distance_to(c) > float(d["r"]) + hu.radius:
+			continue
+		var k := 0.3 if hu == carrier else 1.0      # сам носитель метки получает меньше
+		for e in d["fx"]:
+			if e["type"] == "damage":
+				world.spells.deal_damage(src, hu, randf_range(e["min"], e["max"]) * float(d.get("power", 1.0)) * k, school, false, sid)
+			elif src and k >= 1.0:
+				world.spells.apply_effects(src, hu, [e], sid, school)
+	world.spells.fx_at(_nova_kind(school), Vector3(c.x, 0, c.y), Vector3(c.x, 0, c.y), float(d["r"]), 0)
+	if d.has("transform"):
+		_transform_pending -= 1
+		spawn(d["transform"], int(d["route"]), int(d["wave"]), int(d["players"]), float(d["hp_scale"]), {"pos": c})
+		if str(d.get("say", "")) != "":
+			world.announce_all(d["say"], BOSS_COLOR)
+
+func _add_hazard(center: Vector2, hz: Dictionary, src: Unit, t: float) -> void:
+	hazards.append({"pos": center, "r": float(hz["r"]), "until": t + float(hz["dur"]), "dps": float(hz["dps"]) * src.power, "src": src.id})
+	ev_hazard.rpc(Vector3(center.x, 0, center.y), float(hz["r"]), float(hz["dur"]))
+
+## Точки огненного дождя и ракетного залпа: по кругу под каждым героем, остальные — рядом с героями.
+func _barrage_points(m: Mob, ab: Dictionary) -> Array:
+	var pts: Array = []
+	var near: Array = []
+	for h in world.heroes.values():
+		if h.unit.alive and _d(m, h.unit) <= float(ab["range"]):
+			near.append(h.unit)
+			pts.append(Vector2(h.unit.pos.x, h.unit.pos.z))
+	if near.is_empty():
+		return pts
+	var spread := float(ab.get("spread", 6.0))
+	var guard := 0
+	while pts.size() < int(ab.get("count", 4)) and guard < 40:
+		guard += 1
+		var hu: Unit = near[randi() % near.size()]
+		var a := randf() * TAU
+		pts.append(Vector2(hu.pos.x, hu.pos.z) + Vector2(cos(a), sin(a)) * randf_range(spread * 0.4, spread))
+	return pts
+
+## Точка p в полосе: от start вдоль yaw длиной length, полуширина half.
+static func _in_line(p: Vector2, start: Vector2, yaw: float, length: float, half: float) -> bool:
+	var fwd := Vector2(-sin(yaw), -cos(yaw))
+	var d := p - start
+	var along := d.dot(fwd)
+	return along >= -half and along <= length + half and absf(d.cross(fwd)) <= half
+
+func _finish_boss_cast(m: Mob, ab: Dictionary, sid: String, school: String, fx: Array, pick: Dictionary, center: Vector2, cd: Dictionary, t: float) -> void:
+	var u := m.unit
+	var tu: Unit = world.get_unit(int(pick.get("unit", 0)))
+	var tg: Dictionary = ab.get("telegraph", {})
+	match ab["delivery"]:
+		"lines", "charge":
+			var length := float(tg.get("radius", 18.0))
+			var half := float(tg.get("width", 2.0)) * 0.5
+			var yaws: Array = cd.get("yaws", [cd.get("yaw", m.yaw)])
+			for h in world.heroes.values():
+				var hu: Unit = h.unit
+				if not hu.alive:
+					continue
+				for y in yaws:
+					if _in_line(Vector2(hu.pos.x, hu.pos.z), center, y, length, half + hu.radius):
+						world.spells.apply_effects(u, hu, fx, sid, school)
+						break
+			for y in yaws:
+				var f := Vector2(-sin(y), -cos(y))
+				for k in [0.35, 0.75]:
+					var p: Vector2 = center + f * length * k
+					world.spells.fx_at(_nova_kind(school), Vector3(p.x, 0, p.y), u.pos, half * 1.6, 0)
+			if ab["delivery"] == "charge":
+				var y0: float = yaws[0]
+				var dest: Vector2 = center + Vector2(-sin(y0), -cos(y0)) * length
+				world.spells.fx_at("charge_trail", Vector3(dest.x, 0, dest.y), u.pos, 0.0, u.id)
+				m.pos2 = dest
+				u.pos = Vector3(dest.x, 0, dest.y)
+		"barrage":
+			var r := float(tg.get("radius", 3.0))
+			var pts: Array = cd.get("points", [])
+			for h in world.heroes.values():
+				var hu: Unit = h.unit
+				if not hu.alive:
+					continue
+				for p: Vector2 in pts:
+					if Vector2(hu.pos.x, hu.pos.z).distance_to(p) <= r + hu.radius:
+						world.spells.apply_effects(u, hu, fx, sid, school)
+						break
+			for p: Vector2 in pts:
+				world.spells.fx_at(_nova_kind(school), Vector3(p.x, 0, p.y), u.pos, r, 0)
+		"shockwave":
+			var wv: Dictionary = ab["waves"]
+			for i in int(wv["count"]):
+				var delay := float(wv["interval"]) * float(i)
+				_waves.append({"c": m.pos2, "start": t + delay, "speed": float(wv["speed"]), "width": float(wv["width"]),
+					"max": float(wv["max"]), "fx": fx, "school": school, "src": u.id, "sid": sid, "hit": {}})
+				ev_shockwave.rpc(Vector3(m.pos2.x, 0, m.pos2.y), delay, float(wv["speed"]), float(wv["width"]), float(wv["max"]))
+		"tomb":
+			if tu and tu.alive and tu.kind == "hero":
+				var tid: int = spawn(ab["tomb"], m.route, u.level, world.heroes.size(), 1.0, {"pos": Vector2(tu.pos.x, tu.pos.z), "owner": u.id})
+				var tm: Mob = mobs.get(tid, null)
+				var dur := float(ab.get("dur", 12.0))
+				if tm:
+					tm.bind = tu.id
+					tm.until = t + dur
+					tm.spawn_until = t
+					tu.add_buff("ice_tomb", t + dur, {})
+					var h = world.heroes.get(tu.id, null)
+					if h:
+						h.ev_control.rpc("root", dur, Vector3.ZERO)
+					world.announce_all("%s вморожен в лёд — разбейте гробницу!" % tu.display_name, Color(0.6, 0.85, 1.0))
+		"mark":
+			if tu and tu.alive:
+				var delay := float(ab.get("delay", 5.0))
+				tu.add_buff("fel_mark", t + delay, {})
+				world.spells.fx_at("bomb_mark", tu.pos, tu.pos, delay, tu.id)
+				_tell(tu, "На вас Метка Скверны — отойдите от союзников!")
+				_delayed.append({"at": t + delay, "pos": center, "follow": tu.id, "r": float(ab.get("radius", 6.0)), "fx": fx,
+					"src": u.id, "school": school, "sid": sid, "power": u.power})
+		"share":
+			var r := float(tg.get("radius", 4.0))
+			var inside: Array = []
+			for h in world.heroes.values():
+				if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(center) <= r + h.unit.radius:
+					inside.append(h.unit)
+			if not inside.is_empty():
+				var e: Dictionary = fx[0]
+				var total := randf_range(e["min"], e["max"]) * u.phys_power
+				for hu: Unit in inside:
+					world.spells.deal_damage(u, hu, total / float(inside.size()), school, false, sid)
+			world.spells.fx_at(_nova_kind(school), Vector3(center.x, 0, center.y), u.pos, r, 0)
+		"pack":
+			var victim: Unit = null
+			for h in world.heroes.values():
+				if h.unit.alive and (victim == null or h.unit.hp_frac() < victim.hp_frac()):
+					victim = h.unit
+			if victim == null:
+				return
+			var dur := float(ab.get("dur", 6.0))
+			var n := 0
+			for o: Mob in mobs.values():
+				if o.owner == u.id and o.unit.type_id == ab.get("pack", "") and o.pos2.distance_to(m.pos2) <= float(ab.get("radius", 30.0)):
+					taunt(o.unit, victim, t + dur)
+					o.unit.add_buff("pack_rush", t + dur, {"speed": 0.3, "dmg": 0.2})
+					n += 1
+			if n > 0:
+				victim.add_buff("pack_hunt", t + dur, {})
+				world.announce_all("Стая бросается на %s!" % victim.display_name, Color(1.0, 0.5, 0.3))
+		"everyone":
+			var r := float(ab.get("radius", 40.0))
+			for h in world.heroes.values():
+				if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(m.pos2) <= r:
+					world.spells.apply_effects(u, h.unit, fx, sid, school)
+			world.spells.fx_at(_nova_kind(school), u.pos, u.pos, 14.0, 0)
+		"mines":
+			var mn: Dictionary = ab["mine"]
+			var r := float(ab.get("radius", 12.0))
+			for i in int(ab.get("count", 4)):
+				if mines.size() >= 16:
+					break
+				var a := randf() * TAU
+				var p: Vector2 = m.pos2 + Vector2(cos(a), sin(a)) * randf_range(4.0, r)
+				var id := _next_mine
+				_next_mine += 1
+				mines[id] = {"pos": p, "trig": float(mn["trigger"]), "blast": float(mn["blast"]), "until": t + float(mn["dur"]),
+					"armed": t + 1.0, "fuse": float(mn["fuse"]), "fx": fx, "school": school, "src": u.id, "sid": sid, "power": u.power}
+				ev_mine.rpc(id, Vector3(p.x, 0, p.y), true)
+
+## Сервер: волны землетрясения расходятся кольцом; кто стоит на земле в гребне — получает удар.
+func _tick_waves(t: float) -> void:
+	var i := 0
+	while i < _waves.size():
+		var w: Dictionary = _waves[i]
+		if t < float(w["start"]):
+			i += 1
+			continue
+		var r: float = 2.0 + (t - float(w["start"])) * float(w["speed"])
+		if r > float(w["max"]) + float(w["width"]):
+			_waves.remove_at(i)
+			continue
+		var src: Unit = world.get_unit(int(w["src"]))
+		for h in world.heroes.values():
+			var hu: Unit = h.unit
+			if not hu.alive or w["hit"].has(hu.id) or hu.pos.y > 0.45:
+				continue      # в прыжке волна проходит под героем
+			var d := Vector2(hu.pos.x, hu.pos.z).distance_to(w["c"])
+			if absf(d - r) <= float(w["width"]) * 0.5 + hu.radius:
+				w["hit"][hu.id] = true
+				if src:
+					world.spells.apply_effects(src, hu, w["fx"], w["sid"], w["school"])
+		i += 1
+
+## Сервер: мина взрывается, когда рядом герой (короткая задержка и телеграф), или пропадает со временем.
+func _tick_mines(t: float) -> void:
+	var gone: Array = []
+	for id in mines:
+		var mn: Dictionary = mines[id]
+		if t >= float(mn["until"]):
+			gone.append(id)
+			continue
+		if t < float(mn["armed"]):
+			continue
+		for h in world.heroes.values():
+			if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(mn["pos"]) <= float(mn["trig"]) + h.unit.radius:
+				gone.append(id)
+				var p: Vector2 = mn["pos"]
+				ev_telegraph.rpc("circle", Vector3(p.x, 0, p.y), 0.0, float(mn["blast"]), 0.0, float(mn["fuse"]))
+				_delayed.append({"at": t + float(mn["fuse"]), "pos": p, "r": float(mn["blast"]), "fx": mn["fx"], "src": mn["src"],
+					"school": mn["school"], "sid": mn["sid"], "power": mn["power"]})
+				break
+	for id in gone:
+		mines.erase(id)
+		ev_mine.rpc(id, Vector3.ZERO, false)
+
+@rpc("authority", "call_local", "reliable")
+func ev_boss_state(id: int, phase: int, shield: bool, aura: float, rot: int) -> void:
+	boss_state[id] = {"phase": phase, "shield": shield, "aura": aura, "rot": rot}
+	var m: Mob = mobs.get(id, null)
+	if m:
+		_boss_visual(m)
+
+@rpc("authority", "call_local", "reliable")
+func ev_shockwave(pos: Vector3, delay: float, speed: float, width: float, max_r: float) -> void:
+	shockwaves.append([Vector2(pos.x, pos.z), world.now() + delay, speed, width, max_r])
+	Vfx.shockwave(world, pos, delay, speed, width, max_r)
+
+@rpc("authority", "call_local", "reliable")
+func ev_mine(id: int, pos: Vector3, on: bool) -> void:
+	if on:
+		mine_spots[id] = [Vector2(pos.x, pos.z), Vfx.mine(world, pos)]
+	elif mine_spots.has(id):
+		var n: Node3D = mine_spots[id][1]
+		if is_instance_valid(n):
+			n.queue_free()
+		mine_spots.erase(id)
+
+## Облик босса по состоянию: щит (неуязвим, пока стоят филактерии), раскалённая земля вокруг.
+func _boss_visual(m: Mob) -> void:
+	var st: Dictionary = boss_state.get(m.unit.id, {})
+	var sc := maxf(m.node.scale.x, 0.01)
+	var shield := m.node.get_node_or_null("BossShield") as MeshInstance3D
+	var want_shield: bool = st.get("shield", false)
+	if want_shield and shield == null:
+		shield = MeshInstance3D.new()
+		shield.name = "BossShield"
+		var sm := SphereMesh.new()
+		sm.radius = m.unit.radius * 1.6 / sc
+		sm.height = sm.radius * 2.0
+		shield.mesh = sm
+		shield.position.y = sm.radius * 0.8
+		shield.material_override = Vfx.dome_material(Color(0.3, 1.0, 0.6), 1.2, 0.3)
+		shield.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.node.add_child(shield)
+	elif not want_shield and shield:
+		shield.free()
+	var aura := m.node.get_node_or_null("BossAura") as MeshInstance3D
+	var ar: float = st.get("aura", 0.0)
+	if ar > 0.0:
+		if aura == null:
+			aura = MeshInstance3D.new()
+			aura.name = "BossAura"
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(2, 2)
+			aura.mesh = pm
+			aura.material_override = Vfx.ring_material(Color(1.0, 0.35, 0.05), 0.25, false, 1.5)
+			aura.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			aura.position.y = 0.05
+			m.node.add_child(aura)
+		aura.scale = Vector3(ar / sc, 1, ar / sc)
+	elif aura:
+		aura.free()
+
+# ---------------------------------------------------------------- бот: уйти из телеграфа
+## Куда уйти из опасной зоны (телеграфы, мины); ZERO — опасности нет. margin — запас, м.
+func escape_dir(p: Vector2, margin: float) -> Vector2:
+	var t: float = world.now()
+	if not teles.is_empty():
+		teles = teles.filter(func(e): return float(e[5]) >= t)
+	var out := Vector2.ZERO
+	for e in teles:
+		var c: Vector2 = e[1]
+		var d := p - c
+		var away := d.normalized() if d.length() > 0.05 else Vector2(1, 0)
+		match e[0]:
+			"circle":
+				if d.length() < float(e[3]) + margin:
+					out += away
+			"ring":
+				var dl := d.length()
+				if dl <= float(e[3]) + margin and dl >= float(e[4]) - margin:
+					out += -away if dl - float(e[4]) < float(e[3]) - dl else away
+			"cone":
+				var fwd := Vector2(-sin(e[2]), -cos(e[2]))
+				if d.length() < float(e[3]) + margin and (d.length() < 1.0 or rad_to_deg(absf(fwd.angle_to(away))) <= float(e[4]) * 0.5 + 15.0):
+					var side := Vector2(-fwd.y, fwd.x)
+					out += side * (1.0 if d.dot(side) >= 0.0 else -1.0) + away * 0.3
+			"line":
+				if _in_line(p, c, e[2], float(e[3]), float(e[4]) * 0.5 + margin):
+					var fwd2 := Vector2(-sin(e[2]), -cos(e[2]))
+					var side2 := Vector2(-fwd2.y, fwd2.x)
+					out += side2 * (1.0 if d.dot(side2) >= 0.0 else -1.0)
+	for id in mine_spots:
+		var d2: Vector2 = p - mine_spots[id][0]
+		if d2.length() < 2.6:
+			out += d2.normalized() if d2.length() > 0.05 else Vector2(0, 1)
+	return out.normalized() if out.length() > 0.01 else Vector2.ZERO
+
+## Пора прыгать: гребень волны землетрясения вот-вот дойдёт до точки p.
+func wave_near(p: Vector2) -> bool:
+	var t: float = world.now()
+	if not shockwaves.is_empty():
+		shockwaves = shockwaves.filter(func(w): return t < float(w[1]) + (float(w[4]) + 3.0) / float(w[2]))
+	for w in shockwaves:
+		if t < float(w[1]):
+			continue
+		var r: float = 2.0 + (t - float(w[1])) * float(w[2])
+		var gap: float = p.distance_to(w[0]) - r
+		if gap > 0.2 and gap < 1.6:
+			return true
+	return false

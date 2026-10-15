@@ -5,21 +5,21 @@ extends RefCounted
 ## при 2 — нежить и орки, при 3 — плюс демоны, при 4 — все.
 ##
 ## Поля: name, side, lane — полоса по умолчанию, color — цвет на интерфейсе и в логове,
-## champion — кто выходит вместо босса на «босс-волнах» (у нежити — свои боссы), bosses,
+## champion — кто выходит на «босс-волнах» с тех сторон, где нет босса (боссы — boss_data.gd),
 ## sounds — death (смерть), war_cry (клич на старте волны), pitch — высота голоса.
 
 const FACTIONS := {
 	"undead": {"name": "Нежить", "side": "юга", "lane": 2, "color": Color(0.6, 0.85, 0.7),
-		"champion": "", "bosses": ["boss_warlord", "boss_lich"],
+		"champion": "warrior",
 		"sounds": {"death": "bones_fall", "war_cry": "horde", "pitch": 1.0}},
 	"orcs": {"name": "Орки", "side": "востока", "lane": 1, "color": Color(0.45, 0.8, 0.3),
-		"champion": "berserker", "bosses": [],
+		"champion": "berserker",
 		"sounds": {"death": "hurt", "war_cry": "boss_roar", "pitch": 0.85}},
 	"demons": {"name": "Демоны", "side": "запада", "lane": 3, "color": Color(1.0, 0.35, 0.2),
-		"champion": "felguard", "bosses": [],
+		"champion": "felguard",
 		"sounds": {"death": "fire_burn", "war_cry": "boss_roar", "pitch": 0.6}},
 	"goblins": {"name": "Гоблины и огры", "side": "севера", "lane": 0, "color": Color(0.85, 0.75, 0.3),
-		"champion": "ogre", "bosses": [],
+		"champion": "ogre",
 		"sounds": {"death": "hurt", "war_cry": "horde", "pitch": 1.45}},
 }
 

@@ -132,6 +132,23 @@ const ITEM_PROCS := {
 		"desc": "Иногда при получении удара: +25% к урону и +15% к скорости атак и заклинаний на 8 сек."},
 }
 
+## Именные вещи боссов (unique_id экземпляра): своё название, шаблон, качество не ниже q.
+## Главные боссы — эпическое, лейтенанты — редкое. Аксессуары с уникальными проками — в сессии 05.
+const UNIQUES := {
+	"u_lich_staff": {"name": "Посох Вечной Зимы", "base": "staff", "q": 3, "boss": "Лич-некромант"},
+	"u_lich_hood": {"name": "Капюшон Повелителя Костей", "base": "hood", "q": 3, "boss": "Лич-некромант"},
+	"u_warlord_axe": {"name": "Топор Костяного Полководца", "base": "axe", "q": 2, "boss": "Костяной полководец"},
+	"u_chief_axe": {"name": "Секира Вождя Орды", "base": "axe", "q": 3, "boss": "Вождь орды"},
+	"u_chief_mail": {"name": "Кольчуга Лок'тар", "base": "mail", "q": 3, "boss": "Вождь орды"},
+	"u_wolf_boots": {"name": "Сапоги Вожака Стаи", "base": "boots", "q": 2, "boss": "Вожак волчьей стаи"},
+	"u_fel_wand": {"name": "Жезл Горящего Легиона", "base": "wand", "q": 3, "boss": "Владыка Скверны"},
+	"u_fel_robe": {"name": "Мантия Владыки Скверны", "base": "robe", "q": 3, "boss": "Владыка Скверны"},
+	"u_infernal_plate": {"name": "Кираса Раскалённого Камня", "base": "plate", "q": 2, "boss": "Инфернал-исполин"},
+	"u_king_mace": {"name": "Скипетр Короля Огров", "base": "mace", "q": 3, "boss": "Король огров"},
+	"u_king_ring": {"name": "Печатка Короля Огров", "base": "ring_might", "q": 3, "boss": "Король огров"},
+	"u_ogre2_staff": {"name": "Посох Двух Голов", "base": "staff", "q": 2, "boss": "Двухголовый огр"},
+}
+
 const STAT_NAMES := {"str": "Сила", "agi": "Ловкость", "sta": "Выносливость", "int": "Интеллект", "spi": "Дух",
 	"sp": "Сила заклинаний", "ap": "Сила атаки", "armor": "Броня", "crit": "Шанс крит. удара"}
 ## Порядок строк в подсказке.
@@ -217,6 +234,8 @@ static func describe(id: String) -> Dictionary:
 		name += " " + str(ITEM_PROCS[d["proc"]]["suffix"])
 	elif not d["affixes"].is_empty() and tp.get("suffix", true):
 		name += " " + str(AFFIXES[d["affixes"][0]]["suffix"])
+	if UNIQUES.has(d["unique_id"]):
+		name = UNIQUES[d["unique_id"]]["name"]
 	var small: bool = tp["slot"] in ["ring", "amulet", "boots", "helm"]
 	var price := int(ilvl_price(ilvl) * float(QUALITY_PRICE[q]) * (0.6 if small else 1.0))
 	return {"id": id, "name": name, "kind": "gear", "slot": tp["slot"], "stats": st, "level": ilvl, "ilvl": ilvl, "price": price,

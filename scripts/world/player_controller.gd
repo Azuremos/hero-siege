@@ -655,7 +655,7 @@ func bot_active() -> bool:
 	return Net.cli.has("bot")
 
 func bot_tick(delta: float) -> void:
-	var post := Vector3(0, 0, 26)
+	var post: Vector3 = world.mode.bot_post()
 	if Net.cli.has("post"):
 		var f: PackedFloat64Array = Net.cli["post"].split_floats(",")
 		post = Vector3(f[0], 0, f[1])
@@ -674,6 +674,15 @@ func bot_tick(delta: float) -> void:
 		move_forward = 1.0
 	else:
 		move_forward = 0.0
+	# простое правило: стоишь в телеграфе или у мины — выйди; гребень волны рядом — прыгай
+	var hp2 := Vector2(hero.global_position.x, hero.global_position.z)
+	var esc: Vector2 = world.mobs.escape_dir(hp2, 1.2)
+	if esc != Vector2.ZERO and hero.unit.alive:
+		hero.rotation.y = atan2(-esc.x, -esc.y)
+		cam_yaw = hero.rotation.y
+		move_forward = 1.0
+	if world.mobs.wave_near(hp2):
+		_jump_queued = true
 	_bot_t -= delta
 	if _bot_t <= 0.0 and hero.unit.alive and _bot_try_interrupt():
 		_bot_t = 0.25
@@ -686,6 +695,14 @@ func bot_tick(delta: float) -> void:
 		return
 	# цель
 	var tu: Unit = world.get_unit(target_id)
+	# объекты боссов (гробница, филактерии, порталы) — первая цель
+	var first: Unit = null
+	for u: Unit in world.units.values():
+		if u.alive and u.team == Unit.Team.ENEMIES and GameData.MOBS.get(u.type_id, {}).get("kill_first", false) and _dist_to(u) < 32.0 				and (first == null or _dist_to(u) < _dist_to(first)):
+			first = u
+	if first and (tu == null or not GameData.MOBS.get(tu.type_id, {}).get("kill_first", false)):
+		target_id = first.id
+		tu = first
 	if tu == null or not tu.alive or tu.team != Unit.Team.ENEMIES or _dist_to(tu) > 32.0:
 		target_id = 0
 		var best := 1e9

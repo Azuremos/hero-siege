@@ -102,6 +102,7 @@ func setup(w: Node3D) -> void:
 	_build_proc_alert()
 	_build_meter()
 	_build_messages()
+	_build_boss_bar()
 	_build_menu()
 	_build_help()
 
@@ -822,6 +823,7 @@ func _build_messages() -> void:
 	_announce.position = Vector2(-500, 120)
 	_announce.size = Vector2(1000, 40)
 	_announce.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_announce.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART     # длинные реплики боссов
 	_root.add_child(_announce)
 	_error = _label("", 18, Color(1, 0.3, 0.25))
 	_error.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -1305,6 +1307,7 @@ func _process(delta: float) -> void:
 	var c = lh.controller
 	var t: float = world.now()
 
+	_update_boss_bar()
 	# игрок
 	_fill_frame(_player, lh.unit, "%s  •  %s" % [lh.player_name, GameData.CLASSES[lh.class_id]["name"]], lh.net_absorb)
 	_player["level"].text = str(lh.unit.level)
@@ -1927,3 +1930,85 @@ func on_choices_changed() -> void:
 	rebuild_action_bar()
 	if _spellbook and _spellbook.visible:
 		_spellbook.refresh()
+
+# ---------------------------------------------------------------- полоса босса
+## Крупная полоса вверху по центру: имя, здоровье, метки порогов фаз, текущая фаза и щит;
+## в подсказке — механики босса из boss_data.gd. Видна, пока на поле есть босс.
+var _boss_panel: PanelContainer
+var _boss_name: Label
+var _boss_bar: ProgressBar
+var _boss_info: Label
+var _boss_marks: Control
+var _boss_shown := 0
+
+func _build_boss_bar() -> void:
+	_boss_panel = PanelContainer.new()
+	_boss_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.85, 0.35, 0.2)))
+	_boss_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_boss_panel.position = Vector2(-260, 34)
+	_boss_panel.custom_minimum_size = Vector2(520, 0)
+	_boss_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	_boss_panel.visible = false
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_panel.add_child(v)
+	_boss_name = _label("", 18, Color(1, 0.8, 0.55))
+	_boss_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_boss_name)
+	_boss_bar = _bar(Color(0.8, 0.15, 0.1), 18)
+	_boss_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(_boss_bar)
+	_boss_marks = Control.new()
+	_boss_marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_marks.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_boss_bar.add_child(_boss_marks)
+	_boss_info = _label("", 13, Color(0.9, 0.85, 0.75))
+	_boss_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_boss_info)
+	_root.add_child(_boss_panel)
+
+func _update_boss_bar() -> void:
+	var bm = null
+	for m in world.mobs.mobs.values():
+		if GameData.BOSSES.has(m.unit.type_id) and m.unit.alive:
+			bm = m
+			break
+	_boss_panel.visible = bm != null
+	if bm == null:
+		_boss_shown = 0
+		return
+	var u: Unit = bm.unit
+	var bd: Dictionary = GameData.BOSSES[u.type_id]
+	var st: Dictionary = world.mobs.boss_state.get(u.id, {})
+	if _boss_shown != u.id:
+		_boss_shown = u.id
+		_boss_name.text = ("★ " if bd["rank"] == "main" else "") + u.display_name
+		var tip := "Механики:
+• " + "
+• ".join(PackedStringArray(bd.get("mechanics", [])))
+		for uid in bd.get("loot", []):
+			tip += "
+Добыча: " + str(GameData.ItemData.UNIQUES[uid]["name"])
+		_boss_panel.tooltip_text = tip
+		for c in _boss_marks.get_children():
+			c.queue_free()
+		for ph in bd["phases"]:
+			if float(ph["hp"]) < 1.0:
+				var mk := ColorRect.new()
+				mk.color = Color(1, 0.9, 0.5, 0.9)
+				mk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				mk.anchor_left = float(ph["hp"])
+				mk.anchor_right = float(ph["hp"])
+				mk.anchor_bottom = 1.0
+				mk.offset_right = 2.0
+				_boss_marks.add_child(mk)
+	_boss_bar.max_value = u.max_hp
+	_boss_bar.value = u.hp
+	var info := "%d%%" % int(u.hp_frac() * 100.0)
+	var phases: Array = bd["phases"]
+	if phases.size() > 1:
+		info += "   •   фаза %d из %d" % [int(st.get("phase", 0)) + 1, phases.size()]
+	if st.get("shield", false):
+		info += "   •   НЕУЯЗВИМ — разбейте филактерии!"
+	_boss_info.text = info + "   •   наведите — механики"

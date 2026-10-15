@@ -116,7 +116,7 @@ func _start_wave(t: float) -> void:
 	# В короткой партии (меньше 5 волн) последняя волна заканчивается боссом
 	var short_final: bool = wave_count > 0 and wave_count < 5 and w == wave_count
 	var factions_by_index: Array = active_lanes.map(func(l): return lane_faction[l])
-	var plan: Dictionary = GameData.wave_plan(w, factions_by_index, world.heroes.size(), short_final)
+	var plan: Dictionary = GameData.wave_plan(w, factions_by_index, world.heroes.size(), wave_count > 0 and w == wave_count)
 	var comp: Array = plan["list"]
 	var per_lane_time: Dictionary = {}
 	var headliners: Array = []
