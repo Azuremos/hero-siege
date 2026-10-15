@@ -100,7 +100,7 @@ const SPELLS := {
 		"desc": "Волна тайной магии вокруг мага (8 м). Мало урона, но бьёт всех.",
 		"target": "self", "delivery": "self_aoe", "radius": 8.0,
 		"cast": 0.0, "cd": 0.0, "mana": 34.0, "range": 0.0,
-		"enemy_fx": [{"type": "damage", "min": 18.0, "max": 22.0}],
+		"enemy_fx": [{"type": "damage", "min": 22.0, "max": 26.0}],
 		"vfx": "nova_arcane", "anim": "raise",
 	},
 	"blink": {
@@ -164,10 +164,10 @@ const SPELLS := {
 	},
 	"fire_dash": {
 		"name": "Огненный рывок", "school": "fire", "icon": "ОР", "no_gcd": true,
-		"desc": "Рывок на 10 м вперёд. По пути на 4 сек. остаётся полоса огня: 6–8 урона каждые 0.5 сек.",
+		"desc": "Рывок на 10 м вперёд. По пути на 3 сек. остаётся полоса огня: 3–4 урона каждые 0.5 сек.",
 		"target": "self", "delivery": "blink", "distance": 10.0, "tick": 0.5,
-		"trail": {"radius": 2.2, "dur": 4.0, "vfx": "wall_fire"},
-		"enemy_fx": [{"type": "damage", "min": 6.0, "max": 8.0}],
+		"trail": {"radius": 2.2, "dur": 3.0, "vfx": "wall_fire"},
+		"enemy_fx": [{"type": "damage", "min": 3.0, "max": 4.0}],
 		"cast": 0.0, "cd": 18.0, "mana": 20.0, "range": 0.0,
 		"vfx": "blink", "anim": "raise",
 	},
@@ -216,7 +216,7 @@ const SPELLS := {
 		"desc": "Сфера летит вперёд на 30 м и бьёт всех на пути.",
 		"target": "self", "delivery": "line", "length": 30.0, "width": 4.0,
 		"cast": 0.0, "cd": 12.0, "mana": 40.0, "range": 0.0,
-		"enemy_fx": [{"type": "damage", "min": 44.0, "max": 52.0}],
+		"enemy_fx": [{"type": "damage", "min": 56.0, "max": 66.0}],
 		"vfx": "nova_arcane", "anim": "shoot",
 	},
 	"time_distortion": {

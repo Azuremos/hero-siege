@@ -286,7 +286,7 @@ const SPELLS := {
 		"target": "self", "delivery": "instant",
 		"cast": 0.0, "cd": 90.0, "mana": 20.0, "range": 0.0,
 		"effects": [{"type": "buff", "key": "berserker", "dur": 6.0},
-			{"type": "pulse", "dur": 6.0, "tick": 1.0, "radius": 7.0, "key": "bladestorm", "effects": [{"type": "damage", "min": 18.0, "max": 22.0}]}],
+			{"type": "pulse", "dur": 6.0, "tick": 1.0, "radius": 7.0, "key": "bladestorm", "effects": [{"type": "damage", "min": 13.0, "max": 16.0}]}],
 		"vfx": "whirl", "anim": "spin",
 	},
 	"bloodlust_passive": {
