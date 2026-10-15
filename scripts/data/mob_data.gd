@@ -43,7 +43,8 @@ const MODELS := {
 }
 
 const ANIM_SETS := {
-	"beast": {"idle": "Idle", "run": "Run", "attack": "Weapon", "cast": "Wave", "hit": "HitReact", "death": "Death", "spawn": "Yes"},
+	# удар — Punch: им машет правая рука, где оружие (Weapon у моделей Quaternius бьёт левой)
+	"beast": {"idle": "Idle", "run": "Run", "attack": "Punch", "cast": "Wave", "hit": "HitReact", "death": "Death", "spawn": "Yes"},
 	"flyer": {"idle": "Flying_Idle", "run": "Fast_Flying", "attack": "Headbutt", "cast": "Yes", "hit": "HitReact", "death": "Death", "spawn": "Yes"},
 	"wolf": {"idle": "Idle", "run": "Gallop", "attack": "Attack", "cast": "Idle_2", "hit": "Idle_HitReact_Left", "death": "Death", "spawn": "Idle_2_HeadLow"},
 	"zombie": {"idle": "Idle", "run": "Run", "attack": "Run_Attack", "cast": "Wave", "hit": "HitReact", "death": "Death", "spawn": "Yes"},
