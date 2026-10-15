@@ -867,6 +867,37 @@ static func trap(world: Node3D, id: int, kind: String, pos: Vector3, on: bool) -
 	tw.tween_property(lm, "emission_energy_multiplier", 0.6, 0.6)
 	Sfx.play_at("trap_set", n.global_position + Vector3(0, 0.3, 0))
 
+static var _arrow: ArrayMesh = null
+
+## Одна общая стрела на все выстрелы: древко и наконечник — один меш с цветом в вершинах (один вызов отрисовки).
+static func _arrow_mesh() -> ArrayMesh:
+	if _arrow:
+		return _arrow
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var shaft := CylinderMesh.new()
+	shaft.top_radius = 0.025
+	shaft.bottom_radius = 0.025
+	shaft.height = 0.9
+	shaft.radial_segments = 4
+	shaft.rings = 1
+	var tip := CylinderMesh.new()
+	tip.top_radius = 0.0
+	tip.bottom_radius = 0.06
+	tip.height = 0.16
+	tip.radial_segments = 4
+	tip.rings = 1
+	# древко вдоль -Z (Projectile смотрит на цель через look_at), наконечник — впереди
+	st.set_color(Color(0.55, 0.38, 0.2))
+	st.append_from(shaft, 0, Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO))
+	st.set_color(Color(0.8, 0.8, 0.85))
+	st.append_from(tip, 0, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), Vector3(0, 0, -0.5)))
+	_arrow = st.commit()
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	_arrow.surface_set_material(0, m)
+	return _arrow
+
 ## Стрела в полёте: тонкое древко с наконечником, без частиц.
 static func arrow(world: Node3D, from_id: int, to_id: int, speed: float) -> void:
 	var start = unit_pos(world, from_id, 1.5)
@@ -882,34 +913,10 @@ static func arrow(world: Node3D, from_id: int, to_id: int, speed: float) -> void
 	pr.global_position = start
 	var t = unit_pos(world, to_id, 1.1)
 	pr.last_target = t if t != null else pr.global_position
-	var shaft := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.025
-	cm.bottom_radius = 0.025
-	cm.height = 0.9
-	cm.radial_segments = 4
-	shaft.mesh = cm
-	shaft.rotation.x = PI * 0.5        # древко вдоль -Z (look_at)
-	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color(0.55, 0.38, 0.2)
-	shaft.material_override = wm
-	shaft.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	pr.add_child(shaft)
-	var tip := MeshInstance3D.new()
-	var tc := CylinderMesh.new()
-	tc.top_radius = 0.0
-	tc.bottom_radius = 0.06
-	tc.height = 0.16
-	tc.radial_segments = 4
-	tip.mesh = tc
-	tip.rotation.x = -PI * 0.5
-	tip.position.z = -0.5
-	var mm := StandardMaterial3D.new()
-	mm.albedo_color = Color(0.75, 0.75, 0.8)
-	mm.metallic = 0.8
-	tip.material_override = mm
-	tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	pr.add_child(tip)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _arrow_mesh()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pr.add_child(mi)
 	Sfx.play_at("bow", start, 0.0, 1.5)       # свист выше тоном — выстрел
 
 ## Град стрел: дождь стрел (частицы-штрихи) над кругом на всё время зоны.
