@@ -18,7 +18,7 @@
 
 ## 1. Эффекты — Binbun (основной источник, CC0, Godot 4, 3D)
 
-Почти всё у одного автора, в одном стиле. Лицензия CC0 подтверждена на страницах Electric, Flame, Ice, Magic Area. У остальных паков проверить на странице.
+Почти всё у одного автора, в одном стиле. **Звуков в паках Binbun нет** — только эффекты, шейдеры и модели (проверено по каталогу автора и страницам Ice, Electric, Flame, Magic Area). Звук к каждому эффекту подбирается из раздела 4. Лицензия CC0 подтверждена на страницах Electric, Flame, Ice, Magic Area. У остальных паков проверить на странице.
 
 | Пак | Цена | Что даёт | Для чего у нас |
 |---|---|---|---|
@@ -85,6 +85,16 @@
 | Музыка: ещё трек того же автора, что уже в игре | [RandomMind — Medieval: The Bard's Tale](https://opengameart.org/node/80558) | CC0 | бесплатно |
 | Музыка: 10 спокойных треков + петли | [alkakrab — Fantasy Medieval Ambient](https://alkakrab.itch.io/free-fantasy-medieval-ambient-music-pack) | «бесплатно для коммерции» — **точную лицензию проверить** | бесплатно |
 | Музыка боя: петли | [Epic Stock Media — Fantasy Battle Music Loops](https://epicstockmedia.itch.io/fantasy-battle-music-loops) | royalty-free — **проверить условия** | платно |
+
+**Какой звук к какому эффекту Binbun:**
+
+| Эффекты | Звуки |
+|---|---|
+| лёд, огонь, молнии, вода | lentikula Spell Impacts (+ Sonniss для длинных звуков: буря, пламя) |
+| тьма, порталы, лечение, Свет, лучи, взрывы, дым, яд | Sonniss |
+| удары и попадания (Hit, Impact, Battle) | Kenney Impact Sounds + Sonniss |
+| добыча (Loot) | Kenney Interface / UI Audio |
+| голоса монстров (не эффекты, но рядом) | Morphonaut + OpenGameArt creatures |
 
 **Пробелы:**
 - звуки Света и лечения — проверить The Soundrack и Gravity Sound или взять из Sonniss;
