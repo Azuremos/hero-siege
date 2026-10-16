@@ -66,7 +66,7 @@ static func load_file(sid: String) -> Dictionary:
 	var path := DIR + sid.get_file() + ".json"
 	if not FileAccess.file_exists(path):
 		return {}
-	var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	var raw: Variant = HeroSave.parse_json(FileAccess.get_file_as_string(path))
 	if not raw is Dictionary:
 		return {}
 	var d: Dictionary = raw

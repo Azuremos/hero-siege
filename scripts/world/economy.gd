@@ -428,7 +428,10 @@ func roll_boss_loot(pos: Vector3, wave: int, uniques: Array, rank: String) -> vo
 ## по уровню героев и источнику. Требуемый уровень = уровень предмета.
 func _random_gear(wave: int, pos: Vector3, source: String) -> String:
 	var levels := _levels_near(pos)
-	var ilvl := GameData.Formulas.gear_ilvl(wave, levels, source)
+	var ilvl := GameData.Formulas.gear_ilvl(world.campaign_wave(wave), levels, source)
+	if world.is_campaign() and GameData.Formulas.typical_level(levels) >= GameData.MAX_LEVEL:
+		# «Поход» после 30-го уровня: добыча растёт с угрозой (Звёздные, Небесные вещи)
+		ilvl = mini(ilvl + GameData.Formulas.threat_ilvl(int(Net.settings.get("threat", 0))), GameData.ItemData.MAX_ILVL)
 	var q := GameData.ItemData.roll_quality(GameData.Formulas.typical_level(levels), source, randf())
 	if Net.cli.has("lootsim"):
 		_lootsim_record(ilvl, q, levels)

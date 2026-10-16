@@ -162,11 +162,12 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	u.team = Unit.Team.ENEMIES
 	u.type_id = type
 	u.display_name = def["name"]
-	u.max_hp = float(def["hp"]) * GameData.mob_hp_mult(wave, players) * hp_scale
+	var cw: int = world.campaign_wave(wave)      # «Поход»: сила — от сильнейшего героя и уровня угрозы
+	u.max_hp = float(def["hp"]) * GameData.mob_hp_mult(cw, players) * hp_scale * world.threat_k(true)
 	if Net.cli.has("mobhp"):
 		u.max_hp *= float(Net.cli["mobhp"])    # тест: враги живут дольше, бой без пауз
 	u.hp = u.max_hp
-	u.power = GameData.mob_dmg_mult(wave)
+	u.power = GameData.mob_dmg_mult(cw) * world.threat_k(false)
 	u.phys_power = u.power
 	u.armor = def["armor"]
 	u.radius = def["radius"]

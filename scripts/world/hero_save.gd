@@ -128,3 +128,8 @@ static func apply(world: Node, hero, d: Dictionary) -> void:
 		st["kind"] = d["pet"]["kind"]
 		st["mode"] = d["pet"]["mode"]
 		world.mobs._send_pet_state(hero)
+
+## Разбор JSON без сообщений об ошибке в консоли: битый файл — просто null.
+static func parse_json(text: String) -> Variant:
+	var j := JSON.new()
+	return j.data if j.parse(text) == OK else null

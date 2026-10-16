@@ -324,6 +324,7 @@ func balance_summary() -> String:
 
 ## Автосохранение осады (одна ячейка на осаду). В одиночной игре — тоже: её можно продолжить.
 func _autosave() -> void:
+	world.save_characters()      # «Поход»: герои — игрокам на запись
 	if not Net.is_server() or str(Net.settings.get("mode", "siege")) == "preview" or not Net.cli.is_empty() and not Net.cli.has("autosave"):
 		return
 	var p := SiegeSave.save(world)
@@ -332,6 +333,9 @@ func _autosave() -> void:
 
 ## Сервер: победа — сохранение этой осады больше не нужно.
 func finish(victory: bool) -> void:
+	var was_over := is_over()
 	super.finish(victory)
+	if not was_over:
+		world.campaign_finish(victory)
 	if victory and Net.settings.has("siege_id"):
 		SiegeSave.remove(str(Net.settings["siege_id"]))

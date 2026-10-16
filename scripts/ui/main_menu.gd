@@ -43,6 +43,10 @@ var _keys_view: Control = null
 var _settings_view: Control = null
 var _cli: Dictionary = {}
 var _reconnect_btn: Button
+var _camp_box: HBoxContainer
+var _camp_list: VBoxContainer
+var _camp_ip: LineEdit
+var _camp_char: Dictionary = {}
 var _sieges_box: VBoxContainer
 var _del_armed := ""
 
@@ -164,6 +168,7 @@ func _build_ui() -> void:
 	var m := _panel("main", 360)
 	_big_button(m, "Одиночная игра", func(): _open_hero("solo"))
 	_big_button(m, "Сетевая игра", func(): _open_hero("net"))
+	_big_button(m, "Поход (свои герои)", _show_campaign)
 	_big_button(m, "Продолжить осаду", _show_sieges)
 	_reconnect_btn = _big_button(m, "Переподключиться", _on_reconnect)
 	_reconnect_btn.visible = bool(Net.profile_get("unclean", false)) and str(Net.profile_get("last_host", "")) != ""
@@ -262,6 +267,17 @@ func _build_ui() -> void:
 	_faction_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	opts.add_child(_faction_option)
 	# действия: одиночная
+	_camp_box = HBoxContainer.new()      # «Поход»: создать героя с выбранными именем, классом и расой
+	h.add_child(_camp_box)
+	var mk := Button.new()
+	mk.text = "Создать героя"
+	mk.custom_minimum_size = Vector2(0, 44)
+	mk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mk.pressed.connect(func():
+		_apply_local_info()
+		CharacterStore.create(Net.local_info["name"], Net.local_info["class"], Net.local_info["race"])
+		_show_campaign())
+	_camp_box.add_child(mk)
 	_solo_box = HBoxContainer.new()
 	_solo_box.add_theme_constant_override("separation", 6)
 	h.add_child(_solo_box)
@@ -365,6 +381,7 @@ func _show(screen: String) -> void:
 func _open_hero(mode: String) -> void:
 	_mode = mode
 	_solo_box.visible = mode == "solo"
+	_camp_box.visible = mode == "campaign"
 	_net_box.visible = mode == "net"
 	_status.text = ""
 	_show("hero")
@@ -613,6 +630,20 @@ func _run_cli() -> void:
 	if _cli.has("uipreview"):
 		_start_ui_preview()
 		return
+	if _cli.get("mode", "") == "campaign":
+		# --mode=campaign --character=<id>|new (new — из --name, --class, --race) и --solo | --host | --join=IP
+		var cid: String = str(_cli.get("character", "new"))
+		if cid == "new":
+			_apply_local_info()
+			_camp_char = CharacterStore.create(Net.local_info["name"], Net.local_info["class"], Net.local_info["race"])
+			print("CHARACTER ", _camp_char["id"])
+		else:
+			_camp_char = CharacterStore.load_one(cid)
+		_show_campaign()
+		if _cli.has("join"):
+			_camp_ip.text = str(_cli["join"])
+		_campaign_start("solo" if _cli.has("solo") else ("join" if _cli.has("join") else "host"))
+		return
 	if _cli.has("continue"):
 		# --continue=last | <id>: загрузить сохранённую осаду (с --autostart=N — сетевая, ждёт N игроков)
 		var sl := SiegeSave.list()
@@ -736,3 +767,123 @@ func _continue_siege(sid: String) -> void:
 		Net.start_game()
 	else:
 		_show("lobby")
+
+# ---------------------------------------------------------------- «Поход»: свои герои (сессия 07)
+
+## Список своих героев: выбрать (герой встаёт на подиум), создать, удалить; в поход — одному, хостом или к другу.
+func _show_campaign() -> void:
+	if not _screens.has("campaign"):
+		var v := _panel("campaign", 520)
+		v.add_child(_label("Поход", 24, GOLD))
+		v.add_child(_label("Свои герои растут от осады к осаде: уровень, вещи, таланты, золото. Каждая победа поднимает уровень угрозы — враги сильнее, добыча лучше. Обычная осада этих героев не трогает.", 14, Color(0.9, 0.9, 0.85)))
+		_camp_list = VBoxContainer.new()
+		_camp_list.add_theme_constant_override("separation", 6)
+		v.add_child(_camp_list)
+		var mk := Button.new()
+		mk.text = "Новый герой…"
+		mk.pressed.connect(func(): _open_hero("campaign"))
+		v.add_child(mk)
+		v.add_child(HSeparator.new())
+		var go1 := Button.new()
+		go1.text = "В поход одному"
+		go1.custom_minimum_size = Vector2(0, 42)
+		go1.pressed.connect(func(): _campaign_start("solo"))
+		v.add_child(go1)
+		var go2 := Button.new()
+		go2.text = "Создать игру (хост)"
+		go2.pressed.connect(func(): _campaign_start("host"))
+		v.add_child(go2)
+		var jh := HBoxContainer.new()
+		v.add_child(jh)
+		_camp_ip = LineEdit.new()
+		_camp_ip.placeholder_text = "IP хоста"
+		_camp_ip.text = str(Net.profile_get("last_host", ""))
+		_camp_ip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		jh.add_child(_camp_ip)
+		var jb := Button.new()
+		jb.text = "Подключиться"
+		jb.pressed.connect(func(): _campaign_start("join"))
+		jh.add_child(jb)
+		var back := Button.new()
+		back.text = "Назад"
+		back.pressed.connect(func(): _show("main"))
+		v.add_child(back)
+	for c in _camp_list.get_children():
+		c.queue_free()
+	var chars := CharacterStore.list()
+	if chars.is_empty():
+		_camp_list.add_child(_label("Героев пока нет — создайте первого.", 15, Color(0.7, 0.7, 0.7)))
+	if not _camp_char.is_empty() and not chars.any(func(c): return c["id"] == _camp_char["id"]):
+		_camp_char = {}
+	if _camp_char.is_empty() and not chars.is_empty():
+		_camp_char = chars[0]
+	for d: Dictionary in chars:
+		var row := HBoxContainer.new()
+		var cls: Dictionary = GameData.CLASSES[d["class"]]
+		var pick := Button.new()
+		pick.toggle_mode = true
+		pick.button_pressed = d["id"] == _camp_char.get("id", "")
+		pick.text = "%s — %s, %s, %d ур.  ·  угроза %d  ·  золото %d" % [d["name"], GameData.RACES[d["race"]]["name"], cls["name"], int(d["level"]), int(d["threat"]), int(d["gold"])]
+		pick.add_theme_color_override("font_color", cls["color"])
+		pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var cd: Dictionary = d
+		pick.pressed.connect(func():
+			_camp_char = cd
+			_show_campaign())
+		row.add_child(pick)
+		var del := Button.new()
+		del.text = "Удалить"
+		var cid: String = d["id"]
+		del.pressed.connect(func():
+			if _del_armed != cid:
+				_del_armed = cid
+				del.text = "Точно?"
+				return
+			CharacterStore.remove(cid)
+			_del_armed = ""
+			_show_campaign())
+		row.add_child(del)
+		_camp_list.add_child(row)
+	if not _camp_char.is_empty():
+		_preview_char(_camp_char)
+	_show("campaign")
+
+## Подиум: выбранный герой похода.
+func _preview_char(d: Dictionary) -> void:
+	if _preview:
+		_preview.queue_free()
+	_preview = ModelFactory.build_hero(d["class"], d["race"])
+	add_child(_preview)
+	_preview.position = _preview_anchor
+	_preview.rotation.y = _preview_yaw
+	var ap := ModelFactory.find_anim(_preview)
+	if ap:
+		ap.play("Idle")
+
+## В поход выбранным героем: его данные уходят хосту при входе (Net.local_info["character"]).
+func _campaign_start(how: String) -> void:
+	if _camp_char.is_empty():
+		return
+	_apply_local_info()
+	var d: Dictionary = CharacterStore.load_one(_camp_char["id"])
+	if d.is_empty():
+		_show_campaign()
+		return
+	Net.local_info["name"] = d["name"]
+	Net.local_info["class"] = d["class"]
+	Net.local_info["race"] = d["race"]
+	Net.local_info["character"] = d
+	Net.settings["campaign"] = true
+	match how:
+		"solo":
+			if Net.host_game(true) == OK:
+				Net.start_game()
+		"host":
+			if Net.host_game(false) == OK:
+				_show("lobby")
+		"join":
+			_ip_edit.text = _camp_ip.text
+			var ip := _camp_ip.text.strip_edges()
+			if ip != "" and Net.join_game(ip) == OK:
+				_lobby_info.text = "Подключение к %s..." % ip
+				_show("lobby")

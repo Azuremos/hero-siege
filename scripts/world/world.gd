@@ -242,6 +242,8 @@ func award_kill(mob_pos: Vector3, xp: int, gold: int) -> void:
 func give_xp(h, amount: float) -> void:
 	if h.unit.level >= GameData.MAX_LEVEL:
 		return
+	if is_campaign() and h.unit.level < max_hero_level() - 2:
+		amount *= 1.5      # «Поход»: отставший друг догоняет (врагов это не ослабляет)
 	h.xp += int(round(amount * float(GameData.RACES[h.race_id].get("xp_mult", 1.0))))
 	while h.xp >= h.xp_next and h.unit.level < GameData.MAX_LEVEL:
 		h.xp -= h.xp_next
@@ -401,6 +403,9 @@ func _process(delta: float) -> void:
 		local_hero.global_position = Vector3(pf[0], 0.5, pf[1])
 	if Net.cli.has("chasedebug") and is_server() and _log_t == 0.0:
 		print("CHASE chases=%d drops=%d flips=%d hero=%s" % [mobs.dbg_chases, mobs.dbg_drops, mobs.dbg_flips, local_hero.global_position if local_hero else Vector3.ZERO])
+	# --forcewin=T: засчитать победу на T-й секунде (проверка «Похода»: угроза растёт после победы)
+	if Net.cli.has("forcewin") and is_server() and _test_t >= float(Net.cli["forcewin"]) and _test_t - delta < float(Net.cli["forcewin"]):
+		mode.finish(true)
 	# --savesiege=T: хост сохраняет осаду на T-й секунде и выходит (проверка «Сохранить осаду и продолжить»)
 	if Net.cli.has("savesiege") and is_server() and _test_t >= float(Net.cli["savesiege"]) and _test_t - delta < float(Net.cli["savesiege"]):
 		print("SIEGE SAVED ", SiegeSave.save(self), " wave=", (mode as SiegeMode).wave, " castle=", int((mode as SiegeMode).castle.hp))
@@ -976,3 +981,63 @@ func _apply_saved_heroes() -> void:
 				print("HERO LOADED ", h.player_name, " lvl=", h.unit.level, " xp=", h.xp, " gold=", h.gold, " talents=", h.talents.size(), " equip=", h.equip.size(), " bag=", h.bag.filter(func(s): return s != null).size(), " offline=", h.offline)
 		if h.offline:
 			h.unit.alive = false
+
+	if is_campaign():
+		# уровень угрозы партии — наивысший у героев отряда
+		var thr := 0
+		for h in heroes.values():
+			thr = maxi(thr, h.threat)
+		Net.settings["threat"] = thr
+		announce_all("Поход: уровень угрозы %d." % thr, Color(1, 0.7, 0.4))
+# ---------------------------------------------------------------- «Поход»: угроза, сила врагов, запись героев (сессия 07)
+
+func is_campaign() -> bool:
+	return bool(Net.settings.get("campaign", false))
+
+func max_hero_level() -> int:
+	var m := 1
+	for h in heroes.values():
+		m = maxi(m, h.unit.level)
+	return m
+
+## Волна, по которой считается сила врагов: в «Походе» — не ниже уровня сильнейшего героя.
+func campaign_wave(wave: int) -> int:
+	return GameData.Formulas.campaign_wave(wave, max_hero_level()) if is_campaign() else wave
+
+## Множитель угрозы: hp — здоровье врагов, иначе урон.
+func threat_k(hp: bool) -> float:
+	if not is_campaign():
+		return 1.0
+	var t := int(Net.settings.get("threat", 0))
+	return GameData.Formulas.threat_hp(t) if hp else GameData.Formulas.threat_dmg(t)
+
+## Сервер: записать героев «Похода» — каждому игроку его героя (ev_save_character), свой — сразу в файл.
+## После каждой волны, в передышке и в конце партии.
+func save_characters() -> void:
+	if not is_campaign() or not is_server():
+		return
+	for h in heroes.values():
+		if h.character_id == "":
+			continue
+		var d := HeroSave.capture(h)
+		if h.peer_id == multiplayer.get_unique_id():
+			CharacterStore.save(d)
+		elif h.peer_id > 0 and not h.offline:
+			ev_save_character.rpc_id(h.peer_id, d)
+
+## Клиент: хост прислал моего героя — записать в user://characters/.
+@rpc("authority", "reliable")
+func ev_save_character(d: Dictionary) -> void:
+	CharacterStore.save(d)
+
+## Сервер, конец партии «Похода»: победа — угроза +1; поражение — мягкий штраф: −10% золота (герой не теряется).
+func campaign_finish(victory: bool) -> void:
+	if not is_campaign():
+		return
+	for h in heroes.values():
+		h.played += 1
+		if victory:
+			h.threat = maxi(h.threat, int(Net.settings.get("threat", 0)) + 1)
+		else:
+			h.gold = int(h.gold * 0.9)
+	save_characters()

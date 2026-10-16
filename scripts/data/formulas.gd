@@ -118,3 +118,20 @@ static func gear_ilvl(wave: int, levels: Array, source: String = "mob") -> int:
 	var ilvl := lvl + randi_range(-2, 0) + (1 if source != "mob" else 0)
 	var by_wave := 3 + int(float(wave) * 1.3)
 	return clampi(mini(ilvl, by_wave), 1, ItemData.MAX_ILVL)
+
+# ---------------------------------------------------------------- «Поход» (сессия 07)
+## Сила врагов в «Походе» — от наивысшего уровня героя в отряде: волна считается не меньше той, на которой
+## обычный отряд дорастает до этого уровня (уровень ≈ 1,3 × волна). Слабый друг врагов не ослабляет.
+static func campaign_wave(wave: int, max_level: int) -> int:
+	return maxi(wave, int(round(float(max_level) / 1.3)))
+
+## Уровень угрозы (растёт после каждой победы в «Походе»): здоровье врагов +25%, урон +12% за ступень.
+static func threat_hp(threat: int) -> float:
+	return 1.0 + 0.25 * float(threat)
+
+static func threat_dmg(threat: int) -> float:
+	return 1.0 + 0.12 * float(threat)
+
+## Добыча после 30-го уровня растёт через угрозу: +2 к уровню предмета за ступень (до 50).
+static func threat_ilvl(threat: int) -> int:
+	return 2 * threat

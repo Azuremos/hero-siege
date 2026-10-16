@@ -56,8 +56,13 @@ const TIERS := [
 	{"adj": ["Мифриловый", "Мифриловая", "Мифриловое", "Мифриловые"], "level": 15},
 	{"adj": ["Рунический", "Руническая", "Руническое", "Рунические"], "level": 20},
 	{"adj": ["Драконий", "Драконья", "Драконье", "Драконьи"], "level": 25},
+	# выше 30-го — только в «Походе», через уровень угрозы (+2 к уровню предмета за ступень)
+	{"adj": ["Звёздный", "Звёздная", "Звёздное", "Звёздные"], "level": 32},
+	{"adj": ["Небесный", "Небесная", "Небесное", "Небесные"], "level": 40},
 ]
-const MAX_ILVL := 30
+const MAX_ILVL := 50
+## Требуемый уровень вещи не выше максимального уровня героя.
+const MAX_REQ_LEVEL := 30
 
 ## Характеристики шаблона растут с уровнем предмета: ×1 на 1-м, ×3 на 11-м, ×6,8 на 30-м.
 static func ilvl_mult(ilvl: int) -> float:
@@ -448,7 +453,7 @@ static func describe(id: String) -> Dictionary:
 	var small: bool = slot in ["ring", "amulet", "boots", "helm", "shoulders", "trinket"]
 	var price := int(ilvl_price(ilvl) * float(QUALITY_PRICE[q]) * (0.6 if small else 1.0))
 	var is_use: bool = d["proc"] != "" and str(ITEM_PROCS[d["proc"]]["on"]) == "use"
-	return {"id": id, "name": name, "kind": "gear", "slot": slot, "stats": st, "level": ilvl, "ilvl": ilvl, "price": price,
+	return {"id": id, "name": name, "kind": "gear", "slot": slot, "stats": st, "level": mini(ilvl, MAX_REQ_LEVEL), "ilvl": ilvl, "price": price,
 		"q": q, "icon": tp["icon"], "classes": tp.get("classes", []), "base": d["base"], "affixes": d["affixes"],
 		"proc": "" if is_use else d["proc"], "use": d["proc"] if is_use else "", "trinket": trinket,
 		"set_id": d["set_id"], "unique_id": d["unique_id"]}
@@ -528,7 +533,7 @@ const SELL_RATIO := 0.25
 
 ## Оттенок металла по ступени (TIERS): медь, железо, сталь, мифрил, руны, драконья.
 const TIER_TINT := [Color(0.95, 0.62, 0.42), Color(0.72, 0.72, 0.75), Color(1.0, 1.0, 1.0),
-	Color(0.78, 0.92, 1.05), Color(0.75, 0.8, 1.15), Color(1.1, 0.7, 0.5)]
+	Color(0.78, 0.92, 1.05), Color(0.75, 0.8, 1.15), Color(1.1, 0.7, 0.5), Color(0.85, 0.95, 1.25), Color(1.15, 1.05, 0.75)]
 ## Двуручные модели: левая рука пуста (без щита, книги и второго оружия), удары — двуручные.
 const TWO_HANDED := ["sword_D", "sword_E", "axe_C", "hammer_C", "staff_A", "staff_B", "halberd", "spear_A",
 	"bow_A_withString", "bow_B_withString", "Rogue/1H_Crossbow", "Rogue/2H_Crossbow"]      # луки и арбалеты — обе руки
