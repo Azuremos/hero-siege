@@ -43,6 +43,7 @@ var _keys_view: Control = null
 var _settings_view: Control = null
 var _cli: Dictionary = {}
 var _reconnect_btn: Button
+var _late_check: CheckBox
 var _camp_box: HBoxContainer
 var _camp_list: VBoxContainer
 var _camp_ip: LineEdit
@@ -296,6 +297,11 @@ func _build_ui() -> void:
 	_marks_check.text = "Метки целей ставит только хост"
 	_marks_check.tooltip_text = "Иначе метки (Ctrl+1…8) может ставить любой игрок"
 	net.add_child(_marks_check)
+	_late_check = CheckBox.new()
+	_late_check.text = "Пускать в идущую партию"
+	_late_check.button_pressed = true
+	_late_check.tooltip_text = "Друзья смогут войти посреди осады (уровень — как у отряда) и вернуться после вылета"
+	net.add_child(_late_check)
 	var host := Button.new()
 	host.text = "Создать игру (хост)"
 	host.custom_minimum_size = Vector2(0, 42)
@@ -466,7 +472,7 @@ func _apply_local_info() -> void:
 		"break": int(_break_option.get_item_metadata(_break_option.selected)),
 		"marks_host_only": _marks_check.button_pressed or _cli.has("markshost"),
 		"factions": FACTION_CHOICES[_faction_option.selected][0], "faction": FACTION_CHOICES[_faction_option.selected][2],
-		"seed": randi(), "siege_id": Net.new_uid().substr(0, 12), "late_join": true}
+		"seed": randi(), "siege_id": Net.new_uid().substr(0, 12), "late_join": _late_check.button_pressed}
 	Net.pending_siege = {}
 	_save_settings()
 

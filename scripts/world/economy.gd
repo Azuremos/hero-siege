@@ -562,6 +562,8 @@ func server_tick(delta: float, t: float) -> void:
 		ev_loot_remove.rpc(lid)
 
 func _say_loot(hero, id: String) -> void:
+	if GameData.item(id).get("kind", "") == "gear":
+		world.items_got[hero.hero_id] = int(world.items_got.get(hero.hero_id, 0)) + 1      # итоги партии
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_got(id)
 	else:

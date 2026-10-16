@@ -337,5 +337,6 @@ func finish(victory: bool) -> void:
 	super.finish(victory)
 	if not was_over:
 		world.campaign_finish(victory)
+		world.send_summary()
 	if victory and Net.settings.has("siege_id"):
 		SiegeSave.remove(str(Net.settings["siege_id"]))

@@ -238,6 +238,10 @@ func kill(u: Unit, killer: Unit) -> void:
 	var reward := GameData.AffixData.ELITE_REWARD if u.elite > 0 else 1.0
 	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)) * reward)
 	world.award_kill(u.pos, xp, int(float(m.def["gold"]) * reward))
+	if killer:
+		var kh: int = killer.owner_id if killer.kind == "pet" else (killer.id if killer.kind == "hero" else 0)
+		if kh != 0:
+			world.kills[kh] = int(world.kills.get(kh, 0)) + 1      # итоги партии
 	if not m.boss.is_empty():
 		_boss_died(m)
 	elif m.def.get("object", false):
@@ -2218,15 +2222,24 @@ func _pet_ability(m: Mob, tu: Unit, t: float) -> void:
 ## Сервер: все живые враги и питомцы — одному игроку, вошедшему посреди партии (частями по 60, чтобы
 ## при 200+ мобах один пакет не был огромным). Формат записи — как у ev_spawn.
 func send_full(peer: int) -> void:
+	var t0 := Time.get_ticks_usec()
+	var bytes := 0
+	var parts := 0
 	var batch: Array = []
 	for m: Mob in mobs.values() + pets.values():
 		var u := m.unit
 		batch.append([u.id, u.type_id, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, u.level, u.affixes, u.elite, u.owner_id])
 		if batch.size() >= 60:
+			bytes += var_to_bytes(batch).size()
+			parts += 1
 			ev_spawn.rpc_id(peer, batch)
 			batch = []
 	if not batch.is_empty():
+		bytes += var_to_bytes(batch).size()
+		parts += 1
 		ev_spawn.rpc_id(peer, batch)
+	if Net.cli.has("netlog"):
+		print("FULL SNAPSHOT mobs=%d parts=%d bytes=%d build=%.1f ms" % [mobs.size() + pets.size(), parts, bytes, (Time.get_ticks_usec() - t0) / 1000.0])
 	for id in walls:
 		var w: Dictionary = walls[id]
 		var a: Vector2 = w["a"]

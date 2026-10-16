@@ -1370,10 +1370,38 @@ func show_game_over(victory: bool) -> void:
 		var sl := _label("%s: %s" % [m[1], ",  ".join(parts)], 14, Color(0.9, 0.9, 0.85))
 		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		v.add_child(sl)
+	_summary_box = GridContainer.new()
+	_summary_box.columns = 6
+	_summary_box.add_theme_constant_override("h_separation", 14)
+	v.add_child(_summary_box)
+	fill_summary()
 	var b := Button.new()
 	b.text = "В главное меню"
 	b.pressed.connect(func(): Net.back_to_menu())
 	v.add_child(b)
+
+var _summary_box: GridContainer
+
+## Окно итогов: урон, лечение, убийства, полученные вещи и уровень каждого героя; в «Походе» — уровень угрозы.
+func fill_summary() -> void:
+	if _summary_box == null or world.summary.is_empty():
+		return
+	for c in _summary_box.get_children():
+		c.queue_free()
+	for head in ["Герой", "Урон", "Лечение", "Убито", "Вещей", "Уровень"]:
+		_summary_box.add_child(_label(head, 13, GOLD))
+	for row in world.summary:
+		var col: Color = GameData.CLASSES.get(str(row[1]), {}).get("color", Color.WHITE)
+		_summary_box.add_child(_label(str(row[0]), 14, col))
+		_summary_box.add_child(_label(MeterWindowScript.fmt(float(row[2])), 14))
+		_summary_box.add_child(_label(MeterWindowScript.fmt(float(row[3])), 14))
+		_summary_box.add_child(_label(str(row[4]), 14))
+		_summary_box.add_child(_label(str(row[5]), 14))
+		_summary_box.add_child(_label(str(row[6]), 14))
+	if world.summary_campaign:
+		var l := _label("Поход: уровень угрозы теперь %d." % (world.summary.map(func(r): return int(r[7])).max()), 15, Color(1, 0.7, 0.4))
+		_summary_box.get_parent().add_child(l)
+		_summary_box.get_parent().move_child(l, _summary_box.get_index() + 1)
 
 func floating_number(u: Unit, amount: float, kind: String, school: String, crit: bool, on_me: bool) -> void:
 	var text := str(int(round(amount)))

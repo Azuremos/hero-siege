@@ -233,7 +233,8 @@ class Projectile extends Node3D:
 			queue_free()
 			return
 		global_position += to.normalized() * step
-		look_at(last_target, Vector3.UP)
+		if global_position.distance_squared_to(last_target) > 0.0001:
+			look_at(last_target, Vector3.UP)
 
 static func _timed(world: Node3D, pos: Vector3, life: float) -> TimedFx:
 	var n := TimedFx.new()

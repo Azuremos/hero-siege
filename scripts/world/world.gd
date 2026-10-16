@@ -1041,3 +1041,29 @@ func campaign_finish(victory: bool) -> void:
 		else:
 			h.gold = int(h.gold * 0.9)
 	save_characters()
+
+# ---------------------------------------------------------------- итоги партии (сессия 07)
+var kills: Dictionary = {}          # сервер: hero_id -> убито врагов (с питомцем)
+var items_got: Dictionary = {}      # сервер: hero_id -> получено вещей
+var summary: Array = []             # у всех: строки окна итогов
+
+## Сервер, конец партии: итоги каждого героя — всем (окно итогов в любом режиме).
+func send_summary() -> void:
+	var total: Dictionary = meter.segs["total"]["heroes"]
+	var rows: Array = []
+	for h in heroes.values():
+		var r: Dictionary = total.get(h.hero_id, {})
+		rows.append([h.player_name, h.class_id, float(r.get("dmg", 0.0)), float(r.get("heal", 0.0)),
+			int(kills.get(h.hero_id, 0)), int(items_got.get(h.hero_id, 0)), h.unit.level, h.threat])
+	ev_summary.rpc(rows, int(Net.settings.get("threat", 0)), is_campaign())
+
+@rpc("authority", "call_local", "reliable")
+func ev_summary(rows: Array, threat: int, campaign: bool) -> void:
+	summary = rows
+	summary_threat = threat
+	summary_campaign = campaign
+	if hud.game_over_shown:
+		hud.fill_summary()
+
+var summary_threat := 0
+var summary_campaign := false
