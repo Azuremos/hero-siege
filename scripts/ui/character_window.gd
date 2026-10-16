@@ -8,6 +8,7 @@ const CELL := 50.0
 
 var world: Node3D
 var _equip_box: VBoxContainer
+var _equip_grid: GridContainer   # ячейки снаряжения в два столбца, чтобы окно влезало по высоте
 var _stats_box: VBoxContainer
 var _bag_grid: GridContainer
 var _gold: Label
@@ -55,6 +56,8 @@ func setup(w: Node3D) -> void:
 	_gold = _lbl("", 15, GOLD)
 	bag_v.add_child(_gold)
 	var hint := _lbl("ЛКМ — надеть / выпить.  ПКМ — меню (выбросить); у торговца — продать, при обмене — в обмен.\nЗелья и используемые аксессуары перетаскиваются на панель заклинаний.\nУтащите вещь за пределы окна — она упадёт на землю.", 12, Color(1, 1, 1, 0.6))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(300, 0)
 	v.add_child(hint)
 
 func _lbl(text: String, size: int, col: Color) -> Label:
@@ -86,8 +89,14 @@ func refresh() -> void:
 	_title.text = "%s — %s %d ур." % [hero.player_name, GameData.CLASSES[hero.class_id]["name"], hero.unit.level]
 	# снаряжение
 	for c in _equip_box.get_children():
+		_equip_box.remove_child(c)   # сразу из раскладки — иначе размер окна считается со старыми рядами
 		c.queue_free()
 	_equip_box.add_child(_lbl("Снаряжение", 15, GOLD))
+	_equip_grid = GridContainer.new()
+	_equip_grid.columns = 2
+	_equip_grid.add_theme_constant_override("h_separation", 10)
+	_equip_grid.add_theme_constant_override("v_separation", 4)
+	_equip_box.add_child(_equip_grid)
 	for slot in GameData.ItemData.SLOT_ORDER:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
@@ -107,12 +116,13 @@ func refresh() -> void:
 		row.add_child(cell)
 		var name_l := _lbl(GameData.item(id)["name"] if id != null else GameData.ItemData.SLOTS[slot], 13,
 			GameData.item_color(id) if id != null else Color(0.55, 0.55, 0.55))
-		name_l.custom_minimum_size = Vector2(150, 0)
+		name_l.custom_minimum_size = Vector2(120, 0)
 		name_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(name_l)
-		_equip_box.add_child(row)
+		_equip_grid.add_child(row)
 	# атрибуты и характеристики
 	for c in _stats_box.get_children():
+		_stats_box.remove_child(c)
 		c.queue_free()
 	_stats_box.add_child(_lbl("Атрибуты", 15, GOLD))
 	for k in ["str", "agi", "sta", "int", "spi"]:

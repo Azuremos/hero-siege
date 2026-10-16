@@ -437,6 +437,8 @@ func _process(delta: float) -> void:
 		_test_cam.look_at_from_position(Vector3(a[0], a[1], a[2]), Vector3(b[0], b[1], b[2]))
 		_test_cam.fov = 50.0
 		_test_cam.current = true
+	if Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) and _test_t - delta < float(Net.cli["charwin"]):
+		hud.toggle_character()   # --charwin=T: открыть окно персонажа (снимок)
 	if Net.cli.has("shot2") and absf(_test_t - float(Net.cli["shot2"])) < delta * 0.5 + 0.001:
 		_save_shot(Net.cli.get("shot", "user://shot.png").get_basename() + "_b.png")
 	if Net.cli.has("freezeall") and is_server() and absf(_test_t - float(Net.cli["freezeall"])) < delta * 0.5 + 0.001:
