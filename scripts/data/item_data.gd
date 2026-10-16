@@ -9,7 +9,7 @@ const SLOTS := {"weapon": "Оружие", "offhand": "Левая рука", "hel
 	"ring": "Кольцо", "amulet": "Амулет", "trinket": "Аксессуар", "trinket1": "Аксессуар", "trinket2": "Аксессуар"}
 const SLOT_ORDER := ["weapon", "offhand", "helm", "shoulders", "chest", "boots", "ring", "amulet", "trinket1", "trinket2"]
 ## Ячейки, которые видны на модели героя (ev_appearance рассылает только их).
-const LOOK_SLOTS := ["weapon", "offhand", "helm", "shoulders", "chest", "boots"]
+const LOOK_SLOTS := ["weapon", "offhand", "helm", "shoulders", "chest", "boots", "ring", "amulet"]      # кольцо и амулет — для свечения полного сета
 ## Аксессуар (шаблон со slot "trinket") надевается в одну из двух ячеек.
 const TRINKET_SLOTS := ["trinket1", "trinket2"]
 ## Оружие в левой руке (только воин с талантом «Бой двумя руками») даёт эту долю характеристик.
@@ -579,6 +579,12 @@ static func look(id: String) -> Dictionary:
 	var ti := tier_index(int(it["ilvl"]))
 	var q := int(it["q"])
 	var out := {"tint": TIER_TINT[ti], "q": q, "tier": ti, "base": it["base"], "cloth": CLOTH_TINT[q], "wear": tp.get("wear", {})}
+	if SetData.SETS.has(str(it.get("set_id", ""))):
+		# часть сета — цвет сета на ткани и металле
+		var sc: Color = SetData.SETS[it["set_id"]]["look"]
+		out["tint"] = sc
+		out["cloth"] = sc
+		out["set"] = it["set_id"]
 	if tp.has("models"):
 		var models: Array = tp["models"]
 		var mdl: String = models[mini(ti, models.size() - 1)]

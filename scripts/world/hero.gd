@@ -144,6 +144,7 @@ func update_outfit(ids: Dictionary) -> void:
 				looks[slot] = lk
 	two_hand = bool(looks.get("weapon", {}).get("two_hand", false))
 	ModelFactory.apply_outfit(model, class_id, looks)
+	_set_aura(ids)
 
 func apply_level_stats(full_restore: bool) -> void:
 	var cls: Dictionary = GameData.CLASSES[class_id]
@@ -557,3 +558,29 @@ func _has_buff(key: String) -> bool:
 		if b[0] == key:
 			return true
 	return false
+
+# ---------------------------------------------------------------- свечение полного сета (сессия 07б)
+var _aura: Node3D = null
+
+## 5 и больше частей одного сета — вокруг героя мягкое свечение цвета сета (частицы на видеокарте).
+func _set_aura(ids: Dictionary) -> void:
+	var counts := {}
+	for slot in ids:
+		var sid := str(GameData.item(str(ids[slot])).get("set_id", ""))
+		if sid != "":
+			counts[sid] = int(counts.get(sid, 0)) + 1
+	var full := ""
+	for sid in counts:
+		if int(counts[sid]) >= 5:
+			full = sid
+	if _aura and is_instance_valid(_aura) and str(_aura.get_meta("set", "")) != full:
+		_aura.queue_free()
+		_aura = null
+	if full == "" or _aura != null:
+		return
+	var col: Color = GameData.SetData.SETS[full]["look"]
+	_aura = Node3D.new()
+	_aura.set_meta("set", full)
+	model.add_child(_aura)
+	Vfx.particles(_aura, Color(col.r, col.g, col.b, 0.8), 18, 1.6, {"shape": "ring", "radius": 0.9, "vmin": 0.2, "vmax": 0.5,
+		"dir": Vector3.UP, "spread": 10.0, "smin": 0.4, "smax": 0.8, "size": 0.25, "gravity": Vector3(0, 0.6, 0), "local": true, "aabb": 3.0})

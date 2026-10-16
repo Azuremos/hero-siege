@@ -404,6 +404,8 @@ func roll_loot(pos: Vector3, wave: int, source: String) -> void:
 		_:
 			if randf() < (float(Net.cli["lootrate"]) if Net.cli.has("lootrate") else 0.06):
 				drops.append(_random_gear(wave, pos, source) if randf() < 0.4 else _random_consumable(pos))
+	if source != "mob":
+		_roll_special(pos, wave, source)      # части сетов и именные легендарки
 	for id in drops:
 		_spawn_loot(id, pos + Vector3(randf_range(-1.2, 1.2), 0, randf_range(-1.2, 1.2)))
 
@@ -562,6 +564,8 @@ func server_tick(delta: float, t: float) -> void:
 		ev_loot_remove.rpc(lid)
 
 func _say_loot(hero, id: String) -> void:
+	if GameData.SetData.LEGENDARIES.has(str(GameData.item(id).get("unique_id", ""))):
+		world.announce_all("%s нашёл: %s!" % [hero.player_name, GameData.item(id)["name"]], GameData.ItemData.QUALITY[4])
 	if GameData.item(id).get("kind", "") == "gear":
 		world.items_got[hero.hero_id] = int(world.items_got.get(hero.hero_id, 0)) + 1      # итоги партии
 	if hero.peer_id == multiplayer.get_unique_id():
@@ -767,3 +771,58 @@ func send_loot(peer: int) -> void:
 	for lid in _loot:
 		var l: Dictionary = _loot[lid]
 		ev_loot_spawn.rpc_id(peer, lid, l["item"], l["pos"], int(l.get("n", 1)), l.has("owner"))
+
+# ---------------------------------------------------------------- части сетов и именные легендарки (сессия 07б)
+## Шанс части сета с элитного, чемпиона и босса — с 10-го уровня героев; легендарки — с 15-го, очень редко.
+## Без привязки к боссам (решение пользователя). Защита от невезения: каждый элитный или босс без выпадения
+## добавляет к следующему шансу шаг PITY. 70% вещей — для классов, которые есть в отряде.
+## Числа подобраны симуляцией tools/loot_sim.gd (таблица в отчёте 07б).
+const SET_CHANCE := {"elite": 0.03, "champion": 0.06, "boss": 0.15}
+const SET_PITY := 0.006
+const SET_MIN_LEVEL := 10
+const LEG_CHANCE := {"elite": 0.002, "champion": 0.005, "boss": 0.03}
+const LEG_PITY := 0.0008
+const LEG_MIN_LEVEL := 15
+const PARTY_SHARE := 0.7
+var _set_pity := 0.0
+var _leg_pity := 0.0
+
+func _roll_special(pos: Vector3, wave: int, source: String) -> void:
+	var levels := _levels_near(pos)
+	var lvl := GameData.Formulas.typical_level(levels)
+	var ilvl := GameData.Formulas.gear_ilvl(world.campaign_wave(wave), levels, "boss")
+	if lvl >= SET_MIN_LEVEL:
+		if randf() < float(SET_CHANCE[source]) + _set_pity or Net.cli.has("setdrop"):
+			_set_pity = 0.0
+			var cid := _drop_class()
+			var sets: Array = GameData.SetData.SETS.keys().filter(func(s): return GameData.SetData.SETS[s]["class"] == cid)
+			var sid: String = sets[randi() % sets.size()]
+			var slot: String = GameData.SetData.SLOTS[randi() % GameData.SetData.SLOTS.size()]
+			var id := GameData.make_set_piece(sid, slot, ilvl)
+			_spawn_loot(id, pos + Vector3(randf_range(-1.0, 1.0), 0, randf_range(-1.0, 1.0)))
+			world.announce_all("Выпала часть сета: %s!" % GameData.item(id)["name"], GameData.ItemData.QUALITY[3])
+		else:
+			_set_pity += SET_PITY
+	if lvl >= LEG_MIN_LEVEL:
+		if randf() < float(LEG_CHANCE[source]) + _leg_pity or Net.cli.has("legdrop"):
+			_leg_pity = 0.0
+			var cid2 := _drop_class()
+			var legs: Array = GameData.SetData.LEGENDARIES.keys().filter(func(l): return GameData.SetData.LEGENDARIES[l]["class"] in [cid2, ""])
+			var lid: String = legs[randi() % legs.size()]
+			var lid_item := GameData.make_legendary(lid, ilvl + 1)
+			_spawn_loot(lid_item, pos + Vector3(randf_range(-1.0, 1.0), 0, randf_range(-1.0, 1.0)))
+			world.announce_all("Легендарная добыча: %s!" % GameData.item(lid_item)["name"], GameData.ItemData.QUALITY[4])
+			world.sound_all("victory")
+		else:
+			_leg_pity += LEG_PITY
+
+## Для какого класса вещь: с вероятностью PARTY_SHARE — для класса из отряда, иначе для любого.
+func _drop_class() -> String:
+	var party: Array = []
+	for h in world.heroes.values():
+		if not h.offline:
+			party.append(h.class_id)
+	if not party.is_empty() and randf() < PARTY_SHARE:
+		return party[randi() % party.size()]
+	var all: Array = GameData.CLASSES.keys()
+	return all[randi() % all.size()]

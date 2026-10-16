@@ -519,6 +519,32 @@ func _process(delta: float) -> void:
 			h.apply_level_stats(false)
 			economy._sync(h)
 			print("TRINKETS ", h.class_id, " ", h.equip, " procs=", h.unit.mods.get("procs", []).map(func(p): return p["id"]))
+	# --giveset=<id сета>|auto (сет ветки --bottree) и --giveleg=<id>|auto: полный сет и легендарка каждому герою своего класса
+	if (Net.cli.has("giveset") or Net.cli.has("giveleg")) and is_server() and _test_t >= 2.0 and _test_t - delta < 2.0:
+		for h in heroes.values():
+			var gsid := str(Net.cli.get("giveset", ""))
+			if gsid == "auto":
+				for s in GameData.SetData.SETS:
+					if GameData.SetData.SETS[s]["class"] == h.class_id and int(GameData.SetData.SETS[s]["tree"]) == int(Net.cli.get("bottree", 0)):
+						gsid = s
+			if GameData.SetData.SETS.has(gsid) and GameData.SetData.SETS[gsid]["class"] == h.class_id:
+				for slot in GameData.SetData.SLOTS:
+					h.equip[slot] = GameData.make_set_piece(gsid, slot, h.unit.level)
+			var glid := str(Net.cli.get("giveleg", ""))
+			if glid == "auto":
+				for l in GameData.SetData.LEGENDARIES:
+					if GameData.SetData.LEGENDARIES[l]["class"] == h.class_id:
+						glid = l
+						break
+			if GameData.SetData.LEGENDARIES.has(glid):
+				var lit := GameData.make_legendary(glid, h.unit.level)
+				var lslot: String = GameData.item(lit)["slot"]
+				h.equip["trinket1" if lslot == "trinket" else lslot] = lit
+				if GameData.ItemData.is_two_handed(lit):
+					h.equip.erase("offhand")
+			h.apply_level_stats(false)
+			economy._sync(h)
+			print("GIVESET ", h.class_id, " sets=", GameData.set_counts(h.equip), " procs=", h.unit.mods["procs"].map(func(p): return p["id"]), " flags=", h.unit.mods["flags"].keys())
 	# --outfit=<уровень>:<качество>: надеть оружие класса (у каждого героя — своё по порядку шаблонов) и броню
 	if Net.cli.has("outfit") and is_server() and _test_t >= 1.5 and _test_t - delta < 1.5:
 		var op: PackedStringArray = (Net.cli["outfit"] + ":").split(":")
