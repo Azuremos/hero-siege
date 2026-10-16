@@ -108,13 +108,16 @@ func gear_stats() -> Dictionary:
 		var w: float = GameData.ItemData.OFFHAND_RATIO if slot == "offhand" and it.get("slot", "") == "weapon" else 1.0
 		for k in it.get("stats", {}):
 			s[k] = float(s.get(k, 0.0)) + float(it["stats"][k]) * w
+	var bonus := GameData.set_stats(equip)      # бонусы сетов за число надетых частей
+	for k in bonus:
+		s[k] = float(s.get(k, 0.0)) + float(bonus[k])
 	return s
 
 ## Проки надетых вещей (фиолетовые и легендарные) — в общий список проков героя, рядом с талантами.
 ## id прока «item:<ячейка>:<прок>», чтобы две одинаковые вещи срабатывали независимо.
 func _sync_gear_procs() -> void:
-	if unit.mods.is_empty():
-		unit.mods = GameData.compute_mods(class_id, talents, choices)
+	# моды пересобираются при каждой смене снаряжения: таланты, книга, бонусы сетов и легендарок
+	unit.mods = GameData.compute_mods(class_id, talents, choices, GameData.gear_sources(equip))
 	var procs: Array = unit.mods["procs"].filter(func(p): return not str(p["id"]).begins_with("item:"))
 	for slot in equip:
 		var pid: String = GameData.item(equip[slot]).get("proc", "")

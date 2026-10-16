@@ -3,6 +3,8 @@ extends RefCounted
 ## Экземпляр хранится и ходит по сети компактной строкой (см. encode/decode), в сумке и снаряжении — она же.
 ## Расходники — постоянные id (potion_heal_2, elixir_power…).
 
+const SetData := preload("res://scripts/data/set_data.gd")
+
 const SLOTS := {"weapon": "Оружие", "offhand": "Левая рука", "helm": "Голова", "shoulders": "Плечи", "chest": "Доспех", "boots": "Обувь",
 	"ring": "Кольцо", "amulet": "Амулет", "trinket": "Аксессуар", "trinket1": "Аксессуар", "trinket2": "Аксессуар"}
 const SLOT_ORDER := ["weapon", "offhand", "helm", "shoulders", "chest", "boots", "ring", "amulet", "trinket1", "trinket2"]
@@ -450,11 +452,24 @@ static func describe(id: String) -> Dictionary:
 	if UNIQUES.has(d["unique_id"]):
 		name = UNIQUES[d["unique_id"]]["name"]
 	var slot: String = tp.get("slot", "trinket")
+	var classes: Array = tp.get("classes", [])
+	# часть сета: «Венец Пепельного Владыки», только для класса сета; именная легендарка — своё имя
+	if SetData.SETS.has(d["set_id"]):
+		var sd: Dictionary = SetData.SETS[d["set_id"]]
+		name = "%s %s" % [SetData.SLOT_NOUN.get(slot, ""), sd["name"]]
+		classes = [sd["class"]]
+	if SetData.LEGENDARIES.has(d["unique_id"]):
+		var ld: Dictionary = SetData.LEGENDARIES[d["unique_id"]]
+		name = ld["name"]
+		if ld["class"] != "":
+			classes = [ld["class"]]
+		for lk in ld["effect"].get("stats", {}):
+			st[lk] = float(st.get(lk, 0.0)) + float(ld["effect"]["stats"][lk])
 	var small: bool = slot in ["ring", "amulet", "boots", "helm", "shoulders", "trinket"]
 	var price := int(ilvl_price(ilvl) * float(QUALITY_PRICE[q]) * (0.6 if small else 1.0))
 	var is_use: bool = d["proc"] != "" and str(ITEM_PROCS[d["proc"]]["on"]) == "use"
 	return {"id": id, "name": name, "kind": "gear", "slot": slot, "stats": st, "level": mini(ilvl, MAX_REQ_LEVEL), "ilvl": ilvl, "price": price,
-		"q": q, "icon": tp["icon"], "classes": tp.get("classes", []), "base": d["base"], "affixes": d["affixes"],
+		"q": q, "icon": tp["icon"], "classes": classes, "base": d["base"], "affixes": d["affixes"],
 		"proc": "" if is_use else d["proc"], "use": d["proc"] if is_use else "", "trinket": trinket,
 		"set_id": d["set_id"], "unique_id": d["unique_id"]}
 

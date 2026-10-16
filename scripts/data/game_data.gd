@@ -230,7 +230,7 @@ func talent_level(class_id: String, t: Dictionary) -> int:
 ## Модификаторы героя: таланты (ранги) и пассивные варианты книги заклинаний (choices).
 ## Область «row:N» — «ваше заклинание ряда N книги»: применяется к тому, что выбрано в этом ряду,
 ## и при смене выбора переходит на новый вариант сам.
-func compute_mods(class_id: String, ranks: Dictionary, choices: Dictionary = {}) -> Dictionary:
+func compute_mods(class_id: String, ranks: Dictionary, choices: Dictionary = {}, extra: Array = []) -> Dictionary:
 	var m := {"global": {}, "school": {}, "spell": {}, "flags": {}, "procs": []}
 	var sources: Array = []      # [данные с mods/flags/proc, ранг, id]
 	for tid in ranks:
@@ -242,6 +242,7 @@ func compute_mods(class_id: String, ranks: Dictionary, choices: Dictionary = {})
 			var c := book_choice(class_id, i, choices)
 			if c != "" and SPELLS[c].get("passive", false):
 				sources.append([SPELLS[c], 1, c])
+	sources.append_array(extra)      # бонусы сетов и эффекты легендарок (gear_sources)
 	for src in sources:
 		var t: Dictionary = src[0]
 		var r: int = src[1]
@@ -272,7 +273,7 @@ func compute_mods(class_id: String, ranks: Dictionary, choices: Dictionary = {})
 			bucket[key] = float(bucket.get(key, 0.0)) + val
 		if t.has("proc"):
 			var pd: Dictionary = t["proc"].duplicate()
-			pd["chance"] = float(pd["chance"]) * r
+			pd["chance"] = float(pd.get("chance", 1.0)) * r      # у проков «каждое N-е» шанса нет
 			pd["id"] = tid
 			m["procs"].append(pd)
 		for fl in t.get("flags", []):
@@ -425,6 +426,9 @@ func item_color(id: String) -> Color:
 	return ItemData.QUALITY[clampi(int(item(id).get("q", 0)), 0, ItemData.QUALITY.size() - 1)]
 
 ## Текст подсказки предмета.
+## Снаряжение героя, для которого строится подсказка (сколько частей сета надето). Ставит окно персонажа.
+var tooltip_equip: Dictionary = {}
+
 func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99, price: int = -1) -> String:
 	var it := item(id)
 	if it.is_empty():
@@ -445,6 +449,7 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99, pri
 		if it["proc"] != "":
 			var pr: Dictionary = ItemData.ITEM_PROCS[it["proc"]]
 			lines.append("%s: %s" % [pr["name"], pr["desc"]])
+		lines.append_array(set_tooltip_lines(it, tooltip_equip))
 		if not it["classes"].is_empty():
 			var names := []
 			for c in it["classes"]:
@@ -466,3 +471,83 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99, pri
 		lines.append("✗ Требуется уровень %d — у вас %d" % [it["level"], hero_level])
 	lines.append("Цена: %d золота" % (price if price >= 0 else int(it["price"])))
 	return "\n".join(lines)
+
+# ---------------------------------------------------------------- сеты и именные легендарки (сессия 07б)
+const SetData := preload("res://scripts/data/set_data.gd")
+
+## Сервер: часть сета set_id в ячейке slot — фиолетовая, со свойствами сета, без прока.
+func make_set_piece(set_id: String, slot: String, ilvl: int, seed: int = -1) -> String:
+	var sd: Dictionary = SetData.SETS[set_id]
+	var base: String = SetData.BASES[sd["armor"]][slot]
+	if seed < 0:
+		seed = randi() % 1000000
+	var d: Dictionary = ItemData.roll(base, ilvl, 3, seed)
+	d["affixes"] = sd["affixes"].duplicate()
+	d["proc"] = ""
+	d["set_id"] = set_id
+	return ItemData.encode(d)
+
+## Сервер: именная легендарка (оранжевая, свойства по шаблону, эффект — из SetData.LEGENDARIES).
+func make_legendary(lid: String, ilvl: int, seed: int = -1) -> String:
+	var ld: Dictionary = SetData.LEGENDARIES[lid]
+	if seed < 0:
+		seed = randi() % 1000000
+	var d: Dictionary = ItemData.roll(ld["base"], ilvl, 3, seed)
+	d["q"] = 4
+	d["proc"] = ""
+	d["unique_id"] = lid
+	return ItemData.encode(d)
+
+## Сколько частей каждого сета надето: {set_id: число}.
+func set_counts(equip: Dictionary) -> Dictionary:
+	var out := {}
+	for slot in equip:
+		var sid := str(item(str(equip[slot])).get("set_id", ""))
+		if SetData.SETS.has(sid):
+			out[sid] = int(out.get(sid, 0)) + 1
+	return out
+
+## Источники модификаторов от снаряжения для compute_mods: действующие бонусы сетов и эффекты легендарок.
+## [данные с mods / flags / proc, ранг 1, id]
+func gear_sources(equip: Dictionary) -> Array:
+	var out: Array = []
+	var counts := set_counts(equip)
+	for sid in counts:
+		var bonuses: Dictionary = SetData.SETS[sid]["bonuses"]
+		for need in bonuses:
+			if int(counts[sid]) >= int(need):
+				out.append([bonuses[need], 1, "set:%s:%d" % [sid, int(need)]])
+	for slot in equip:
+		var lid := str(item(str(equip[slot])).get("unique_id", ""))
+		if SetData.LEGENDARIES.has(lid):
+			out.append([SetData.LEGENDARIES[lid]["effect"], 1, "leg:%s:%s" % [lid, slot]])
+	return out
+
+## Характеристики от бонусов сетов (бонус «2 части» и т.п.).
+func set_stats(equip: Dictionary) -> Dictionary:
+	var st := {}
+	var counts := set_counts(equip)
+	for sid in counts:
+		var bonuses: Dictionary = SetData.SETS[sid]["bonuses"]
+		for need in bonuses:
+			if int(counts[sid]) >= int(need):
+				for k in bonuses[need].get("stats", {}):
+					st[k] = float(st.get(k, 0.0)) + float(bonuses[need]["stats"][k])
+	return st
+
+## Строки подсказки: сет (надето N из 6, бонусы — действующие отмечены) или эффект легендарки.
+func set_tooltip_lines(it: Dictionary, equip: Dictionary = {}) -> Array:
+	var lines: Array = []
+	var sid := str(it.get("set_id", ""))
+	if SetData.SETS.has(sid):
+		var sd: Dictionary = SetData.SETS[sid]
+		var n := int(set_counts(equip).get(sid, 0))
+		lines.append("Сет «%s» (%s): надето %d из 6" % [sd["name"], CLASSES[sd["class"]]["name"], n])
+		var keys: Array = sd["bonuses"].keys()
+		keys.sort()
+		for need in keys:
+			lines.append("%s(%d) %s" % ["✔ " if n >= int(need) else "   ", int(need), sd["bonuses"][need]["desc"]])
+	var lid := str(it.get("unique_id", ""))
+	if SetData.LEGENDARIES.has(lid):
+		lines.append("Легендарный эффект: " + str(SetData.LEGENDARIES[lid]["desc"]))
+	return lines

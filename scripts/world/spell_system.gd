@@ -409,6 +409,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			st["auto_target"] = tu.id
 			# прок с extra_targets (Ледяные пальцы): снаряд летит ещё в ближайших врагов рядом с целью
 			var extra := int(proc["data"].get("extra_targets", 0)) if not proc.is_empty() else 0
+			extra += int(u.flag("extra:" + sid))      # легендарки: Посох Пепельного Шторма, Лук Северного Ветра
 			if extra > 0 and tu.kind == "mob":
 				for m: Unit in world.mobs.query_radius(Vector2(tu.pos.x, tu.pos.z), 10.0):
 					if extra <= 0:
@@ -616,6 +617,12 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 		if mypet:
 			apply_effects(u, mypet, sp["pet_fx"], sid, school)
 			fx_at("heal_small" if sid == "mend_pet" else "proc", mypet.pos, u.pos, 0.0, mypet.id)
+	# Молот Рассвета: Правосудие оставляет под целью освящённую землю (как Освящение паладина)
+	if sid == "judgement" and tu and u.flag("judgement_ground") > 0.0:
+		var cs: Dictionary = GameData.SPELLS["consecration"]
+		var cr := float(cs["radius"])
+		_add_zone({"sid": "consecration", "kind": "circle", "pos": Vector3(tu.pos.x, 0, tu.pos.z), "radius": cr, "reach": cr, "caster": u.id,
+			"until": t + float(cs["duration"]), "tick": float(cs["tick"]), "next": t + 0.05, "ally_dr": 0.0}, cs["vfx"], 0.0, cr, float(cs["duration"]))
 
 # ---------------------------------------------------------------- ловушки охотника
 ## Ловушка лежит на земле до life сек., срабатывает, когда враг подходит на trigger м: эффекты enemy_fx всем
@@ -1336,6 +1343,14 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 	if dst.hp <= 0.0:
 		dst.hp = 0.0
 		_on_death(dst, src)
+		# Секира Раскола: Казнь, убившая врага, обрушивается на соседа (с запасом здоровья выше 25% — вполсилы)
+		if sid == "execute" and src and src.kind == "hero" and src.flag("execute_chain") > 0.0:
+			for m in world.mobs.query_radius(Vector2(dst.pos.x, dst.pos.z), 6.0):
+				if m != dst and m.alive:
+					var ex: Dictionary = GameData.SPELLS["execute"]
+					apply_effects(src, m, ex["effects"] if m.hp_frac() < 0.25 else _amplified(ex, 0.5)["effects"], "execute", "physical")
+					fx_at("hit_blood", m.pos, dst.pos, 0.0, m.id)
+					break
 
 func heal(src: Unit, dst: Unit, amount: float, crit: bool, sid: String = "") -> void:
 	if dst == null or not dst.alive:
@@ -1346,6 +1361,11 @@ func heal(src: Unit, dst: Unit, amount: float, crit: bool, sid: String = "") -> 
 		amount *= 1.0 + src.flag("grace")      # Благодать: тяжело раненых лечит сильнее
 	var before := dst.hp
 	dst.hp = minf(dst.max_hp, dst.hp + amount)
+	# Жезл Вечного Света: избыточное лечение — щит на цели
+	if src and src.flag("overheal_shield") > 0.0 and amount - (dst.hp - before) > 1.0:
+		var tnow: float = world.now()
+		dst.absorb = maxf(dst.absorb if tnow < dst.absorb_until else 0.0, (amount - (dst.hp - before)) * src.flag("overheal_shield"))
+		dst.absorb_until = tnow + 10.0
 	world.fx_number(dst.id, dst.hp - before, "heal", "holy", src.id if src else 0, crit)
 	world.meter.on_heal(src, dst, dst.hp - before, maxf(0.0, amount - (dst.hp - before)), sid, crit)
 	if src:
