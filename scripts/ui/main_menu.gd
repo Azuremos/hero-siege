@@ -43,6 +43,8 @@ var _keys_view: Control = null
 var _settings_view: Control = null
 var _cli: Dictionary = {}
 var _reconnect_btn: Button
+var _coll_box: VBoxContainer
+var _coll_class := "mage"
 var _late_check: CheckBox
 var _camp_box: HBoxContainer
 var _camp_list: VBoxContainer
@@ -175,6 +177,7 @@ func _build_ui() -> void:
 	_reconnect_btn.visible = bool(Net.profile_get("unclean", false)) and str(Net.profile_get("last_host", "")) != ""
 	_reconnect_btn.tooltip_text = "Партия оборвалась — вернуться к хосту %s тем же героем" % str(Net.profile_get("last_host", ""))
 	_big_button(m, "Таланты классов", func(): _show("talents"))
+	_big_button(m, "Коллекция", func(): _show_collection(_selected_class()))
 	_big_button(m, "Настройки", _toggle_settings)
 	_big_button(m, "Настроить интерфейс", _start_ui_preview)
 	_big_button(m, "Об игре", func(): _show("about"))
@@ -618,6 +621,10 @@ func _run_cli() -> void:
 	if _cli.has("menuscreen"):
 		if _cli["menuscreen"] == "hero":
 			_open_hero("solo")
+		elif _cli["menuscreen"] == "collection":
+			_show_collection(str(_cli.get("class", "mage")))
+			if _cli.has("tryon"):
+				_try_on_set.call_deferred(str(_cli["tryon"]))
 		elif _cli["menuscreen"] == "settings":
 			_toggle_settings()
 		else:
@@ -893,3 +900,108 @@ func _campaign_start(how: String) -> void:
 			if ip != "" and Net.join_game(ip) == OK:
 				_lobby_info.text = "Подключение к %s..." % ip
 				_show("lobby")
+
+# ---------------------------------------------------------------- коллекция сетов и легендарок (сессия 07б)
+
+## Выбор класса → 3 сета (части: собранные цветные, недостающие серые; бонусы за 2, 3 и 5 частей) и легендарки.
+## «Примерить» — надеть сет на героя на подиуме, даже если он не собран.
+func _show_collection(cid: String) -> void:
+	_coll_class = cid
+	if not _screens.has("collection"):
+		var v := _panel("collection", 720)
+		v.add_child(_label("Коллекция", 24, GOLD))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		for c in GameData.CLASSES:
+			var b := Button.new()
+			b.text = GameData.CLASSES[c]["name"]
+			b.add_theme_color_override("font_color", GameData.CLASSES[c]["color"])
+			var cc: String = c
+			b.pressed.connect(func(): _show_collection(cc))
+			row.add_child(b)
+		v.add_child(row)
+		var sc := ScrollContainer.new()
+		sc.custom_minimum_size = Vector2(700, 560)
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		v.add_child(sc)
+		_coll_box = VBoxContainer.new()
+		_coll_box.add_theme_constant_override("separation", 6)
+		_coll_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sc.add_child(_coll_box)
+		var back := Button.new()
+		back.text = "Назад"
+		back.pressed.connect(func():
+			_update_preview()
+			_show("main"))
+		v.add_child(back)
+	for c in _coll_box.get_children():
+		c.queue_free()
+	var trees: Array = GameData.talent_trees(cid)
+	for sid in GameData.SetData.SETS:
+		var sd: Dictionary = GameData.SetData.SETS[sid]
+		if sd["class"] != cid:
+			continue
+		var head := HBoxContainer.new()
+		var got := 0
+		for slot in GameData.SetData.SLOTS:
+			if Collection.has("set:%s:%s" % [sid, slot]):
+				got += 1
+		var hl := _label("Сет «%s» — %s  ·  собрано %d из 6" % [sd["name"], trees[int(sd["tree"])]["name"], got], 17, sd["look"].clamp())
+		hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		head.add_child(hl)
+		var tb := Button.new()
+		tb.text = "Примерить"
+		var s2: String = sid
+		tb.pressed.connect(func(): _try_on_set(s2))
+		head.add_child(tb)
+		_coll_box.add_child(head)
+		var icons := HBoxContainer.new()
+		icons.add_theme_constant_override("separation", 4)
+		for slot in GameData.SetData.SLOTS:
+			var id := GameData.make_set_piece(sid, slot, 20, 1)
+			var ic := SpellIcon.make_item(id, 40)
+			ic.custom_minimum_size = Vector2(40, 40)
+			var have := Collection.has("set:%s:%s" % [sid, slot])
+			ic.modulate = Color.WHITE if have else Color(0.35, 0.35, 0.35)
+			ic.tooltip_text = GameData.item_tooltip(id) + ("" if have else "\n\nЕщё не найдено")
+			ic.mouse_filter = Control.MOUSE_FILTER_STOP
+			icons.add_child(ic)
+		_coll_box.add_child(icons)
+		var keys: Array = sd["bonuses"].keys()
+		keys.sort()
+		for need in keys:
+			_coll_box.add_child(_label("(%d) %s" % [int(need), sd["bonuses"][need]["desc"]], 13, Color(0.9, 0.9, 0.85)))
+		_coll_box.add_child(HSeparator.new())
+	_coll_box.add_child(_label("Именные легендарки", 18, GameData.ItemData.QUALITY[4]))
+	for lid in GameData.SetData.LEGENDARIES:
+		var ld: Dictionary = GameData.SetData.LEGENDARIES[lid]
+		if ld["class"] != cid and ld["class"] != "":
+			continue
+		var have := Collection.has("leg:" + lid)
+		var lrow := HBoxContainer.new()
+		lrow.add_theme_constant_override("separation", 8)
+		var lic := SpellIcon.make_item(GameData.make_legendary(lid, 20, 1), 40)
+		lic.custom_minimum_size = Vector2(40, 40)
+		lic.modulate = Color.WHITE if have else Color(0.35, 0.35, 0.35)
+		lrow.add_child(lic)
+		var ll := _label("%s%s\n%s" % [ld["name"], "" if ld["class"] != "" else "  (любой класс)", ld["desc"]], 13,
+			GameData.ItemData.QUALITY[4] if have else Color(0.6, 0.6, 0.6))
+		ll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lrow.add_child(ll)
+		_coll_box.add_child(lrow)
+	_preview_char({"class": cid, "race": _selected_race()})
+	_show("collection")
+
+## Примерка: сет целиком на герое на подиуме (цвет сета, наплечники, плащ, свечение полного сета).
+func _try_on_set(sid: String) -> void:
+	var sd: Dictionary = GameData.SetData.SETS[sid]
+	_preview_char({"class": sd["class"], "race": _selected_race()})
+	var looks := {}
+	for slot in GameData.SetData.SLOTS:
+		var lk := GameData.ItemData.look(GameData.make_set_piece(sid, slot, 25, 1))
+		if not lk.is_empty():
+			looks[slot] = lk
+	ModelFactory.apply_outfit(_preview, sd["class"], looks)
+	var col: Color = sd["look"]
+	Vfx.particles(_preview, Color(col.r, col.g, col.b, 0.8), 18, 1.6, {"shape": "ring", "radius": 0.9, "vmin": 0.2, "vmax": 0.5,
+		"spread": 10.0, "smin": 0.4, "smax": 0.8, "size": 0.25, "gravity": Vector3(0, 0.6, 0), "local": true, "aabb": 3.0})

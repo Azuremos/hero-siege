@@ -575,6 +575,7 @@ func _say_loot(hero, id: String) -> void:
 
 @rpc("authority", "reliable")
 func ev_got(id: String) -> void:
+	Collection.record(id, world.is_campaign())      # коллекция сетов и легендарок
 	world.hud.error_info("Получено: %s" % GameData.item(id)["name"])
 	Sfx.play("coins")
 
