@@ -69,15 +69,27 @@
 
 ## 4. Звуки
 
-| Пак | Лицензия | Цена | Что |
-|---|---|---|---|
-| [lentikula — Basic Spell Impacts](https://lentikula.itch.io/freecc0-basic-spell-impacts-sfx) | CC0 | бесплатно | 20 попаданий заклинаний: молния, огонь, лёд, вода |
-| Kenney: RPG Audio, Impact Sounds, Interface Sounds | CC0 | бесплатно | шаги, удары, звуки интерфейса. Impact Sounds уже используются |
-| [OpenGameArt — magic sounds](https://opengameart.org/content/magic-sounds) | **проверить** | бесплатно | разные звуки магии |
-| [The Soundrack — Magic Spell SFX](https://thesoundrack.itch.io/freemagicspellsfx/purchase) | **проверить** | бесплатно | молния, огонь, лёд, **Свет** — может закрыть звуки лечения |
-| [Gravity Sound — Magic Spell SFX](https://gravity-sound.itch.io/magic-spell-sounds) | **проверить** | от 9,99 $ | 140 звуков, включая лечение |
+Уже в игре: музыка cynicmusic и RandomMind (CC0), Kenney Impact Sounds (CC0), звуки из `assets/sounds/LICENSE.txt`.
 
-**Пробел:** звуки лечения и Света — проверить The Soundrack и Gravity Sound или собрать из CC0-звуков.
+| Что нужно | Пак | Лицензия | Цена |
+|---|---|---|---|
+| **Огромная библиотека на всё**: оружие, магия, монстры, окружение, интерфейс | [Sonniss GameAudioGDC Bundle](https://sonniss.com/gameaudiogdc) (выпуски разных лет: 2026 — 7,5 ГБ, 2024 — 27,5 ГБ) | своя лицензия Sonniss: бесплатно, коммерческое использование, **без указания автора**, безлимит проектов; **запрещено обучать на них ИИ** и выдавать за свои | бесплатно |
+| Попадания заклинаний: молния, огонь, лёд, вода | [lentikula — Basic Spell Impacts](https://lentikula.itch.io/freecc0-basic-spell-impacts-sfx) | CC0 | бесплатно |
+| Шаги, удары, интерфейс | Kenney: RPG Audio, Impact Sounds, Interface Sounds, UI Audio | CC0 | бесплатно |
+| **Голоса фракций**: гоблин, орк-воин, тролль, рычание, рёв — 103 звука | [Morphonaut — Monster Vocalizations](https://morphonaut.itch.io/monster-vocalization-sound-pack) | CC0 | от 1 $ |
+| Монстры, рёв, хрип, слизь — 80 звуков | [OpenGameArt — 80 CC0 creature SFX #2](https://opengameart.org/content/80-cc0-creture-sfx-2) | CC0 | бесплатно |
+| Рычание, хрипы, смерть монстров | [lazyspar7an — Free Monster Voice Pack](https://lazyspar7an.itch.io/free-monster-voice-pack-growls-grunts-death-sounds-wav) | «бесплатно для коммерции, без указания» — **не CC0, проверить** | бесплатно |
+| Свет, лечение | [The Soundrack — Magic Spell SFX](https://thesoundrack.itch.io/freemagicspellsfx/purchase) | **проверить** | бесплатно |
+| 140 звуков магии, включая лечение | [Gravity Sound — Magic Spell SFX](https://gravity-sound.itch.io/magic-spell-sounds) | **проверить** | от 9,99 $ |
+| Разные звуки магии | [OpenGameArt — magic sounds](https://opengameart.org/content/magic-sounds) | **проверить** | бесплатно |
+| Музыка: ещё трек того же автора, что уже в игре | [RandomMind — Medieval: The Bard's Tale](https://opengameart.org/node/80558) | CC0 | бесплатно |
+| Музыка: 10 спокойных треков + петли | [alkakrab — Fantasy Medieval Ambient](https://alkakrab.itch.io/free-fantasy-medieval-ambient-music-pack) | «бесплатно для коммерции» — **точную лицензию проверить** | бесплатно |
+| Музыка боя: петли | [Epic Stock Media — Fantasy Battle Music Loops](https://epicstockmedia.itch.io/fantasy-battle-music-loops) | royalty-free — **проверить условия** | платно |
+
+**Пробелы:**
+- звуки Света и лечения — проверить The Soundrack и Gravity Sound или взять из Sonniss;
+- голоса фракций — Morphonaut + Sonniss;
+- демонический гул и кличи орков — искать в Sonniss.
 
 ## 5. Не подходят для продажи
 
@@ -87,12 +99,61 @@
 
 ---
 
-## Рекомендация
+## Что скачать и что купить — раскладка
 
-1. **Бесплатно сразу** (агент может скачать сам):
-   - Binbun RPG Weapons Free;
-   - бесплатные версии Binbun: Electric, Flame, Dark Magic, Magic Projectiles, Hit, Battle, Status, Loot, Portal, Beam, Elemental;
-   - Kenney Particle Pack;
-   - lentikula Spell Impacts.
-2. **Купить:** Binbun **Godot VFX Bundle (35 $)**, если в нём есть Ice, Magic Area, Fire, Magic Orb и полные версии остальных. Иначе — по отдельности Ice (4,49 $), Magic Area (4,49 $) и полные Electric и Flame (по 5,94 $). Плюс RPG Weapons Pro (~6–8 $) ради посохов, луков и щитов.
-3. **Закрыть пробел «Свет и лечение»** — перекраской паков Binbun и звуками после проверки лицензий.
+### А. Скачать бесплатно (агент может сам, разрешение на CC0 есть)
+
+| # | Что | Куда положить |
+|---|---|---|
+| 1 | Binbun RPG Weapons (Free) | `assets/weapons/binbun/` |
+| 2 | Binbun, бесплатные версии: Electric, Flame, Dark Magic, Magic Projectiles, Hit, Battle, Status, Loot, Portal, Beam, Elemental Magic, Explosion | `assets/vfx/binbun/<pack>/` |
+| 3 | Kenney Particle Pack | `assets/vfx/kenney-particles/` |
+| 4 | lentikula Spell Impacts | `assets/sounds/lentikula/` |
+| 5 | Kenney RPG Audio, Interface Sounds, UI Audio | `assets/sounds/kenney/` |
+| 6 | OpenGameArt 80 CC0 creature SFX #2 | `assets/sounds/creatures-oga/` |
+| 7 | Sonniss GameAudioGDC Bundle (выпуск 2024 или 2026) — **в проект брать только нужные файлы**, а не весь архив | `assets/sounds/sonniss/` |
+| 8 | RandomMind — The Bard's Tale | `assets/music/` |
+
+### Б. Купить (пользователь)
+
+| # | Что | Цена | Зачем |
+|---|---|---|---|
+| 1 | **Binbun Godot VFX Bundle** — сначала проверь состав: нужны Ice, Magic Area, Fire, Magic Orb, Poison, Smoke и полные Electric и Flame | 35 $ | все эффекты в одном стиле |
+| 1′ | …если бандл не подходит — по отдельности: Ice 4,49 $, Magic Area 4,49 $, Fire 4,49 $, Magic Orb 4,49 $, Electric Full 5,94 $, Flame Full 5,94 $ | ~30 $ | то же |
+| 2 | Binbun RPG Weapons Pro | ~6–8 $ | посохи, луки, щиты |
+| 3 | Morphonaut Monster Vocalizations | от 1 $ | голоса гоблинов, орков, троллей |
+| 4 | По желанию: Gravity Sound Magic Spell SFX (после проверки лицензии) | 9,99 $ | звуки лечения и Света |
+
+**Итого:** около 45–55 $.
+
+После покупки положи архивы в `assets/_incoming/` (папку не коммитить) и скажи агенту: «Встрой паки из `assets/_incoming` по `docs/design/vfx-assets.md`».
+
+### В. Сначала проверить лицензию, потом решать
+
+The Soundrack, OpenGameArt magic sounds, lazyspar7an, alkakrab, Epic Stock Media, Dragonforge Ice Shaders, EffectBlocks.
+
+---
+
+## Проверка пака после добавления (для агента)
+
+Выполняй **для каждого пака** по порядку. Пак, который не прошёл проверку, не встраивай — запиши причину в отчёт.
+
+1. **Лицензия.**
+   - Открой страницу пака и лицензию внутри архива.
+   - Подходят: CC0, CC BY (с указанием автора), Sonniss. Не подходят: NC (некоммерческие), «только личное использование», «нельзя в играх».
+   - Сохрани текст лицензии и ссылку в `assets/<папка>/LICENSE.txt`.
+2. **Только нужное.** Положи в проект только используемые файлы: модели, текстуры, звуки, шейдеры. Без демо-сцен, `.blend`, превью и «всего архива». Проверь, что репозиторий не вырос больше чем на ~20–50 МБ за пак без причины.
+3. **Импорт в Godot 4.7 (Forward+).**
+   - Открой проект в редакторе (`--editor --headless --quit` или `--import`). В логе не должно быть ошибок импорта, шейдер не должен падать.
+   - **Сначала один пак**: по отзывам Magic Area падал на 4.6 в Forward+. Если падает — попробуй режим Compatibility только для проверки; если без него никак — пак не встраивать.
+4. **Эффект на сцене.**
+   - Подключи один эффект через `vfx.gd` (не отдельной сценой на каждый каст).
+   - Сделай скриншот `--shot` в игре: виден, по цвету и масштабу сочетается с KayKit.
+   - Для звука — громкость рядом с соседними (`sfx.gd`), без клиппинга.
+5. **Производительность.** Сценарий из отчёта 02 (бесконечная осада с 80-й волны): FPS не хуже, чем до пака. Много одновременных эффектов — пулы и лимиты.
+6. **Тёмные и светлые места.** Проверь эффект ночью у логова и днём на площади: не пропадает и не слепит.
+7. **Сеть.** Хост + клиент: эффект виден обоим (рассылка через `ev_fx` / `ev_zone`, как сейчас).
+8. **Записать:**
+   - строка в «Авторах ассетов» README и в `CREDITS.md`;
+   - решение в `DECISIONS.md`: что взяли и почему;
+   - скриншот в отчёт сессии.

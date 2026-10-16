@@ -4,3 +4,6 @@
 godot/
 export/
 *.tmp
+
+# Скачанные архивы ассетов до встраивания
+assets/_incoming/
