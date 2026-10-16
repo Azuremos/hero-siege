@@ -2,12 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://byw7kiubaxw71"
-valid=false
+uid="uid://bxufxtp73ugad"
+path="res://.godot/imported/pads_plate.svg-192a42fe2dd66d969bc21390af1eb5ee.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/icons/items/pads_plate.svg"
+dest_files=["res://.godot/imported/pads_plate.svg-192a42fe2dd66d969bc21390af1eb5ee.ctex"]
 
 [params]
 
