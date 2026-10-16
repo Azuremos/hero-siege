@@ -778,8 +778,12 @@ func send_loot(peer: int) -> void:
 ## Без привязки к боссам (решение пользователя). Защита от невезения: каждый элитный или босс без выпадения
 ## добавляет к следующему шансу шаг PITY. 70% вещей — для классов, которые есть в отряде.
 ## Числа подобраны симуляцией tools/loot_sim.gd (таблица в отчёте 07б).
-const SET_CHANCE := {"elite": 0.03, "champion": 0.06, "boss": 0.15}
-const SET_PITY := 0.006
+const SET_CHANCE := {"elite": 0.05, "champion": 0.1, "boss": 0.25}
+const SET_PITY := 0.01
+## Часть для героя отряда: сет его основной ветки (больше всего очков талантов) с этой долей, иначе любой сет класса;
+## ячейка, которой у него ещё нет (ни надето, ни в сумке), — с долей MISSING_SHARE.
+const MAIN_TREE_SHARE := 0.6
+const MISSING_SHARE := 0.7
 const SET_MIN_LEVEL := 10
 const LEG_CHANCE := {"elite": 0.002, "champion": 0.005, "boss": 0.03}
 const LEG_PITY := 0.0008
@@ -795,10 +799,9 @@ func _roll_special(pos: Vector3, wave: int, source: String) -> void:
 	if lvl >= SET_MIN_LEVEL:
 		if randf() < float(SET_CHANCE[source]) + _set_pity or Net.cli.has("setdrop"):
 			_set_pity = 0.0
-			var cid := _drop_class()
-			var sets: Array = GameData.SetData.SETS.keys().filter(func(s): return GameData.SetData.SETS[s]["class"] == cid)
-			var sid: String = sets[randi() % sets.size()]
-			var slot: String = GameData.SetData.SLOTS[randi() % GameData.SetData.SLOTS.size()]
+			var pick := _pick_set_piece()
+			var sid: String = pick[0]
+			var slot: String = pick[1]
 			var id := GameData.make_set_piece(sid, slot, ilvl)
 			_spawn_loot(id, pos + Vector3(randf_range(-1.0, 1.0), 0, randf_range(-1.0, 1.0)))
 			world.announce_all("Выпала часть сета: %s!" % GameData.item(id)["name"], GameData.ItemData.QUALITY[3])
@@ -827,3 +830,35 @@ func _drop_class() -> String:
 		return party[randi() % party.size()]
 	var all: Array = GameData.CLASSES.keys()
 	return all[randi() % all.size()]
+
+## Какую часть сета уронить: [id сета, ячейка]. С долей PARTY_SHARE — для героя отряда (сет основной ветки
+## с долей MAIN_TREE_SHARE, ячейка, которой у него нет, с долей MISSING_SHARE), иначе — любая часть любого класса.
+func _pick_set_piece() -> Array:
+	var sets: Dictionary = GameData.SetData.SETS
+	var party: Array = world.heroes.values().filter(func(h): return not h.offline)
+	if party.is_empty() or randf() >= PARTY_SHARE:
+		var any: Array = sets.keys()
+		return [any[randi() % any.size()], GameData.SetData.SLOTS[randi() % GameData.SetData.SLOTS.size()]]
+	var h = party[randi() % party.size()]
+	var own: Array = sets.keys().filter(func(s): return sets[s]["class"] == h.class_id)
+	var sid: String = own[randi() % own.size()]
+	if randf() < MAIN_TREE_SHARE:
+		var trees: Array = GameData.talent_trees(h.class_id)
+		var best := 0
+		for i in trees.size():
+			if GameData.tree_points(h.class_id, h.talents, i) > GameData.tree_points(h.class_id, h.talents, best):
+				best = i
+		for s in own:
+			if int(sets[s]["tree"]) == best:
+				sid = s
+	var have := {}
+	for slot in h.equip:
+		if str(GameData.item(str(h.equip[slot])).get("set_id", "")) == sid:
+			have[GameData.item(str(h.equip[slot]))["slot"]] = true
+	for b in h.bag:
+		if b != null and str(GameData.item(str(b["id"])).get("set_id", "")) == sid:
+			have[GameData.item(str(b["id"]))["slot"]] = true
+	var missing: Array = GameData.SetData.SLOTS.filter(func(s): return not have.has(s))
+	if not missing.is_empty() and randf() < MISSING_SHARE:
+		return [sid, missing[randi() % missing.size()]]
+	return [sid, GameData.SetData.SLOTS[randi() % GameData.SetData.SLOTS.size()]]

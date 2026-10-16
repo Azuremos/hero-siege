@@ -27,6 +27,8 @@ func _init() -> void:
 	for scenario in [["одиночка", 1, 0.7], ["группа из 3", 3, 0.9]]:
 		_run(scenario[0], scenario[1], scenario[2])
 	_slots()
+	_sets("одиночка", 1)
+	_sets("группа из 3", 3)
 	quit()
 
 ## 3) Какие вещи падают: доля ячеек (как economy._random_gear: аксессуар с шансом 20%, иначе любой шаблон поровну)
@@ -103,3 +105,76 @@ func _run(title: String, players: int, kill_frac: float) -> void:
 			lvl += 1
 	print("   всего по качеству %s; первая синяя — волна %s, фиолетовая — %s, легендарная — %s; надеть сразу %d%%" % [str(counts),
 		str(q_at.get(2, "—")), str(q_at.get(3, "—")), str(q_at.get(4, "—")), int(100.0 * wear[1] / maxf(1.0, wear[0]))])
+
+## 4) Сеты и легендарки (сессия 07б): правила economy._roll_special. 300 партий по 40 волн:
+##    волна первой части сета своего класса, первой части сета своей ветки, полного сета своей ветки (6 разных частей)
+##    и первой легендарки своего класса. Медиана и доля партий, где это случилось.
+const Econ := preload("res://scripts/world/economy.gd")
+
+func _sets(title: String, players: int) -> void:
+	var runs := 300
+	var first_any: Array = []
+	var first_own: Array = []
+	var full_own: Array = []
+	var first_leg: Array = []
+	var share := (1.0 + 0.5 * float(players - 1)) / float(players)
+	for r in runs:
+		var lvl := 1
+		var xp := 0.0
+		var pity := 0.0
+		var lpity := 0.0
+		var got: Dictionary = {}
+		var fa := -1
+		var fo := -1
+		var fu := -1
+		var fl := -1
+		for wave in range(1, 41):
+			var comp: Array = Formulas.wave_plan(wave, ["undead", "orcs", "demons", "goblins"], players)["list"]
+			for e in comp:
+				var def: Dictionary = MobData.MOBS[e[0]]
+				xp += float(def["xp"]) * (1.0 + 0.1 * float(wave - 1)) * share * 0.8 * 1.1
+				var src := "boss" if def.get("boss", false) else ("champion" if e[2] == "champion" else ("elite" if wave >= 4 and randf() < 0.06 else "mob"))
+				if src == "mob":
+					continue
+				if lvl >= Econ.SET_MIN_LEVEL:
+					if randf() < float(Econ.SET_CHANCE[src]) + pity:
+						pity = 0.0
+						# 70% — класс из отряда (наш — 1 из players), 30% — любой из 5
+						var mine := randf() < Econ.PARTY_SHARE / float(players) + (1.0 - Econ.PARTY_SHARE) / 5.0
+						var for_me := randf() < Econ.PARTY_SHARE / (Econ.PARTY_SHARE / float(players) + (1.0 - Econ.PARTY_SHARE) / 5.0) / float(players)
+						if mine:
+							if fa < 0:
+								fa = wave
+							if randf() < ((Econ.MAIN_TREE_SHARE + (1.0 - Econ.MAIN_TREE_SHARE) / 3.0) if for_me else 1.0 / 3.0):      # сет своей ветки
+								if fo < 0:
+									fo = wave
+								var miss: Array = range(6).filter(func(s): return not got.has(s))
+								got[miss[randi() % miss.size()] if for_me and not miss.is_empty() and randf() < Econ.MISSING_SHARE else randi() % 6] = true
+								if got.size() == 6 and fu < 0:
+									fu = wave
+					else:
+						pity += Econ.SET_PITY
+				if lvl >= Econ.LEG_MIN_LEVEL:
+					if randf() < float(Econ.LEG_CHANCE[src]) + lpity:
+						lpity = 0.0
+						# легендарки своего класса: 2 из (2 своих + 2 общих) при выпадении для нашего класса
+						if randf() < (Econ.PARTY_SHARE / float(players) + (1.0 - Econ.PARTY_SHARE) / 5.0) and randf() < 0.5 and fl < 0:
+							fl = wave
+					else:
+						lpity += Econ.LEG_PITY
+			while xp >= Formulas.xp_to_next(lvl) and lvl < 30:
+				xp -= Formulas.xp_to_next(lvl)
+				lvl += 1
+		first_any.append(fa)
+		first_own.append(fo)
+		full_own.append(fu)
+		first_leg.append(fl)
+	print("\n== Сеты и легендарки: %s, %d партий по 40 волн (медиана волны; в скобках — доля партий, где случилось)" % [title, runs])
+	print("| Событие | Медиана волны | Партий |")
+	print("|---|---|---|")
+	for row in [["первая часть сета своего класса", first_any], ["первая часть сета своей ветки", first_own],
+			["полный сет своей ветки (6 частей)", full_own], ["первая легендарка своего класса", first_leg]]:
+		var ok: Array = row[1].filter(func(x): return x > 0)
+		ok.sort()
+		var med: String = str(ok[ok.size() / 2]) if not ok.is_empty() else "—"
+		print("| %s | %s | %d%% |" % [row[0], med, int(100.0 * ok.size() / runs)])
