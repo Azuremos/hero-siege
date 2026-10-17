@@ -29,7 +29,7 @@ const WAVE_INTERVAL := 42.0
 ## spell_effects.gd   — уровни открытия заклинаний, баффы, проки, автозаклинания
 ## mob_data.gd        — враги четырёх фракций; factions.gd — фракции и стороны; mob_abilities.gd — способности врагов
 ## boss_data.gd       — боссы: фазы, механики, реплики, добыча
-## boss_data.gd       — боссы: фазы, механики, реплики, добыча
+## lines_data.gd, sends.gd — режим «Война линий»: баланс режима и отправки врагов
 ## formulas.gd        — опыт, рост силы, состав волн, сила врагов
 ## talent_data.gd, item_data.gd — таланты и предметы
 
@@ -41,6 +41,8 @@ const MobAbilities := preload("res://scripts/data/mob_abilities.gd")
 const AffixData := preload("res://scripts/data/affixes.gd")
 const BossData := preload("res://scripts/data/boss_data.gd")
 const Formulas := preload("res://scripts/data/formulas.gd")
+const LinesData := preload("res://scripts/data/lines_data.gd")
+const SendData := preload("res://scripts/data/sends.gd")
 const SPELL_FILES := [
 	preload("res://scripts/data/spells/mage.gd"),
 	preload("res://scripts/data/spells/paladin.gd"),
