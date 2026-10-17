@@ -427,7 +427,8 @@ func item_color(id: String) -> Color:
 	return ItemData.QUALITY[clampi(int(item(id).get("q", 0)), 0, ItemData.QUALITY.size() - 1)]
 
 ## Текст подсказки предмета.
-## Снаряжение героя, для которого строится подсказка (сколько частей сета надето). Ставит окно персонажа.
+## Снаряжение героя, для которого строится подсказка (сколько частей сета надето, сравнение с надетым).
+## Ставят окно персонажа, лавка и обмен; в меню — пусто.
 var tooltip_equip: Dictionary = {}
 
 func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99, price: int = -1) -> String:
@@ -471,7 +472,46 @@ func item_tooltip(id: String, hero_class: String = "", hero_level: int = 99, pri
 	else:
 		lines.append("✗ Требуется уровень %d — у вас %d" % [it["level"], hero_level])
 	lines.append("Цена: %d золота" % (price if price >= 0 else int(it["price"])))
+	if it["kind"] == "gear":
+		lines.append_array(compare_lines(id, tooltip_equip))
 	return "\n".join(lines)
+
+## Сравнение вещи с надетой в той же ячейке (аксессуар — с обоими): разница характеристик ▲/▼.
+## Для надетой вещи и без снаряжения (tooltip_equip пуст) — ничего.
+func compare_lines(id: String, equip: Dictionary) -> Array:
+	var it := item(id)
+	if equip.is_empty() or equip.values().has(id):
+		return []
+	var slots: Array = ItemData.TRINKET_SLOTS if it["slot"] == "trinket" else [it["slot"]]
+	var free: Array = slots.filter(func(s): return str(equip.get(s, "")) == "")
+	if not free.is_empty():
+		slots = [free[0]]       # есть свободная ячейка аксессуара — вещь встанет туда
+	var out: Array = []
+	for slot in slots:
+		var worn := str(equip.get(slot, ""))
+		out.append("")
+		if worn == "" or item(worn).is_empty():
+			out.append("Сравнение: ячейка «%s» пуста — всё прибавится." % ItemData.SLOTS[slot])
+			continue
+		var w := item(worn)
+		out.append("Сравнение с надетым: %s" % w["name"])
+		var diff := false
+		for k in ItemData.STAT_ORDER:
+			var d := float(it["stats"].get(k, 0.0)) - float(w["stats"].get(k, 0.0))
+			if absf(d) < 0.0005:
+				continue
+			diff = true
+			var mark := "▲ +" if d > 0.0 else "▼ −"
+			if ItemData.PCT_STATS.has(k):
+				out.append("%s%.1f%% %s" % [mark, absf(d) * 100.0, ItemData.STAT_NAMES[k]])
+			else:
+				out.append("%s%d %s" % [mark, int(round(absf(d))), ItemData.STAT_NAMES[k]])
+		if not diff:
+			out.append("Характеристики те же.")
+		var w_special: String = str(w.get("proc", "")) + str(w.get("use", "")) + str(w.get("set_id", "")) + str(w.get("unique_id", ""))
+		if w_special != "":
+			out.append("У надетого есть особое свойство (прок, сет или легендарный эффект) — см. его подсказку.")
+	return out
 
 # ---------------------------------------------------------------- сеты и именные легендарки (сессия 07б)
 const SetData := preload("res://scripts/data/set_data.gd")

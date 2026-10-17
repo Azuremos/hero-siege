@@ -919,6 +919,7 @@ func _campaign_start(how: String) -> void:
 ## Выбор класса → 3 сета (части: собранные цветные, недостающие серые; бонусы за 2, 3 и 5 частей) и легендарки.
 ## «Примерить» — надеть сет на героя на подиуме, даже если он не собран.
 func _show_collection(cid: String) -> void:
+	GameData.tooltip_equip = {}      # в меню героя нет — без сравнения
 	_coll_class = cid
 	if not _screens.has("collection"):
 		var v := _panel("collection", 720)

@@ -113,6 +113,8 @@ func _cell(id: String, n: int) -> Panel:
 	return p
 
 func refresh(st: Dictionary) -> void:
+	if world.local_hero:
+		GameData.tooltip_equip = world.local_hero.equip      # вещи партнёра — сравнение со своим снаряжением
 	var partner = world.heroes.get(int(st["partner"]), null)
 	_title.text = "Обмен с героем %s" % (partner.player_name if partner else "?")
 	for c in _mine.get_children():

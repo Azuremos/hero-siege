@@ -73,6 +73,7 @@ func refresh() -> void:
 	var hero = world.local_hero
 	if hero == null or vendor == "":
 		return
+	GameData.tooltip_equip = hero.equip      # подсказка товара — сравнение с надетым
 	_gold.text = "Золото: %d" % hero.gold
 	for c in _list.get_children():
 		c.queue_free()

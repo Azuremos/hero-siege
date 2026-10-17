@@ -86,6 +86,7 @@ func refresh() -> void:
 	var hero = world.local_hero
 	if hero == null:
 		return
+	GameData.tooltip_equip = hero.equip      # подсказки: сколько частей сета надето и сравнение с надетым
 	_title.text = "%s — %s %d ур." % [hero.player_name, GameData.CLASSES[hero.class_id]["name"], hero.unit.level]
 	# снаряжение
 	for c in _equip_box.get_children():
