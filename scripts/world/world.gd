@@ -637,6 +637,9 @@ func _process(delta: float) -> void:
 			spells.apply_effects(lu, best, [{"type": "slow", "pct": 0.4, "dur": 20.0}, {"type": "chill", "stacks": 3, "dur": 3.0}, {"type": "chill", "stacks": 3, "dur": 3.0},
 				{"type": "dot", "total": 6.0, "dur": 20.0, "tick": 2.0, "key": "ignite"}], "frostbolt", "frost")
 			spells.apply_effects(null, best, [{"type": "dot", "total": 6.0, "dur": 20.0, "tick": 2.0, "key": "burn"}], "fire_wall", "fire")
+			# эффекты книги заклинаний (описание собирается из заклинания): Кровопускание и Раскол брони
+			spells.apply_effects(lu, best, GameData.SPELLS["rend"]["effects"], "rend", "physical")
+			spells.apply_effects(lu, best, [GameData.SPELLS["sunder_armor"]["effects"][1]], "sunder_armor", "physical")
 	if Net.cli.has("marktest") and _test_t >= float(Net.cli["marktest"]) and _test_t - delta < float(Net.cli["marktest"]):
 		var near: Array = units.values().filter(func(mu): return mu.kind == "mob" and mu.alive)
 		near.sort_custom(func(a, b): return a.pos.distance_to(local_hero.unit.pos) < b.pos.distance_to(local_hero.unit.pos))

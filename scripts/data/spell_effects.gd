@@ -21,6 +21,7 @@ const BUFF_INFO := {
 	"ignite": {"name": "Горение", "color": Color(1.0, 0.5, 0.15), "icon": "fireball", "debuff": true, "desc": "Огненный шар: урон огнём со временем."},
 	"burn": {"name": "Пламя стены", "color": Color(1.0, 0.5, 0.15), "icon": "fire_wall", "debuff": true, "desc": "Стена огня: урон огнём со временем."},
 	"meteor_burn": {"name": "Огненная глыба", "color": Color(1.0, 0.45, 0.1), "icon": "flamestrike", "debuff": true, "desc": "Горит после удара глыбы."},
+	"berserker": {"name": "Неудержимость", "color": Color(1.0, 0.45, 0.2), "icon": "berserker_rage", "desc": "Контроль не действует, урон или скорость выше."},
 	"earthsplitter_bleed": {"name": "Раскол земли", "color": Color(0.8, 0.15, 0.1), "icon": "rend", "debuff": true, "desc": "Кровоточит после Раскола земли."},
 	"ignite_talent": {"name": "Возгорание", "color": Color(1.0, 0.4, 0.1), "icon": "fireball", "debuff": true, "desc": "После критического удара огнём цель догорает."},
 	"holy_fire": {"name": "Священный огонь", "color": Color(1.0, 0.85, 0.4), "icon": "holy_fire", "debuff": true, "desc": "Урон Светом со временем."},

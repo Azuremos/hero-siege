@@ -55,7 +55,8 @@ const RACES := ClassData.RACES
 const CLASSES := ClassData.CLASSES
 const ATTRS := ClassData.ATTRS
 const SPELL_LEVELS := SpellEffects.SPELL_LEVELS
-const BUFF_INFO := SpellEffects.BUFF_INFO
+## Описания баффов и дебаффов: SpellEffects.BUFF_INFO + недостающие, собранные из самих заклинаний
+## (см. _build_buff_info) — иначе эффект без описания не виден ни в рамке героя, ни в рамке цели.
 const PROC_BUFFS := SpellEffects.PROC_BUFFS
 const AUTO_SPELLS := SpellEffects.AUTO_SPELLS
 const MOBS := MobData.MOBS
@@ -82,6 +83,35 @@ func _collect_spells() -> Dictionary:
 				push_error("Заклинание %s описано в двух файлах" % sid)
 			all[sid] = f.SPELLS[sid]
 	return all
+
+var BUFF_INFO: Dictionary = _build_buff_info()
+
+## Эффекту с key (бафф, периодический урон или лечение) без записи в SpellEffects.BUFF_INFO даём описание
+## по его заклинанию: имя, иконка и цвет школы, текст подсказки; на враге (enemy_fx, цель-враг, dot) — дебафф.
+func _build_buff_info() -> Dictionary:
+	var out: Dictionary = SpellEffects.BUFF_INFO.duplicate()
+	for sid in SPELLS:
+		var sp: Dictionary = SPELLS[sid]
+		var on_enemy: bool = sp.get("target", "") == "enemy"
+		_add_buff_infos(sid, sp, sp.get("effects", []), on_enemy, out)
+		_add_buff_infos(sid, sp, sp.get("enemy_fx", []), true, out)
+		_add_buff_infos(sid, sp, sp.get("ally_fx", []), false, out)
+		_add_buff_infos(sid, sp, sp.get("impact_fx", []), true, out)
+		_add_buff_infos(sid, sp, sp.get("self_fx", []), false, out)
+		_add_buff_infos(sid, sp, sp.get("pet_fx", []), false, out)
+	return out
+
+func _add_buff_infos(sid: String, sp: Dictionary, fx: Array, on_enemy: bool, out: Dictionary) -> void:
+	for e in fx:
+		if not e is Dictionary:
+			continue
+		if e.has("effects"):
+			_add_buff_infos(sid, sp, e["effects"], on_enemy, out)
+		if not e.has("key") or out.has(e["key"]):
+			continue
+		var debuff: bool = on_enemy or e["type"] == "dot"
+		out[e["key"]] = {"name": sp["name"], "icon": sid, "color": SCHOOLS[sp["school"]]["color"], "debuff": debuff,
+			"desc": sp.get("desc", "")}
 
 # ---------------------------------------------------------------- Формулы (scripts/data/formulas.gd)
 
