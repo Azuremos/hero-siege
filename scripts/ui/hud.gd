@@ -26,7 +26,7 @@ var _overlay: Control
 var _frames: Dictionary = {}           # id -> Control (подвижные рамки)
 var _frame_titles := {"player": "Мой герой", "target": "Цель", "party": "Группа", "bar1": "Панель 1",
 	"bar2": "Панель 2", "cast": "Полоса произнесения", "mode": "Панель режима", "proc": "Сигнал прока", "meter": "Счётчик урона",
-	"pet": "Питомец", "petbar": "Панель питомца"}
+	"pet": "Питомец", "petbar": "Панель питомца", "lanes": "Обзор линий"}
 var _layout_pos: Dictionary = {}       # id -> Vector2 (сохранённое)
 var _opts := {"party_horizontal": false, "bar2_vertical": false, "proc_border": true, "proc_center": true}
 
@@ -110,6 +110,7 @@ func setup(w: Node3D) -> void:
 	_build_messages()
 	_build_boss_bar()
 	_build_pet_frames()
+	_build_lane_view()
 	_build_menu()
 	_build_help()
 
@@ -1055,6 +1056,7 @@ func _default_pos(id: String, size: Vector2, vp: Vector2) -> Vector2:
 		"proc": return Vector2((vp.x - size.x) * 0.5, vp.y * 0.3)
 		"meter": return Vector2(vp.x - size.x - 16, vp.y - size.y - 175)
 		"pet": return Vector2(16, 172)
+		"lanes": return Vector2(16, vp.y - size.y - 150)
 		"petbar": return Vector2((vp.x - size.x) * 0.5 + 80, bar1_y - 2.0 * (SLOT + SLOT_GAP) - size.y - 14.0)
 	return Vector2.ZERO
 
@@ -2400,3 +2402,13 @@ func _update_pet(lh) -> void:
 		_pet_frame["name"].text = "%s погиб — Воскрешение питомца" % kind_name if st.get("dead", false) else kind_name
 		_pet_frame["hp"].value = 0.0
 		_pet_frame["hp_l"].text = ""
+
+## «Война линий»: обзор линий — мини-карта с видом сверху и подвижной камерой (scripts/ui/lane_view.gd).
+var _lane_view: Control
+
+func _build_lane_view() -> void:
+	if not (world.mode is LinesMode):
+		return
+	_lane_view = preload("res://scripts/ui/lane_view.gd").new()
+	_lane_view.setup(world)
+	_frame("lanes", _lane_view)

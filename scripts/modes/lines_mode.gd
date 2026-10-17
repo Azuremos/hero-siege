@@ -392,7 +392,7 @@ func do_send(hero, send_id: String, lane: int, affix: String) -> void:
 	var t: float = world.now()
 	var team: int = clampi(hero.team, 0, 1)
 	var target_team := 1 - team
-	if s["target"] == "opposite" or lane < 0 or lane >= lane_count:
+	if lane < 0 or lane >= lane_count:      # линию выбирает игрок (по умолчанию — напротив своей)
 		lane = mini(int(slot.get(hero.hero_id, 0)), lane_count - 1)
 	var price := int(s["price"])
 	hero.gold -= price
@@ -579,7 +579,20 @@ func bot_post() -> Vector3:
 	var lh = world.local_hero
 	return bot_post_for(lh) if lh else Vector3.ZERO
 
+## Пост пересчитывается не чаще раза в 0,3 сек.: перебор всех мобов с геометрией линий каждый кадр
+## у шести ботов стоил заметную долю кадра.
+var _post_cache: Dictionary = {}     # hero_id -> [время, точка]
+
 func bot_post_for(hero) -> Vector3:
+	var c: Array = _post_cache.get(hero.hero_id, [-1.0, Vector3.ZERO])
+	var t: float = world.now()
+	if t - float(c[0]) < 0.3:
+		return c[1]
+	var p := _bot_post_calc(hero)
+	_post_cache[hero.hero_id] = [t, p]
+	return p
+
+func _bot_post_calc(hero) -> Vector3:
 	var team: int = clampi(hero.team, 0, 1)
 	var li := mini(int(slot.get(hero.hero_id, 0)), lane_count - 1)
 	var lane: PackedVector2Array = lanes[team * 3 + li]

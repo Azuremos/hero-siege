@@ -58,7 +58,7 @@ func setup(w: Node3D) -> void:
 	_lane_label.text = "Куда:"
 	opts.add_child(_lane_label)
 	_lane = OptionButton.new()
-	_lane.tooltip_text = "Линия соперника для отправок «на выбранную» (массовка и тяжёлые всегда идут на линию напротив)"
+	_lane.tooltip_text = "Линия соперника, на которую уйдут отправки (по умолчанию — напротив вашей)"
 	opts.add_child(_lane)
 	var at := Label.new()
 	at.text = "  Аффикс элитного:"
@@ -108,7 +108,7 @@ func _fill_lanes() -> void:
 		var who := ""
 		for h in world.heroes.values():
 			if h.team == foe and int(lm.slot.get(h.hero_id, -1)) == li:
-				who = h.player_name
+				who = "%s, %d ур." % [h.player_name, h.unit.level]
 		var text := "Линия %d%s" % [li + 1, (" — " + who) if who != "" else " — пусто"]
 		if li == int(lm.slot.get(lh.hero_id, 0)):
 			text += " (напротив)"
@@ -148,8 +148,7 @@ func _build_rows() -> void:
 		sub.add_theme_font_size_override("font_size", 12)
 		sub.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
 		var cd_txt := "%d сек." % int(s["cd"]) if float(s["cd"]) < 60.0 else "%d мин." % int(float(s["cd"]) / 60.0)
-		sub.text = "+%d к доходу   •   перезарядка %s%s   •   %s" % [int(s["income"]), cd_txt, " (на команду)" if s.get("team_cd", false) else "",
-			"на линию напротив" if s["target"] == "opposite" else "на выбранную линию"]
+		sub.text = "+%d к доходу   •   перезарядка %s%s" % [int(s["income"]), cd_txt, " (на команду)" if s.get("team_cd", false) else ""]
 		text.add_child(sub)
 		var state := Label.new()
 		state.custom_minimum_size = Vector2(92, 0)

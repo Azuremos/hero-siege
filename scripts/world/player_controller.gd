@@ -51,6 +51,7 @@ func _ready() -> void:
 	world = hero.world
 	cam_yaw = hero.rotation.y
 	if ai:
+		set_process_unhandled_input(false)      # бот на хосте: мышь и клавиатура — не его
 		bars = [[], []]
 		for b in BAR_COUNT:
 			bars[b].resize(BAR_SIZE)
@@ -1068,13 +1069,13 @@ func _bot_lines(delta: float) -> Variant:
 				return null
 		1:
 			if _dist_to_point(rec) > 5.0:
-				return rec
+				return _detour(rec)
 			_bot_buy_sends(int(hero.gold * L.BOT_SEND_SHARE))
 			_shop_phase = 2
 			return rec
 		2:
 			if _dist_to_point(smith) > 5.0:
-				return smith
+				return _detour(smith)
 			_bot_buy_gear(hero.gold)
 			_shop_phase = 3
 			_shop_wait = 1.5
@@ -1176,3 +1177,21 @@ func _bot_equip_upgrades() -> void:
 			_equip_tried[s["id"]] = true
 			_eco("request_use", [i])
 			return
+
+## Лавки — за замком: если прямой путь идёт сквозь замок, сначала обойти его сбоку.
+func _detour(target: Vector3) -> Vector3:
+	var lm := world.mode as LinesMode
+	if lm == null:
+		return target
+	var base: Unit = lm.bases[clampi(hero.team, 0, 1)]
+	var c := Vector2(base.pos.x, base.pos.z)
+	var a := Vector2(hero.global_position.x, hero.global_position.z)
+	var b := Vector2(target.x, target.z)
+	if Geometry2D.get_closest_point_to_segment(c, a, b).distance_to(c) > 9.0 or a.distance_to(c) < 10.0:
+		return target
+	var dir := (b - a).normalized()
+	var side := Vector2(-dir.y, dir.x)
+	if side.dot(a - c) < 0.0:
+		side = -side
+	var p := c + side * 13.0
+	return Vector3(p.x, 0, p.y)

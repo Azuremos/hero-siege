@@ -412,8 +412,8 @@ func _process(delta: float) -> void:
 			print("   talents=%s  bar=%s" % [str(lh.talents), str(lh.controller.bar)])
 		if mode.has_method("log_line") and (is_server() or not mode.is_over()):
 			print(mode.log_line())
-		print("[t=%d] fps=%d wave=%d mobs=%d castle=%d hero_lvl=%d xp=%d hp=%d/%d mana=%d gold=%d" % [
-			int(_test_t), Engine.get_frames_per_second(), siege.wave if siege else 0,
+		print("[t=%d] fps=%d proc=%.1fms phys=%.1fms wave=%d mobs=%d castle=%d hero_lvl=%d xp=%d hp=%d/%d mana=%d gold=%d" % [
+			int(_test_t), Engine.get_frames_per_second(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, siege.wave if siege else 0,
 			mobs.alive_count() if is_server() else mobs.client_alive_count, int(siege.castle.hp) if siege else 0,
 			lh.unit.level if lh else 0, lh.xp if lh else 0, int(lh.unit.hp) if lh else 0, int(lh.unit.max_hp) if lh else 0,
 			int(lh.unit.mana) if lh else 0, lh.gold if lh else 0])
