@@ -229,10 +229,10 @@ const SPELLS := {
 	},
 	"mirror_image": {
 		"name": "Зеркальные копии", "school": "arcane", "icon": "ЗК",
-		"desc": "Копии отвлекают врагов: все вокруг (30 м) бросают мага, 8 сек. он получает на 30% меньше урона.",
+		"desc": "Копии отвлекают врагов: все вокруг (30 м) бросают мага и 6 сек. не замечают его, даже если он бьёт. 8 сек. маг получает на 30% меньше урона.",
 		"target": "self", "delivery": "instant",
 		"cast": 0.0, "cd": 60.0, "mana": 30.0, "range": 0.0,
-		"effects": [{"type": "drop_aggro", "radius": 30.0}, {"type": "buff", "key": "mirror_image", "dur": 8.0, "mods": {"dmg_taken": -0.3}}],
+		"effects": [{"type": "drop_aggro", "radius": 30.0, "dur": 6.0, "copies": true}, {"type": "buff", "key": "mirror_image", "dur": 8.0, "mods": {"dmg_taken": -0.3}}],
 		"vfx": "aura_arcane", "anim": "raise",
 	},
 	"blazing_barrier": {
@@ -248,7 +248,7 @@ const SPELLS := {
 		"desc": "8 сек. неуязвимости, снимает периодический урон, враги рядом теряют мага из виду. Последний шанс.",
 		"target": "self", "delivery": "instant",
 		"cast": 0.0, "cd": 180.0, "mana": 0.0, "range": 0.0,
-		"effects": [{"type": "immune", "dur": 8.0}, {"type": "drop_aggro", "radius": 20.0}],
+		"effects": [{"type": "immune", "dur": 8.0}, {"type": "drop_aggro", "radius": 20.0, "dur": 8.0}],
 		"vfx": "ice_block", "anim": "raise",
 	},
 	"presence_of_mind": {

@@ -226,10 +226,10 @@ const SPELLS := {
 	},
 	"feign_death": {
 		"name": "Притворство мертвым", "school": "physical", "icon": "ПМ", "no_gcd": true,
-		"desc": "Враги в 30 м теряют охотника из виду и ищут новую цель.",
+		"desc": "Враги в 30 м теряют охотника из виду на 3 сек. и ищут новую цель.",
 		"target": "self", "delivery": "instant",
 		"cast": 0.0, "cd": 30.0, "mana": 0.0, "range": 0.0,
-		"effects": [{"type": "drop_aggro", "radius": 30.0}],
+		"effects": [{"type": "drop_aggro", "radius": 30.0, "dur": 3.0}],
 		"vfx": "blink", "anim": "hit",
 	},
 	"rapid_fire": {

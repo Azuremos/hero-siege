@@ -442,6 +442,32 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 			ring.create_tween().tween_property(ring, "scale", Vector3(2.5, 1, 2.5), 0.3).set_ease(Tween.EASE_OUT)
 			particles(n, COL_ARCANE, 40, 0.6, {"radius": 0.6, "pos": Vector3(0, 1.2, 0), "vmin": 2.0, "vmax": 4.0,
 				"spread": 180.0, "damping": 4.0, "one_shot": true, "explosive": 0.9, "smin": 0.6, "smax": 1.1})
+		"mirror_copies":
+			# Зеркальные копии: три полупрозрачных двойника героя вокруг него на param сек.
+			var h = world.heroes.get(unit_id, null)
+			if h == null:
+				return
+			var n := _timed(world, pos, maxf(param, 1.0))
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(COL_ARCANE.r, COL_ARCANE.g, COL_ARCANE.b, 0.45)
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.emission_enabled = true
+			mat.emission = COL_ARCANE
+			mat.emission_energy_multiplier = 0.8
+			for i in 3:
+				var cm: Node3D = ModelFactory.build_hero(h.class_id, h.race_id)
+				for mi in cm.find_children("*", "MeshInstance3D", true, false):
+					(mi as MeshInstance3D).material_override = mat
+					(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				var a: float = h.rotation.y + PI * 0.5 + TAU * float(i) / 3.0
+				cm.position = Vector3(sin(a), 0, cos(a)) * 1.8
+				cm.rotation.y = h.rotation.y
+				n.add_child(cm)
+				var ap := ModelFactory.find_anim(cm)
+				if ap:
+					ap.play("Spellcasting" if ap.has_animation("Spellcasting") else "Idle")
+			particles(n, COL_ARCANE, 30, 0.6, {"radius": 1.8, "pos": Vector3(0, 1.0, 0), "vmin": 1.0, "vmax": 2.5,
+				"spread": 180.0, "damping": 3.0, "one_shot": true, "explosive": 0.9, "smin": 0.5, "smax": 1.0})
 		"aura_arcane", "aura_holy", "aura_nature":
 			# сияние вокруг героя на время усиления
 			var c := COL_ARCANE if kind == "aura_arcane" else (COL_NATURE if kind == "aura_nature" else COL_HOLY)

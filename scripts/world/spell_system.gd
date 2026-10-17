@@ -1096,7 +1096,11 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					"tick": float(e["tick"]), "next": t + float(e["tick"]), "until": t + float(e["dur"]), "school": school, "source": caster.id if caster else 0})
 			"drop_aggro":
 				# враги вокруг бросают заклинателя (Зеркальные копии)
+				# dur — столько сек. враги не выбирают его целью и не отвечают на его удары
+				target.unseen_until = maxf(target.unseen_until, t + float(e.get("dur", 0.0)))
 				world.mobs.drop_aggro_on(target, float(e.get("radius", 30.0)))
+				if e.get("copies", false):
+					fx_at("mirror_copies", target.pos, target.pos, float(e.get("dur", 6.0)), target.id)
 			"pulse":
 				# аура, которая каждые tick сек. бьёт врагов вокруг носителя (Вихрь клинков)
 				target.auras.append({"key": e.get("key", sid), "kind": "pulse", "per_tick": 0.0, "tick": float(e["tick"]),

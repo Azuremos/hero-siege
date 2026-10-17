@@ -624,6 +624,13 @@ func _process(delta: float) -> void:
 	if Net.cli.has("testcast") and is_server() and _test_t >= 9.0 and _test_t - delta < 9.0:
 		var fwd3 := -local_hero.global_transform.basis.z
 		spells._complete_cast(local_hero, Net.cli["testcast"], local_hero.unit.id, local_hero.global_position + fwd3 * 9.0, local_hero.rotation.y)
+	# --chaselog: раз в секунду — сколько врагов гонится за героем (проверка Зеркальных копий, Притворства)
+	if Net.cli.has("chaselog") and is_server() and int(_test_t) != int(_test_t - delta):
+		var chasing := 0
+		for cm in mobs.mobs.values():
+			if cm.target == local_hero.unit.id:
+				chasing += 1
+		print("CHASE t=%d за героем: %d" % [int(_test_t), chasing])
 	if Net.cli.has("autotest") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		var fwd := -local_hero.global_transform.basis.z
 		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())

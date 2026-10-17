@@ -279,6 +279,8 @@ func on_damaged(u: Unit, src: Unit) -> void:
 	var m: Mob = mobs.get(u.id, null)
 	if m == null or src == null or not (src.kind == "hero" or src.kind == "pet"):
 		return
+	if world.now() < src.unseen_until:
+		return          # «незаметного» (Зеркальные копии) враги не замечают, даже если он бьёт
 	if (m.state == S.MOVE or m.state == S.OBJECTIVE) and world.now() >= m.reaggro_at:
 		m.state = S.CHASE
 		m.target = src.id
@@ -458,7 +460,7 @@ func _think(m: Mob) -> void:
 	var best_d := aggro
 	for h in world.heroes.values():
 		var hu: Unit = h.unit
-		if not hu.alive:
+		if not hu.alive or world.now() < hu.unseen_until:
 			continue
 		# таланты «агро» (Вызов Света): такого героя враги выбирают охотнее
 		var d := Vector2(hu.pos.x, hu.pos.z).distance_to(m.pos2) / (1.0 + hu.flag("threat"))
@@ -948,7 +950,7 @@ func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
 				var bd := rng
 				for h in world.heroes.values():
 					var hu: Unit = h.unit
-					if hu.alive and _d(m, hu) <= bd:
+					if hu.alive and world.now() >= hu.unseen_until and _d(m, hu) <= bd:
 						bd = _d(m, hu)
 						best = hu
 			if best == null:
@@ -959,7 +961,7 @@ func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
 		"enemy_random":
 			var pool: Array = []
 			for h in world.heroes.values():
-				if h.unit.alive and _d(m, h.unit) <= rng:
+				if h.unit.alive and world.now() >= h.unit.unseen_until and _d(m, h.unit) <= rng:
 					pool.append(h.unit)
 			if pool.is_empty():
 				return {}
@@ -1356,7 +1358,7 @@ func _elite_visual(m: Mob) -> void:
 ## Враги в радиусе бросают этого героя (Зеркальные копии, сброс угрозы).
 func drop_aggro_on(u: Unit, radius: float) -> void:
 	for m: Mob in mobs.values():
-		if m.target == u.id and m.state == S.CHASE and m.pos2.distance_to(Vector2(u.pos.x, u.pos.z)) <= radius:
+		if m.target == u.id and m.state == S.CHASE and m.pos2.distance_to(Vector2(u.pos.x, u.pos.z)) <= radius and world.now() >= m.taunt_until:
 			_drop_chase(m, true)
 
 # ---------------------------------------------------------------- боссы
