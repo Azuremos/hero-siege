@@ -81,6 +81,7 @@ func setup(w: Node3D) -> void:
 	var theme := Theme.new()
 	theme.default_font = _font
 	theme.default_font_size = 15
+	SpellIcon.style_tooltips(theme)
 	_root = Control.new()
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -445,7 +446,16 @@ func rebuild_party() -> void:
 			pet_bar.size = Vector2(176, 9)
 			pet_bar.max_value = 1.0
 			pet_bar.mouse_filter = Control.MOUSE_FILTER_STOP
-			pet_bar.tooltip_text = "Питомец — ЛКМ: выбрать целью"
+			pet_bar.tooltip_text = "Питомец — ЛКМ: выбрать целью. Наведите и нажмите клавишу лечения — лечение уйдёт питомцу."
+			# лечение «по наведению», как у рамок героев
+			pet_bar.mouse_entered.connect(func():
+				var hp_u: Unit = world.mobs.pet_of(hid)
+				if hp_u:
+					hover_unit_id = hp_u.id)
+			pet_bar.mouse_exited.connect(func():
+				var hp_u: Unit = world.mobs.pet_of(hid)
+				if hp_u and hover_unit_id == hp_u.id:
+					hover_unit_id = 0)
 			pet_bar.gui_input.connect(func(ev: InputEvent):
 				if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT and world.local_hero:
 					var pu: Unit = world.mobs.pet_of(hid)

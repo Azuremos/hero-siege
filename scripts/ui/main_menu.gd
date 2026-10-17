@@ -143,6 +143,7 @@ func _build_ui() -> void:
 	f.font_weight = 600
 	theme.default_font = f
 	theme.default_font_size = 16
+	SpellIcon.style_tooltips(theme)
 	_ui.theme = theme
 	layer.add_child(_ui)
 

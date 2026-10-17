@@ -4,6 +4,29 @@ extends RefCounted
 
 static var _bg_cache: Dictionary = {}
 
+## Подсказки (заклинания, предметы, таланты) — на непрозрачной тёмной подложке с золотой рамкой:
+## полупрозрачные по умолчанию плохо читались поверх боя (просьба пользователя). Ставится в тему окна
+## и в тему по умолчанию — на случай подсказок вне неё.
+static func style_tooltips(theme: Theme) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.07, 0.09, 1.0)
+	sb.border_color = Color(0.62, 0.52, 0.3)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 7
+	sb.content_margin_bottom = 7
+	sb.shadow_color = Color(0, 0, 0, 0.5)
+	sb.shadow_size = 4
+	for t: Theme in [theme, ThemeDB.get_default_theme()]:
+		if t == null:
+			continue
+		t.set_stylebox("panel", "TooltipPanel", sb)
+		t.set_color("font_color", "TooltipLabel", Color(0.96, 0.94, 0.88))
+		t.set_color("font_outline_color", "TooltipLabel", Color(0, 0, 0))
+		t.set_constant("outline_size", "TooltipLabel", 2)
+
 ## Иконка заклинания: фон в цвете школы магии + силуэт (game-icons.net, CC BY 3.0).
 ## Роль заклинания для оттенка иконки: heal / shield / dmg.
 static func role_of(sid: String) -> String:
