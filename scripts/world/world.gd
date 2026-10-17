@@ -492,6 +492,7 @@ func _process(delta: float) -> void:
 			h.bag_add(GameData.make_gear("plate", 10, 3))
 			h.bag_add(GameData.make_gear("staff", 12, 4))
 			h.bag_add(GameData.make_gear("robe", 12, 3))
+			h.bag_add(GameData.make_gear("pads_mail", 10, 2))   # плечи — проверка раскладки окна персонажа
 			# аксессуары: фиолетовый, синий и зелёный
 			h.bag_add(GameData.make_gear("tr_thunder", 10, 3))
 			h.bag_add(GameData.make_gear("tr_guard" if h.class_id in ["warrior", "paladin"] else "tr_ember", 10, 2))

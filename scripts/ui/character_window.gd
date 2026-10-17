@@ -114,9 +114,14 @@ func refresh() -> void:
 				cell.set_drag_preview(SpellIcon.make_item(id, 44))
 				return {"type": "spell", "sid": "use:" + s, "from": -1}, Callable(), Callable())
 		row.add_child(cell)
-		var name_l := _lbl(GameData.item(id)["name"] if id != null else GameData.ItemData.SLOTS[slot], 13,
+		var name_l := _lbl(GameData.item(id)["name"] if id != null else GameData.ItemData.SLOTS[slot], 12,
 			GameData.item_color(id) if id != null else Color(0.55, 0.55, 0.55))
-		name_l.custom_minimum_size = Vector2(120, 0)
+		# ширина и высота строки постоянные: длинное название не раздвигает сетку
+		name_l.custom_minimum_size = Vector2(130, CELL)
+		name_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		name_l.max_lines_visible = 2
+		name_l.clip_text = true
+		name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		name_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(name_l)
 		_equip_grid.add_child(row)

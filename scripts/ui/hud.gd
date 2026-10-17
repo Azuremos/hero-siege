@@ -1211,9 +1211,13 @@ func toggle_character() -> void:
 		_char_window.refresh()
 		_char_window.reset_size()
 		var vp := get_viewport().get_visible_rect().size
-		_char_window.call_deferred("reset_size")   # подсказка с переносом строк уточняет высоту только на следующем кадре
 		# окно не выходит за края экрана
 		_char_window.position = Vector2(maxf(10.0, vp.x - _char_window.size.x - 30), clampf((vp.y - _char_window.size.y) * 0.5 - 40, 10.0, maxf(10.0, vp.y - _char_window.size.y - 10)))
+		# подсказка с переносом строк уточняет высоту только через кадр — тогда ужимаем окно ещё раз
+		await get_tree().process_frame
+		await get_tree().process_frame
+		if is_instance_valid(_char_window):
+			_char_window.reset_size()
 
 func open_shop(vid: String) -> void:
 	if _shop == null:
