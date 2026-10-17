@@ -12,6 +12,10 @@ const COL_ARCANE := Color(0.8, 0.45, 1.0)
 const COL_HOLY := Color(1.0, 0.85, 0.4)
 const COL_HEAL := Color(0.75, 1.0, 0.55)
 const COL_SHADOW := Color(0.55, 0.25, 0.85)
+const COL_NATURE := Color(0.55, 0.8, 1.0)      # молнии шамана — бело-голубые
+## Цвет стихии тотема (наконечник и свечение): огонь, земля, вода, воздух, Тотем гнева, Тотем целительного прилива.
+const TOTEM_COLORS := {"totem_fire": Color(1.0, 0.45, 0.1), "totem_earth": Color(0.8, 0.6, 0.3), "totem_water": Color(0.35, 0.7, 1.0),
+	"totem_air": Color(0.85, 0.95, 1.0), "totem_wrath": Color(1.0, 0.25, 0.05), "totem_tide": Color(0.3, 0.95, 0.85)}
 
 static var _dot_tex: Texture2D
 static var _fade_ramp: GradientTexture1D
@@ -165,6 +169,7 @@ static func school_color(school: String) -> Color:
 		"arcane": return COL_ARCANE
 		"holy": return COL_HOLY
 		"shadow": return COL_SHADOW
+		"nature": return COL_NATURE
 	return Color(1, 1, 1)
 
 static func unit_pos(world: Node3D, id: int, height: float = 1.2) -> Variant:
@@ -288,6 +293,7 @@ static func projectile(world: Node3D, kind: String, from_id: int, to_id: int, sp
 		"arcane": Sfx.play_at("arcane", pr.global_position, -3.0)
 		"holy": Sfx.play_at("holy", pr.global_position, -6.0)
 		"shadow": Sfx.play_at("arcane", pr.global_position, -10.0)
+		"nature": Sfx.play_at("lightning", pr.global_position, -4.0)
 	var t = unit_pos(world, to_id, 1.1)
 	pr.last_target = t if t != null else pr.global_position
 	var core := MeshInstance3D.new()
@@ -345,6 +351,8 @@ const SPAWN_SOUNDS := {
 	"frozen": "ice_shatter", "nova_arcane": "arcane", "blink": "arcane",
 	"hit_phys": "blade_hit", "hit_blood": "blade_hit", "nova_phys": "bones_fall", "whirl": "sword", "taunt": "horde",
 	"taunt_aoe": "horde", "aura_war": "bell", "meteor": "fire", "holy_star": "holy", "proc": "ui_learn",
+	"chain_nature": "lightning", "nova_nature": "thunder", "beam_nature": "thunder", "aura_nature": "lightning", "eruption": "fire_big",
+	"spirit_wolves": "pet_growl",
 }
 
 static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, param: float, unit_id: int) -> void:
@@ -434,9 +442,9 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 			ring.create_tween().tween_property(ring, "scale", Vector3(2.5, 1, 2.5), 0.3).set_ease(Tween.EASE_OUT)
 			particles(n, COL_ARCANE, 40, 0.6, {"radius": 0.6, "pos": Vector3(0, 1.2, 0), "vmin": 2.0, "vmax": 4.0,
 				"spread": 180.0, "damping": 4.0, "one_shot": true, "explosive": 0.9, "smin": 0.6, "smax": 1.1})
-		"aura_arcane", "aura_holy":
+		"aura_arcane", "aura_holy", "aura_nature":
 			# сияние вокруг героя на время усиления
-			var c := COL_ARCANE if kind == "aura_arcane" else COL_HOLY
+			var c := COL_ARCANE if kind == "aura_arcane" else (COL_NATURE if kind == "aura_nature" else COL_HOLY)
 			var n := _timed(world, pos, maxf(param, 1.0))
 			n.follow_id = unit_id
 			n.follow_h = 0.0
@@ -460,14 +468,29 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 			particles(n, Color(1.0, 0.55, 0.15), 80, 0.7, {"radius": 1.0, "vmin": param * 1.2, "vmax": param * 2.2,
 				"spread": 180.0, "damping": param * 1.5, "one_shot": true, "explosive": 1.0, "smin": 1.2, "smax": 2.2,
 				"size": 0.8, "aabb": param + 3.0})
-		"beam_holy":
-			var n := _timed(world, pos, 0.8)
+		"beam_holy", "beam_nature":
+			# луч с неба: Свет — широкий золотой, молния (Перегрузка) — тонкий бело-голубой
+			var bc := COL_HOLY if kind == "beam_holy" else COL_NATURE
+			var thin := kind == "beam_nature"
+			var n := _timed(world, pos, 0.8 if not thin else 0.45)
 			n.fade_in = 0.05
-			n.fade_out = 0.6
+			n.fade_out = 0.6 if not thin else 0.35
 			var col := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
-			cm.top_radius = 0.8
-			cm.bottom_radius = 0.6
+			cm.top_radius = 0.8 if not thin else 0.25
+			cm.bottom_radius = 0.6 if not thin else 0.15
+			if thin:
+				cm.height = 14.0
+				cm.cap_top = false
+				cm.cap_bottom = false
+				col.mesh = cm
+				col.position.y = 7.0
+				var lmat := dome_material(bc, 4.0, 20.0)
+				col.material_override = lmat
+				n.mats.append(lmat)
+				n.add_child(col)
+				burst(world, pos + Vector3(0, 1.0, 0), bc)
+				return
 			cm.height = 14.0
 			cm.cap_top = false
 			cm.cap_bottom = false
@@ -494,8 +517,44 @@ static func spawn(world: Node3D, kind: String, pos: Vector3, from: Vector3, para
 			var n := _timed(world, pos, 1.2)
 			var ring := _ring(n, 1.0, COL_HEAL, 0.05, false, 1.5, n)
 			ring.create_tween().tween_property(ring, "scale", Vector3(param, 1, param), 0.5).set_ease(Tween.EASE_OUT)
-		"nova_frost", "nova_holy", "nova_arcane":
-			var c := COL_FROST if kind == "nova_frost" else (COL_ARCANE if kind == "nova_arcane" else COL_HOLY)
+		"eruption":
+			# Извержение лавы: земля раскаляется, через 0,6 сек. из неё бьёт столб лавы
+			var n := _timed(world, pos, 1.6)
+			n.fade_out = 0.4
+			var glow := _ring(n, param, COL_FIRE, 0.35, false, 1.2, n)
+			glow.scale = Vector3(param * 0.3, 1, param * 0.3)
+			glow.create_tween().tween_property(glow, "scale", Vector3(param, 1, param), 0.6).set_ease(Tween.EASE_IN)
+			n.get_tree().create_timer(0.6).timeout.connect(func():
+				if not is_instance_valid(n):
+					return
+				var pillar := _timed(world, n.global_position, 0.7)
+				pillar.fade_in = 0.05
+				pillar.fade_out = 0.5
+				var colm := MeshInstance3D.new()
+				var pc := CylinderMesh.new()
+				pc.top_radius = param * 0.25
+				pc.bottom_radius = param * 0.6
+				pc.height = 7.0
+				pc.cap_top = false
+				pc.cap_bottom = false
+				colm.mesh = pc
+				colm.position.y = 3.5
+				var pmat := dome_material(Color(1.0, 0.35, 0.05), 3.5, 10.0)
+				colm.material_override = pmat
+				pillar.mats.append(pmat)
+				pillar.add_child(colm)
+				spawn(world, "explosion_fire", n.global_position, n.global_position, param, 0))
+		"spirit_wolves":
+			# Дух дикого зверя: призрачные волки — голубые вихри вокруг шамана (нужна модель)
+			var n := _timed(world, pos, 0.9)
+			n.follow_id = unit_id
+			n.follow_h = 0.0
+			var ring := _ring(n, param, COL_NATURE, 0.08, true, 1.2, n)
+			ring.create_tween().tween_property(ring, "rotation:y", -TAU, 0.9)
+			particles(n, Color(0.6, 0.85, 1.0), 36, 0.6, {"shape": "ring", "radius": param * 0.6, "pos": Vector3(0, 0.6, 0), "vmin": 2.5, "vmax": 5.0,
+				"dir": Vector3(0, 0.2, 1), "spread": 30.0, "smin": 0.5, "smax": 0.9, "size": 0.45, "aabb": param + 2.0})
+		"nova_frost", "nova_holy", "nova_arcane", "nova_nature":
+			var c := COL_FROST if kind == "nova_frost" else (COL_ARCANE if kind == "nova_arcane" else (COL_NATURE if kind == "nova_nature" else COL_HOLY))
 			var n := _timed(world, pos, 1.3)
 			var ring := _ring(n, 0.5, c, 0.35, false, 2.0, n)
 			ring.create_tween().tween_property(ring, "scale", Vector3(param, 1, param), 0.35).set_ease(Tween.EASE_OUT)
@@ -562,7 +621,24 @@ static func zone(world: Node3D, id: int, kind: String, pos: Vector3, yaw: float,
 		Sfx.play_at(snd[kind], n.global_position + Vector3(0, 1, 0))
 	if kind == "wall_ice":
 		Sfx.play_at("ice_shatter", n.global_position + Vector3(0, 1, 0))
+	if TOTEM_COLORS.has(kind):
+		_build_totem(n, kind, size)
+		return
 	match kind:
+		"zone_earthquake":
+			var ec := Color(0.75, 0.55, 0.3)
+			_ring(n, size, ec, 0.22, true, 1.2, n)
+			particles(n, ec, int(size * 14), 0.8, {"shape": "ring", "radius": size * 0.85, "vmin": 1.0, "vmax": 3.0, "spread": 25.0,
+				"smin": 0.8, "smax": 1.6, "size": 0.7, "additive": false, "gravity": Vector3(0, -6, 0), "aabb": size + 2.0})
+			Sfx.play_at("thunder", n.global_position + Vector3(0, 1, 0))
+			n.stop_particles_at = duration - 0.8
+		"zone_healing_rain":
+			_ring(n, size, COL_HEAL, 0.14, false, 1.2, n)
+			particles(n, Color(0.6, 0.85, 1.0, 0.8), int(size * 16), 1.0, {"shape": "box", "extents": Vector3(size * 0.7, 0.3, size * 0.7),
+				"pos": Vector3(0, 8, 0), "dir": Vector3(0, -1, 0), "spread": 3.0, "vmin": 9.0, "vmax": 12.0,
+				"smin": 0.3, "smax": 0.6, "size": 0.25, "aabb": size + 2.0})
+			Sfx.play_at("heal", n.global_position + Vector3(0, 1, 0))
+			n.stop_particles_at = duration - 0.8
 		"zone_blizzard":
 			_ring(n, size, COL_FROST, 0.18, false, 1.4, n)
 			particles(n, Color(0.85, 0.95, 1.0), int(size * 22), 1.1, {"shape": "box", "extents": Vector3(size * 0.7, 0.5, size * 0.7),
@@ -638,6 +714,89 @@ static func zone(world: Node3D, id: int, kind: String, pos: Vector3, yaw: float,
 				"spread": 10.0, "smin": 0.6, "smax": 1.0, "size": 0.5, "aabb": half + 2.0})
 			n.stop_particles_at = duration - 0.7
 
+## Тотем шамана из примитивов: резной столб, голова-маска в цвете стихии, светящийся наконечник, кольцо у основания.
+## Ближние тотемы (радиус до 12 м) показывают границу действия. Временная замена — нужна модель тотема.
+static var _totem_wood: StandardMaterial3D
+static var _totem_mats: Dictionary = {}
+
+static func _build_totem(n: TimedFx, kind: String, radius: float) -> void:
+	var c: Color = TOTEM_COLORS[kind]
+	var big := kind == "totem_wrath" or kind == "totem_tide"
+	var h := 1.9 if big else 1.5
+	n.set_meta("totem", c)
+	n.fade_in = 0.25
+	if _totem_wood == null:
+		_totem_wood = StandardMaterial3D.new()
+		_totem_wood.albedo_color = Color(0.42, 0.28, 0.17)
+		_totem_wood.roughness = 0.9
+	if not _totem_mats.has(kind):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = c.darkened(0.25)
+		m.emission_enabled = true
+		m.emission = c
+		m.emission_energy_multiplier = 0.6
+		var g := StandardMaterial3D.new()
+		g.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		g.albedo_color = c.lightened(0.4)
+		g.emission_enabled = true
+		g.emission = c
+		g.emission_energy_multiplier = 3.0
+		_totem_mats[kind] = [m, g]
+	var mats: Array = _totem_mats[kind]
+	var pole := MeshInstance3D.new()
+	var pm := CylinderMesh.new()
+	pm.top_radius = 0.13
+	pm.bottom_radius = 0.18
+	pm.height = h
+	pm.radial_segments = 6
+	pole.mesh = pm
+	pole.position.y = h * 0.5
+	pole.material_override = _totem_wood
+	n.add_child(pole)
+	# резные кольца и голова-маска стихии
+	for i in 2:
+		var band := MeshInstance3D.new()
+		var bm := CylinderMesh.new()
+		bm.top_radius = 0.2
+		bm.bottom_radius = 0.2
+		bm.height = 0.1
+		bm.radial_segments = 6
+		band.mesh = bm
+		band.position.y = h * (0.3 + 0.25 * i)
+		band.material_override = mats[0]
+		n.add_child(band)
+	var head := MeshInstance3D.new()
+	var hm := BoxMesh.new()
+	hm.size = Vector3(0.42, 0.42, 0.3) * (1.2 if big else 1.0)
+	head.mesh = hm
+	head.position.y = h - 0.15
+	head.material_override = mats[0]
+	n.add_child(head)
+	var wings := MeshInstance3D.new()
+	var wm := BoxMesh.new()
+	wm.size = Vector3(0.9 if big else 0.7, 0.1, 0.12)
+	wings.mesh = wm
+	wings.position.y = h - 0.3
+	wings.material_override = mats[0]
+	n.add_child(wings)
+	var orb := MeshInstance3D.new()
+	var om := SphereMesh.new()
+	om.radius = 0.14 if not big else 0.2
+	om.height = om.radius * 2.0
+	om.radial_segments = 8
+	om.rings = 4
+	orb.mesh = om
+	orb.position.y = h + 0.18
+	orb.material_override = mats[1]
+	orb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	n.add_child(orb)
+	particles(n, c, 8 if not big else 14, 0.9, {"radius": 0.12, "pos": Vector3(0, h + 0.2, 0), "vmin": 0.3, "vmax": 0.8,
+		"dir": Vector3(0, 1, 0), "spread": 25.0, "smin": 0.3, "smax": 0.6, "size": 0.25})
+	_ring(n, 0.8, c, 0.35, true, 1.4, n)
+	if radius <= 12.0:
+		_ring(n, radius, c, 0.04, false, 0.8, n)
+	n.stop_particles_at = n.life - 0.4
+
 static func _build_ice_wall(n: TimedFx, length: float) -> void:
 	n.fade_out = 0.0
 	var rng := RandomNumberGenerator.new()
@@ -698,6 +857,12 @@ static func end_zone(world: Node3D, id: int) -> void:
 	if n == null or not is_instance_valid(n):
 		return
 	zones.erase(id)
+	if n.has_meta("totem"):
+		# тотем заменён новым: просто гаснет
+		n.fade_out = 0.3
+		n.life = n.age + 0.3
+		burst(world, n.global_position + Vector3(0, 1.2, 0), n.get_meta("totem"))
+		return
 	Sfx.play_at("ice_shatter", n.global_position + Vector3(0, 1, 0), 4.0)
 	# стена разрушена — разлёт осколков
 	var shatter := _timed(world, n.global_position, 1.2)

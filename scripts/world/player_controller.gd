@@ -269,8 +269,8 @@ func _process(delta: float) -> void:
 	rig.rotation = Vector3(cam_pitch, cam_yaw, 0)
 	spring.spring_length = lerpf(spring.spring_length, zoom, 1.0 - exp(-12.0 * delta))
 
-	# Движение прерывает произнесение.
-	if cast_spell != "" and hero.is_moving() and not _cancel_sent:
+	# Движение прерывает произнесение (кроме баффов с cast_move — Благосклонность предков).
+	if cast_spell != "" and hero.is_moving() and not _cancel_sent and not _cast_move_buff():
 		_cancel_sent = true
 		_send_server("request_cancel", [])
 
@@ -525,6 +525,12 @@ func _ally_target() -> Unit:
 		return u
 	return hero.unit
 
+func _cast_move_buff() -> bool:
+	for b in hero.net_buffs:
+		if GameData.BUFF_INFO.get(b[0], {}).get("cast_move", false):
+			return true
+	return false
+
 func _dist_to(u: Unit) -> float:
 	return Vector2(u.pos.x - hero.global_position.x, u.pos.z - hero.global_position.z).length()
 
@@ -683,8 +689,11 @@ func bot_tick(delta: float) -> void:
 	var stop := 2.5
 	# бойцы ближнего боя подходят к цели (недалеко от поста)
 	var melee_range := float(GameData.CLASSES[hero.class_id]["auto"]["range"])
+	# у гибридов (шаман) к цели подходят только ветки ближнего боя (melee_trees)
+	var cls: Dictionary = GameData.CLASSES[hero.class_id]
+	var melee_ok: bool = not cls.has("melee_trees") or cls["melee_trees"].has(_bot_main_tree())
 	var mt: Unit = world.get_unit(target_id)
-	if melee_range <= 5.0 and mt and mt.alive and Vector2(mt.pos.x - post.x, mt.pos.z - post.z).length() < 22.0:
+	if melee_range <= 5.0 and melee_ok and mt and mt.alive and Vector2(mt.pos.x - post.x, mt.pos.z - post.z).length() < 22.0:
 		to = mt.pos - hero.global_position
 		stop = melee_range - 0.8 + mt.radius
 	to.y = 0
@@ -764,6 +773,12 @@ func bot_tick(delta: float) -> void:
 			continue      # питомцем бот занимается отдельно (_bot_hunter_pet)
 		if now() < float(cd_until.get(sid, 0.0)) or hero.unit.mana < GameData.eff_mana(hero.unit, sid):
 			continue
+		if sp.get("delivery", "") == "totem":
+			if _bot_totem_ok(sp, tu, weakest):
+				_send_server("request_cast", [sid, hero.hero_id, Vector3.ZERO, 0.0])
+				_bot_totem_until[sp["totem"]["element"]] = now() + float(sp["totem"]["life"]) * 0.9
+				return
+			continue
 		if sp.get("delivery", "") == "trap":
 			# ловушку — под ноги навстречу врагу, когда он в 20 м
 			if tu and _dist_to(tu) < 20.0:
@@ -810,6 +825,12 @@ func bot_tick(delta: float) -> void:
 					_send_server("request_cast", [sid, tu.id, Vector3.ZERO, 0.0])
 					return
 			"ground", "wall":
+				if sp.has("ally_fx") and not sp.has("enemy_fx"):
+					# зона лечения (Целительный ливень) — под раненого союзника
+					if weakest and weakest.hp_frac() < 0.85 and _dist_to(weakest) <= float(sp["range"]) - 2.0:
+						_send_server("request_cast", [sid, 0, weakest.pos, 0.0])
+						return
+					continue
 				if tu and _dist_to(tu) <= float(sp["range"]) - 2.0:
 					var p := tu.pos
 					if sp["target"] == "wall":
@@ -847,14 +868,31 @@ func _bot_hunter_pet() -> bool:
 		cd_until[want] = now() + 3.0       # не слать повторно, пока идёт призыв
 	return true
 
+## Бот-шаман: тотем ставится, если тотема этой стихии нет (бот помнит, сколько стоит свой) и он нужен:
+## бьющий — враг в его радиусе, лечащий — союзник ранен, остальные — враг в 30 м.
+var _bot_totem_until: Dictionary = {}
+
+func _bot_totem_ok(sp: Dictionary, tu: Unit, weakest: Unit) -> bool:
+	if now() < float(_bot_totem_until.get(sp["totem"]["element"], 0.0)) or tu == null:
+		return false
+	if sp.has("enemy_fx"):
+		return _dist_to(tu) <= float(sp["radius"])
+	var heals: bool = sp["ally_fx"].any(func(e): return e["type"] == "heal")
+	if heals:
+		return weakest != null and weakest.hp_frac() < 0.9 and _dist_to(tu) < 30.0
+	return _dist_to(tu) < 30.0
+
 ## Бот изучает таланты: сначала «своя» ветка, потом остальные.
 const BOT_TREE := {"mage": 2, "paladin": 0, "priest": 1}
 var _bot_learn_wait := 0.0
 
+func _bot_main_tree() -> int:
+	return int(Net.cli["bottree"]) if Net.cli.has("bottree") else BOT_TREE.get(hero.class_id, 0)
+
 func _bot_learn_talents() -> void:
 	if now() < _bot_learn_wait:
 		return
-	var main: int = int(Net.cli["bottree"]) if Net.cli.has("bottree") else BOT_TREE.get(hero.class_id, 0)
+	var main: int = _bot_main_tree()
 	_bot_choose_book(main)
 	if hero.talent_points_free() <= 0:
 		return
@@ -909,6 +947,8 @@ func _bot_rank(sid: String) -> float:
 	var cd := float(sp.get("cd", 0.0))
 	if cd > 0.0:
 		return 1000.0 + cd
+	if sp["delivery"] == "totem":
+		return 600.0       # тотемы без перезарядки — раньше заполнителя (их сдерживает таймер стихии в _bot_totem_ok)
 	var aoe: bool = sp["target"] == "ground" or sp["delivery"] == "self_aoe" or sp["delivery"] == "party"
 	return 500.0 if aoe else 100.0 + float(sp.get("cast", 0.0))
 

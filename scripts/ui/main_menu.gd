@@ -406,8 +406,20 @@ func _selected_class() -> String:
 func _selected_race() -> String:
 	return _race_option.get_item_metadata(_race_option.selected)
 
+## Расы, недоступные классу (шаман — только дворф и дреней), в списке серые; выбранная заменяется доступной.
+func _fit_race_to_class(cid: String) -> void:
+	var allowed: Array = GameData.ClassData.class_races(cid)
+	for i in _race_option.item_count:
+		_race_option.set_item_disabled(i, not allowed.has(_race_option.get_item_metadata(i)))
+	if not allowed.has(_selected_race()):
+		for i in _race_option.item_count:
+			if allowed.has(_race_option.get_item_metadata(i)):
+				_race_option.select(i)
+				break
+
 func _update_preview() -> void:
 	var cid := _selected_class()
+	_fit_race_to_class(cid)
 	var rid := _selected_race()
 	_class_desc.text = GameData.CLASSES[cid]["desc"]
 	for c in _spell_row.get_children():

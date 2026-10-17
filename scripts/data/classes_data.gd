@@ -76,7 +76,34 @@ const CLASSES := {
 			"concussive_shot", "kill_shot", "hunters_mark", "feign_death", "rapid_fire", "barrage"],
 		"ap_attr": "agi",     # сила атаки охотника — от ловкости
 	},
+	# Шаман (сессия 11): мана, тотемы стихий (зоны у ног, по одному на стихию), молнии, ближний бой и исцеление.
+	# Модель — варвар KayKit в бирюзово-синей перекраске с круглым щитом (временная замена — нужен ассет); без оружия в руке —
+	# тотемный молот (default_weapon — шаблон вещи). Носит булавы, посохи, щиты, топоры и мечи, плюс свои тотемный молот,
+	# посох бури и щит предков: заклинатели берут вещи на интеллект и силу заклинаний, Совершенствование — на силу.
+	# races — с какими расами доступен класс (как в WotLK/Cataclysm: дворф и дреней); без поля — с любыми.
+	# melee_trees — ветки, в которых бот подходит к цели (Совершенствование); в остальных держится на расстоянии.
+	"shaman": {
+		"name": "Шаман", "color": Color(0.0, 0.44, 0.87),
+		"desc": "Повелитель стихий. Тотемы у ног, молнии и лава, удары оружием, заряженным бурей, и исцеление волнами.",
+		"model": "Barbarian", "show": ["Barbarian_Round_Shield"], "hide": [], "recolor": "shaman", "default_weapon": "totem_hammer",
+		"resource": "mana", "base_hp": 360.0, "base_mana": 170.0, "armor": 0.15, "dmg_mult": 1.05,
+		"attrs": {"str": 14, "agi": 10, "sta": 18, "int": 18, "spi": 16}, "grow": {"str": 1.4, "agi": 0.8, "sta": 2.9, "int": 2.2, "spi": 1.4},
+		"auto": {"range": 4.0, "min": 22.0, "max": 30.0, "speed": 2.4, "school": "physical", "ranged": false},
+		"spells": ["lightning_bolt", "healing_wave", "flame_shock", "wind_shear", "searing_totem", "lightning_shield",
+			"lava_burst", "ghost_wolf", "chain_lightning", "frost_shock", "healing_stream_totem", "astral_shift", "earthquake", "heroism", "elemental_overload"],
+		"races": ["dwarf", "draenei"],
+		"melee_trees": [1],
+	},
 }
+
+## Расы, с которыми доступен класс (поле races; без него — все).
+static func class_races(class_id: String) -> Array:
+	return CLASSES.get(class_id, {}).get("races", RACES.keys())
+
+## Раса героя с учётом совместимости: недоступная классу заменяется первой доступной.
+static func fix_race(class_id: String, race_id: String) -> String:
+	var allowed := class_races(class_id)
+	return race_id if allowed.has(race_id) else str(allowed[0])
 
 ## Атрибуты: названия и что дают.
 const ATTRS := {

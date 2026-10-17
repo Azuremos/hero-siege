@@ -50,6 +50,10 @@ const SOUNDS := {
 	"trap": [["trap_snap.ogg"], -3.0, 2, 0.1],
 	"pet_growl": [["pet_growl_1.ogg", "pet_growl_2.ogg"], -5.0, 2, 0.3],
 	"pet_howl": [["pet_howl.ogg"], -4.0, 1, 0.5],
+	# шаман (сессия 11) — временно из имеющихся звуков, нужен ассет: треск молнии, раскат грома, стук тотема
+	"lightning": [["arcane.ogg"], -7.0, 3, 0.06],
+	"thunder": [["fire_big.ogg", "frost_big.wav"], -5.0, 2, 0.2],
+	"totem": [["trap_set.ogg"], -5.0, 2, 0.1],
 }
 
 const POOL_2D := 8

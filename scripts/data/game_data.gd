@@ -47,6 +47,7 @@ const SPELL_FILES := [
 	preload("res://scripts/data/spells/priest.gd"),
 	preload("res://scripts/data/spells/warrior.gd"),
 	preload("res://scripts/data/spells/hunter.gd"),
+	preload("res://scripts/data/spells/shaman.gd"),
 ]
 
 const SCHOOLS := ClassData.SCHOOLS

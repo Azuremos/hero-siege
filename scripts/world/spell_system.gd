@@ -251,7 +251,7 @@ func server_tick(delta: float, t: float) -> void:
 			continue
 		if not st["cast"].is_empty():
 			var c: Dictionary = st["cast"]
-			if u.is_stunned(t) or u.pos.distance_to(c["start_pos"]) > 0.8:
+			if u.is_stunned(t) or (u.pos.distance_to(c["start_pos"]) > 0.8 and not can_cast_moving(u)):
 				_interrupt(hero)
 			elif c.get("channel", false):
 				_channel_tick(hero, st, c, t)
@@ -290,6 +290,13 @@ func server_tick(delta: float, t: float) -> void:
 				u.hp = minf(u.max_hp, u.hp + u.max_hp * u.flag("spirit_bond") * 0.25)
 	_update_bursts(t)
 	_send_watched_effects(delta, t)
+
+## Бафф с cast_move в BUFF_INFO (Благосклонность предков): произнесение не сбивается движением.
+static func can_cast_moving(u: Unit) -> bool:
+	for b in u.buffs:
+		if GameData.BUFF_INFO.get(b["key"], {}).get("cast_move", false):
+			return true
+	return false
 
 ## Списать ману (или ярость). Трата маны запускает правило 5 секунд: восполнение в бою ниже.
 func _spend_mana(u: Unit, cost: float, t: float) -> void:
@@ -445,6 +452,15 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 					if h.unit.alive and _dist(h.unit, u) <= radius:
 						apply_effects(u, h.unit, sp["ally_fx"], sid, school)
 			fx_at(sp["vfx"], u.pos, u.pos, radius, u.id)
+			if sp.get("from_totems", false):
+				# Кольцо огня: то же вокруг каждого своего тотема
+				for zid in zones:
+					var tz: Dictionary = zones[zid]
+					if tz.has("totem") and tz["caster"] == u.id:
+						var tc: Vector3 = tz["pos"]
+						for m in world.mobs.query_radius(Vector2(tc.x, tc.z), radius):
+							apply_effects(u, m, sp.get("enemy_fx", []), sid, school)
+						fx_at(sp["vfx"], tc, tc, radius, 0)
 		"charge":
 			# рывок: сервер оглушает цель, а свой герой сам перемещается к ней
 			apply_effects(u, tu, sp["effects"], sid, school)
@@ -599,6 +615,8 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			ev_zone.rpc(wid, sp["vfx"], ground, yaw, length, duration)
 		"trap":
 			_place_trap(u, sid, sp, Vector3(ground.x, 0, ground.z), t)
+		"totem":
+			_place_totem(hero, sid, sp, t)
 		"pet_call":
 			world.mobs.pet_summon(hero, false)
 		"pet_revive":
@@ -690,6 +708,66 @@ func _trigger_trap(u: Unit, sid: String, sp: Dictionary, p: Vector3, t: float) -
 			apply_effects(u, m, [{"type": "root", "dur": u.flag("entrapment")}], sid, sp["school"])
 	ev_sound.rpc("trap", p)
 
+# ---------------------------------------------------------------- тотемы шамана
+## Тотем — зона у ног шамана (как Освящение), но со стихией: у каждого шамана одновременно по одному тотему
+## огня, земли, воды и воздуха, новый той же стихии заменяет старый. Тики — в _update_zones: enemy_fx всем
+## врагам в радиусе или (shoot) ближайшим врагам лучом от тотема; ally_fx — союзникам в радиусе
+## (короткие баффы тотема продлеваются, пока союзник рядом). Без нод и физики на сервере, по сети — как зоны.
+## Смещение тотема от шамана по стихии: [вправо, вперёд] в метрах — чтобы четыре тотема не стояли в одной точке.
+const TOTEM_SLOTS := {"fire": Vector2(1.2, 1.0), "earth": Vector2(-1.2, 1.0), "water": Vector2(1.2, -1.0), "air": Vector2(-1.2, -1.0)}
+
+func _place_totem(hero, sid: String, sp: Dictionary, t: float) -> void:
+	var u: Unit = hero.unit
+	var tp: Dictionary = sp["totem"]
+	var el: String = tp["element"]
+	for zid in zones.keys():
+		if str(zones[zid].get("totem", "")) == el and zones[zid]["caster"] == u.id:
+			_end_zone(zid)
+	var off: Vector2 = TOTEM_SLOTS.get(el, Vector2.ZERO)
+	var f: float = hero.rotation.y
+	var right := Vector3(cos(f), 0, -sin(f))
+	var fwd := Vector3(-sin(f), 0, -cos(f))
+	var pos := Vector3(u.pos.x, 0, u.pos.z) + right * off.x + fwd * off.y
+	var life := float(tp["life"]) * (1.0 + u.flag("totem_dur"))
+	var radius := float(sp["radius"]) + u.mod("radius_add", sid, sp["school"])
+	_add_zone({"sid": sid, "kind": "circle", "pos": pos, "radius": radius, "reach": radius, "caster": u.id,
+		"until": t + life, "tick": float(sp["tick"]), "next": t + 0.3, "ally_dr": 0.0, "totem": el}, sp["vfx"], f, radius, life)
+	ev_sound.rpc("totem", pos)
+
+## Убрать зону раньше срока (тотем заменён новым): у клиентов она гаснет.
+func _end_zone(zid: int) -> void:
+	zones.erase(zid)
+	ev_zone_end.rpc(10000 + zid)
+
+## Тик тотема: стрельба по ближайшим врагам (shoot) и союзные эффекты с продлением баффов.
+func _totem_tick(z: Dictionary, caster: Unit, sp: Dictionary, t: float) -> void:
+	var sid: String = z["sid"]
+	var school: String = sp["school"]
+	var center: Vector3 = z["pos"]
+	var power := 1.0 + caster.flag("totem_power")
+	var tsp: Dictionary = _amplified(sp, power) if power > 1.0 else sp
+	var shoot := int(sp["totem"].get("shoot", 0))
+	if tsp.has("enemy_fx"):
+		var near: Array = world.mobs.query_radius(Vector2(center.x, center.z), float(z["radius"]))
+		if shoot > 0:
+			near.sort_custom(func(a, b): return a.pos.distance_squared_to(center) < b.pos.distance_squared_to(center))
+			near = near.slice(0, shoot)
+		for m: Unit in near:
+			apply_effects(caster, m, tsp["enemy_fx"], sid, school)
+			if shoot > 0:
+				fx_at("chain_" + school, m.pos, center + Vector3(0, 0.6, 0), 0.0, m.id)
+	if tsp.has("ally_fx"):
+		for h in world.heroes.values():
+			if not h.unit.alive or not _in_zone(z, h.unit):
+				continue
+			for e: Dictionary in tsp["ally_fx"]:
+				if e["type"] == "buff" and h.unit.has_buff(e["key"]):
+					for b in h.unit.buffs:
+						if b["key"] == e["key"]:
+							b["until"] = maxf(float(b["until"]), t + float(e["dur"]))
+					continue
+				apply_effects(caster, h.unit, [e], sid, school)
+
 @rpc("authority", "call_local", "reliable")
 func ev_trap(id: int, kind: String, pos: Vector3, on: bool) -> void:
 	Vfx.trap(world, id, kind, pos, on)
@@ -747,6 +825,9 @@ func _update_zones(t: float) -> void:
 			continue
 		z["next"] = t + z["tick"]
 		var sp: Dictionary = GameData.SPELLS[z["sid"]]
+		if z.has("totem"):
+			_totem_tick(z, caster, sp, t)
+			continue
 		var center: Vector3 = z["pos"]
 		for m in world.mobs.query_radius(Vector2(center.x, center.z), float(z["reach"]) + 1.5):
 			if _in_zone(z, m):
@@ -791,11 +872,13 @@ func _tick_auras_for(list: Array, t: float) -> void:
 				var src: Unit = world.get_unit(a["source"])
 				if a["kind"] == "dot":
 					deal_damage(src, u, a["per_tick"], a["school"], false, a["key"])
+					if a.get("procs", false) and src and u.alive:
+						_trigger_procs(src, u, "spell_hit", a["key"], a["school"], false, t)
 				elif a["kind"] == "pulse":
 					if src:
 						for m in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), float(a["radius"])):
 							apply_effects(src, m, a["effects"], a["sid"], a["school"])
-						fx_at("whirl", u.pos, u.pos, float(a["radius"]), u.id)
+						fx_at(str(a.get("vfx", "whirl")), u.pos, u.pos, float(a["radius"]), u.id)
 				else:
 					heal(src, u, a["per_tick"], false, a["key"])
 				if not u.alive:
@@ -855,6 +938,8 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					amount *= 1.0 + float(e["frozen_bonus"])
 				var cc := crit_chance + (caster.mod("fire_crit") if caster and school == "fire" else 0.0)       # Возгорание
 				var crit := randf() < cc
+				if e.has("crit_if") and target.auras.any(func(a): return a["key"] == e["crit_if"]):
+					crit = true      # Выброс лавы по цели с Огненным шоком
 				if crit:
 					amount *= 1.5
 				deal_damage(caster, target, amount, school, crit, sid)
@@ -939,6 +1024,8 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				var aura := {"key": key, "kind": e["type"], "per_tick": per, "tick": float(e["tick"]),
 					"next": t + float(e["tick"]), "until": t + float(e["dur"]), "school": school,
 					"source": caster.id if caster else 0}
+				if e.get("procs", false):
+					aura["procs"] = true      # тики — попадание заклинания для проков (Огненный шок → Волна лавы)
 				if e.has("explode"):
 					var ex: Dictionary = e["explode"]
 					aura["explode"] = {"radius": ex["radius"], "min": float(ex["min"]) * pw * boost, "max": float(ex["max"]) * pw * boost}
@@ -998,6 +1085,10 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 			"mana_return_pct":
 				if caster and caster.resource == "mana":
 					caster.mana = minf(caster.max_mana, caster.mana + caster.max_mana * float(e["pct"]))
+			"mana_pct":
+				# цель восполняет долю запаса маны (Тотем прилива маны, Гром и молния); ярость и концентрацию не трогает
+				if target.resource == "mana" and target.max_mana > 0.0:
+					target.mana = minf(target.max_mana, target.mana + target.max_mana * float(e["pct"]))
 			"hot_pct":
 				# лечение долей здоровья со временем (Безудержное восстановление)
 				var n_ticks := float(e["dur"]) / float(e["tick"])
@@ -1010,7 +1101,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				# аура, которая каждые tick сек. бьёт врагов вокруг носителя (Вихрь клинков)
 				target.auras.append({"key": e.get("key", sid), "kind": "pulse", "per_tick": 0.0, "tick": float(e["tick"]),
 					"next": t + float(e["tick"]), "until": t + float(e["dur"]), "school": school, "source": caster.id if caster else 0,
-					"radius": float(e["radius"]), "effects": e["effects"], "sid": sid})
+					"radius": float(e["radius"]), "effects": e["effects"], "sid": sid, "vfx": str(e.get("vfx", "whirl"))})
 			"fear":
 				if e.has("only") and target.kind == "mob" and not e["only"].has(GameData.MOBS.get(target.type_id, {}).get("faction", "")):
 					continue        # Изгнание зла — только нежить и демоны
@@ -1281,6 +1372,14 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 				if guard and guard.alive and guard != dst:
 					deal_damage(src, guard, amount * 0.3, school, false, "hand_of_sacrifice")
 					amount *= 0.7
+		# Щит молний и т.п.: бафф с thorns бьёт природой врага ближнего боя, ударившего героя
+		# (не чаще раза в секунду)
+		if school == "physical" and not src.def_ranged:
+			for b in dst.buffs:
+				if float(b["mods"].get("thorns", 0.0)) > 0.0 and t >= float(b.get("next_thorns", 0.0)):
+					b["next_thorns"] = t + 1.0
+					deal_damage(dst, src, float(b["mods"]["thorns"]) * dst.power, "nature", false, b["key"])
+					break
 		if dst.has_buff("blazing_barrier") and not src.def_ranged:
 			src.auras.append({"key": "ignite", "kind": "dot", "per_tick": 6.0 * dst.power, "tick": 1.0, "next": t + 1.0, "until": t + 3.0, "school": "fire", "source": dst.id})
 		# Аура воздаяния паладина рядом отражает часть урона ближнего боя
@@ -1340,6 +1439,8 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		if dst.resource == "rage":
 			gain_rage(dst, amount / maxf(dst.max_hp, 1.0) * 60.0, t)
 		_trigger_procs(dst, src, "hit_taken", "", school, false, t)
+		if dst.hp > 0.0 and amount > 0.0:
+			_heal_on_hit(dst, t)
 	world.fx_number(dst.id, amount, "dmg", school, src_id, crit)
 	if dst.kind == "mob":
 		world.mobs.on_damaged(dst, src)
@@ -1354,6 +1455,19 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 					apply_effects(src, m, ex["effects"] if m.hp_frac() < 0.25 else _amplified(ex, 0.5)["effects"], "execute", "physical")
 					fx_at("hit_blood", m.pos, dst.pos, 0.0, m.id)
 					break
+
+## Щит земли и т.п.: бафф с heal_on_hit лечит носителя при ударе — от силы наложившего, не чаще раза в 2 сек.
+func _heal_on_hit(dst: Unit, t: float) -> void:
+	for b in dst.buffs:
+		var v := float(b["mods"].get("heal_on_hit", 0.0))
+		if v <= 0.0 or t < float(b.get("next_heal", 0.0)):
+			continue
+		b["next_heal"] = t + 2.0
+		var from: Unit = world.get_unit(int(b.get("from", dst.id)))
+		if from == null:
+			from = dst
+		heal(from, dst, v * from.power * from.heal_mult * (1.0 + from.mod("heal")), false, b["key"])
+		fx_at("heal_small", dst.pos, dst.pos, 0.0, dst.id)
 
 func heal(src: Unit, dst: Unit, amount: float, crit: bool, sid: String = "") -> void:
 	if dst == null or not dst.alive:

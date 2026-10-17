@@ -51,6 +51,8 @@ static func build_hero(class_id: String, race_id: String) -> Node3D:
 	holder.set_meta("class_id", class_id)
 	holder.set_meta("race_id", race_id)
 	_setup_anims(inst)
+	if cls.has("default_weapon"):
+		apply_outfit(holder, class_id, {})      # оружие по умолчанию — модель вещи (у шамана молот), а не часть модели
 	return holder
 
 static func _prim(mesh: Mesh, mat: Material) -> MeshInstance3D:
@@ -143,6 +145,9 @@ static func apply_outfit(model: Node3D, class_id: String, looks: Dictionary) -> 
 	var added: Array = []
 	# --- руки
 	var main: Dictionary = looks.get("weapon", {})
+	if not main.has("model") and cls.has("default_weapon"):
+		# пустая правая рука: оружие класса по умолчанию — белая вещь шаблона default_weapon
+		main = GameData.ItemData.look(GameData.make_gear(str(cls["default_weapon"]), 1, 0, 0))
 	var off: Dictionary = looks.get("offhand", {})
 	var two := bool(main.get("two_hand", false))
 	set_hand_item(model, "r", main if main.has("model") else {}, defaults)
@@ -909,6 +914,7 @@ static func recolor_model(inst: Node, model_name: String, scheme: String) -> voi
 ## Правило: [оттенок, насыщенность, множитель яркости]; glow — свечение материала.
 const FACTION_SCHEMES := {
 	"hunter": {"blue": [0.27, 0.5, 0.5], "purple": [0.08, 0.55, 0.45], "red": [0.07, 0.6, 0.55]},     # охотник: лесной зелёный и кожа
+	"shaman": {"blue": [0.5, 0.75, 0.62], "purple": [0.07, 0.55, 0.5], "red": [0.08, 0.7, 0.7], "metal": [0.09, 0.4, 0.9]},    # шаман: бирюза, кожа и бронза
 	"orc": {"skin": [0.27, 0.5, 0.8], "blue": [0.01, 0.6, 0.55]},
 	"orc_chief": {"skin": [0.27, 0.5, 0.78], "blue": [0.0, 0.75, 0.6], "metal": [0.08, 0.35, 0.8]},
 	"orc_shaman": {"skin": [0.27, 0.5, 0.8], "purple": [0.08, 0.55, 0.55], "red": [0.33, 0.6, 0.6]},

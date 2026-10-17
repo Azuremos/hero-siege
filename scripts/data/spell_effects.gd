@@ -9,6 +9,7 @@ const SPELL_LEVELS := {
 	"smite": 1, "flash_heal": 1, "renew": 2, "pw_shield": 3, "pw_fortitude": 4, "holy_fire": 5, "divine_spirit": 6, "circle_of_healing": 7, "prayer_of_healing": 8, "light_barrier": 9, "holy_nova": 11,
 	"heroic_strike": 1, "charge": 1, "battle_shout": 2, "thunder_clap": 3, "taunt": 4, "bloodthirst": 5, "whirlwind": 6, "demoralizing_shout": 7, "execute": 8, "shield_wall": 9, "recklessness": 11,
 	"steady_shot": 1, "call_pet": 1, "mend_pet": 2, "silencing_shot": 3, "revive_pet": 4,
+	"lightning_bolt": 1, "healing_wave": 1, "flame_shock": 2, "wind_shear": 3, "searing_totem": 4, "lightning_shield": 6,
 }
 
 # Иконки-подсказки для эффектов на героях (для рамок группы).
@@ -120,6 +121,26 @@ const BUFF_INFO := {
 	"lock_and_load": {"name": "Наготове", "color": Color(1.0, 0.6, 0.2), "icon": "lock_and_load"},
 	"master_marksman": {"name": "Меткий стрелок", "color": Color(1.0, 0.9, 0.5), "icon": "aimed_shot"},
 	"cobra_strikes": {"name": "Удары кобры", "color": Color(0.5, 0.9, 0.4), "icon": "kill_command"},
+	# Шаман (сессия 11). cast_move — с этим баффом произнесение не сбивается движением.
+	"flame_shock": {"name": "Огненный шок", "color": Color(1.0, 0.5, 0.15), "icon": "flame_shock", "debuff": true, "desc": "Урон огнём со временем. Выброс лавы по этой цели — всегда крит."},
+	"lava_burn": {"name": "Лава", "color": Color(1.0, 0.4, 0.1), "icon": "lava_eruption", "debuff": true, "desc": "Горит после Извержения лавы."},
+	"stormstrike": {"name": "Удар бури", "color": Color(0.55, 0.8, 1.0), "icon": "stormstrike", "debuff": true, "desc": "Получает на 20% больше урона от заклинаний."},
+	"riptide": {"name": "Быстрина", "color": Color(0.45, 0.85, 1.0), "icon": "riptide"},
+	"lightning_shield": {"name": "Щит молний", "color": Color(0.55, 0.8, 1.0), "icon": "lightning_shield"},
+	"ghost_wolf": {"name": "Призрачный волк", "color": Color(0.6, 0.8, 1.0), "icon": "ghost_wolf"},
+	"spiritwalkers_grace": {"name": "Благосклонность предков", "color": Color(0.7, 0.95, 1.0), "icon": "spiritwalkers_grace", "cast_move": true,
+		"desc": "Произносит заклинания на ходу."},
+	"wrath_of_air": {"name": "Тотем гнева воздуха", "color": Color(0.8, 0.9, 1.0), "icon": "wrath_of_air_totem", "desc": "Скорость атак и заклинаний +10%."},
+	"windfury": {"name": "Тотем неистовства ветра", "color": Color(0.8, 0.95, 1.0), "icon": "windfury_totem", "desc": "Урон автоатакой +20%, скорость атак +6%."},
+	"totem_of_wrath": {"name": "Тотем гнева", "color": Color(1.0, 0.5, 0.2), "icon": "totem_of_wrath", "desc": "Урон и лечение +10%."},
+	"astral_shift": {"name": "Астральный сдвиг", "color": Color(0.7, 0.7, 1.0), "icon": "astral_shift"},
+	"shamanistic_rage": {"name": "Ярость шамана", "color": Color(1.0, 0.6, 0.3), "icon": "shamanistic_rage"},
+	"earth_shield": {"name": "Щит земли", "color": Color(0.75, 0.6, 0.4), "icon": "earth_shield", "desc": "Удар по цели лечит её."},
+	"elemental_mastery": {"name": "Покорение стихий", "color": Color(0.55, 0.8, 1.0), "icon": "elemental_mastery"},
+	"heroism": {"name": "Героизм", "color": Color(1.0, 0.75, 0.3), "icon": "heroism", "desc": "Скорость атак и заклинаний +25%, урон +10%."},
+	"feral_spirit": {"name": "Дух дикого зверя", "color": Color(0.6, 0.8, 1.0), "icon": "feral_spirit"},
+	"maelstrom_weapon": {"name": "Оружие водоворота", "color": Color(0.55, 0.8, 1.0), "icon": "lightning_bolt"},
+	"tidal_waves": {"name": "Волны прилива", "color": Color(0.45, 0.85, 1.0), "icon": "healing_wave"},
 }
 
 # ---------------------------------------------------------------- Проки (срабатывания)
@@ -138,6 +159,9 @@ const PROC_BUFFS := {
 	"master_marksman": {"spells": ["aimed_shot", "arcane_shot", "chimera_shot"], "instant": true, "free": true, "amp": 0.3},
 	"cobra_strikes": {"spells": ["kill_command"], "free": true, "amp": 0.5, "reset_cd": true},
 	"lock_and_load": {"spells": ["arcane_shot", "kill_command", "serpent_sting", "kill_shot", "chimera_shot", "black_arrow", "explosive_shot"], "free": true, "amp": 0.25, "reset_cd": true},
+	# Шаман: Совершенствование и Исцеление
+	"maelstrom_weapon": {"spells": ["lightning_bolt", "chain_lightning", "lava_burst", "healing_wave", "chain_heal"], "instant": true, "free": true, "amp": 0.2},
+	"tidal_waves": {"spells": ["healing_wave", "chain_heal"], "instant": true, "amp": 0.2},
 }
 
 ## Заклинания, которые срабатывают сами (от проков талантов).
@@ -168,4 +192,17 @@ const AUTO_SPELLS := {
 		"enemy_fx": [{"type": "damage", "min": 20.0, "max": 26.0}]},
 	"hymn": {"name": "Гимн наару", "school": "holy", "radius": 12.0, "delay": 0.0, "vfx": "nova_holy", "around_caster": true,
 		"ally_fx": [{"type": "heal", "min": 70.0, "max": 85.0}]},
+	# Шаман (сессия 11)
+	"lava_eruption": {"name": "Извержение лавы", "school": "fire", "radius": 6.0, "delay": 0.6, "vfx": "eruption",
+		"enemy_fx": [{"type": "damage", "min": 46.0, "max": 56.0}, {"type": "dot", "total": 16.0, "dur": 4.0, "tick": 1.0, "key": "lava_burn"}]},
+	"overload": {"name": "Перегрузка", "school": "nature", "radius": 2.5, "delay": 0.15, "vfx": "beam_nature",
+		"enemy_fx": [{"type": "damage", "min": 20.0, "max": 24.0}]},
+	"flametongue_hit": {"name": "Оружие языка пламени", "school": "fire", "radius": 1.5, "delay": 0.0, "vfx": "hit_fire",
+		"enemy_fx": [{"type": "damage", "min": 8.0, "max": 10.0}]},
+	"windfury_strike": {"name": "Неистовство ветра", "school": "physical", "radius": 1.5, "delay": 0.1, "vfx": "whirl",
+		"enemy_fx": [{"type": "damage", "min": 30.0, "max": 36.0}]},
+	"ancestral_awakening": {"name": "Пробуждение предков", "school": "nature", "radius": 8.0, "delay": 0.0, "vfx": "heal_circle",
+		"ally_fx": [{"type": "heal", "min": 28.0, "max": 34.0}]},
+	"tidal_surge": {"name": "Всплеск прилива", "school": "nature", "radius": 8.0, "delay": 0.0, "vfx": "heal_circle",
+		"ally_fx": [{"type": "heal", "min": 36.0, "max": 42.0}]},
 }

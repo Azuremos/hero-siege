@@ -70,7 +70,7 @@ func setup(w: Node3D, hid: int, pid: int, info: Dictionary) -> void:
 	hero_id = hid
 	peer_id = pid
 	class_id = info.get("class", "mage")
-	race_id = info.get("race", "human")
+	race_id = GameData.ClassData.fix_race(class_id, info.get("race", "human"))      # шаман — только дворф или дреней
 	player_name = info.get("name", "Герой")
 	is_local = pid == Net.my_id()
 	unit = Unit.new()
