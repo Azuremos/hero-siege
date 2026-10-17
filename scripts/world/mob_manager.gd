@@ -178,9 +178,13 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	m.route = source
 	if opts.has("pet_owner"):
 		return _spawn_pet(m, u, type, opts)
+	u.sent_by = int(opts.get("sent_by", 0))      # «Линии»: кто отправил (рамка цели, награда, итоги)
+	u.bounty = int(opts.get("bounty", 0))
 	var want_elite: bool = opts.get("champion", false) or (not def.get("boss", false) and (not opts.has("pos") or Net.cli.has("elite")) and not def["role"] in ["test", "summon"]
 		and (Net.cli.has("elite") or randf() < GameData.AffixData.elite_chance(wave)))
-	if want_elite:
+	if opts.has("affixes") and not (opts["affixes"] as Array).is_empty():
+		_apply_affixes(m, opts["affixes"], opts.get("champion", false))      # аффиксы заданы режимом (одинаковые на всех линиях)
+	elif want_elite and not opts.get("no_elite", false):
 		_make_elite(m, opts.get("champion", false), wave)
 	var ends: Array = world.mode.mob_start(source)
 	var start: Vector2 = ends[0]
@@ -200,7 +204,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	mobs[u.id] = m
 	world.units[u.id] = u
 	_make_visual(m)
-	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave, u.affixes, u.elite])
+	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave, u.affixes, u.elite, 0, u.sent_by])
 	if GameData.BOSSES.has(type):
 		_boss_init(m, wave, players, hp_scale, t)
 	return u.id
@@ -237,7 +241,8 @@ func kill(u: Unit, killer: Unit) -> void:
 	world.units.erase(u.id)
 	var reward := GameData.AffixData.ELITE_REWARD if u.elite > 0 else 1.0
 	var xp := int(float(m.def["xp"]) * (1.0 + 0.1 * float(u.level - 1)) * reward)
-	world.award_kill(u.pos, xp, int(float(m.def["gold"]) * reward))
+	var kr: Array = world.mode.kill_reward(u, xp, int(float(m.def["gold"]) * reward))
+	world.award_kill(u.pos, kr[0], kr[1], u)
 	if killer:
 		var kh: int = killer.owner_id if killer.kind == "pet" else (killer.id if killer.kind == "hero" else 0)
 		if kh != 0:
@@ -247,7 +252,7 @@ func kill(u: Unit, killer: Unit) -> void:
 	elif m.def.get("object", false):
 		pass        # объекты (филактерии, порталы, гробницы) добычи не дают
 	else:
-		world.economy.roll_loot(u.pos, u.level, "champion" if u.elite == 2 else ("elite" if u.elite == 1 else "mob"))
+		world.economy.roll_loot(u.pos, u.level, "champion" if u.elite == 2 else ("elite" if u.elite == 1 else "mob"), world.mode.loot_gear_k(u))
 	if m.bind != 0:
 		_release_tomb(m)
 	if u.affixes.has("explosive"):
@@ -655,6 +660,8 @@ func ev_spawn(list: Array) -> void:
 		if e.size() > 8:
 			u.affixes = e[7]
 			u.elite = e[8]
+		if e.size() > 10:
+			u.sent_by = int(e[10])
 		m.unit = u
 		m.def = def
 		m.pos2 = Vector2(e[2], e[3])
@@ -898,7 +905,7 @@ func _try_abilities(m: Mob, t: float) -> void:
 		var ab: Dictionary = GameData.MOB_ABILITIES[aid]
 		if t < float(m.locked.get(ab.get("school", ""), 0.0)) or t < m.unit.silence_until:
 			continue
-		if world.online_hero_count() < int(ab.get("min_players", 1)):
+		if world.mode.mob_players() < int(ab.get("min_players", 1)):
 			continue    # механики «на группу» — только при 2+ героях
 		if ab.get("hard", false) and is_boss and t < float(m.boss["hard_ready"]):
 			continue
@@ -1167,7 +1174,7 @@ func _finish_cast(m: Mob, t: float) -> void:
 					var a := base_a + TAU * float(i) / float(cnt)
 					p = m.pos2 + Vector2(cos(a), sin(a)) * ring
 				var hp_k := 1.0 if GameData.MOBS[kind].get("object", false) else 0.7
-				var sid2: int = spawn(kind, m.route, m.unit.level, world.online_hero_count(), hp_k, {"pos": p, "owner": m.unit.id})
+				var sid2: int = spawn(kind, m.route, m.unit.level, world.mode.mob_players(), hp_k, {"pos": p, "owner": m.unit.id, "sent_by": m.unit.sent_by})
 				var sm: Mob = mobs.get(sid2, null)
 				if sm:
 					sm.wp = m.wp
@@ -1386,7 +1393,7 @@ func boss_pending() -> bool:
 	return _transform_pending > 0
 
 func _solo() -> bool:
-	return world.online_hero_count() <= 1
+	return world.mode.mob_players() <= 1
 
 ## В одиночке наказание за несбитый каст мягче: урон и лечение способности × solo.mult.
 func _solo_fx(ab: Dictionary, fx: Array) -> Array:
@@ -1422,7 +1429,7 @@ func _owned_count(m: Mob, kind: String) -> int:
 ## Сообщение одному игроку (метка, гробница).
 func _tell(hero_unit: Unit, text: String) -> void:
 	var h = world.heroes.get(hero_unit.id, null)
-	if h == null:
+	if h == null or Net.is_bot_peer(h.peer_id):
 		return
 	if h.peer_id == multiplayer.get_unique_id():
 		world.ev_announce(text, Color(1.0, 0.4, 0.3))
@@ -1461,7 +1468,7 @@ func _boss_enter(m: Mob, idx: int, t: float) -> void:
 			var a := a0 + TAU * float(i) / float(cnt)
 			var p: Vector2 = m.pos2 + Vector2(cos(a), sin(a)) * float(s.get("ring", 4.0))
 			var hp_k := 1.0 if GameData.MOBS[s["type"]].get("object", false) else 0.8
-			spawn(s["type"], m.route, u.level, world.online_hero_count(), hp_k, {"pos": p, "owner": u.id})
+			spawn(s["type"], m.route, u.level, world.mode.mob_players(), hp_k, {"pos": p, "owner": u.id, "sent_by": u.sent_by})
 	if ph.has("buff"):
 		u.add_buff(ph["buff"]["key"], t + 1e6, ph["buff"].get("mods", {}))
 	if ph.has("hazard_ring"):
@@ -1527,7 +1534,7 @@ func _boss_tick(m: Mob, t: float) -> void:
 			if hu.alive and Vector2(hu.pos.x, hu.pos.z).distance_to(m.pos2) <= ar + hu.radius:
 				world.spells.deal_damage(u, hu, float(ph["aura"]["dps"]) * 0.5 * u.power, "fire", false, "mab:aura")
 	var bd: Dictionary = GameData.BOSSES[u.type_id]
-	if not bool(st["enraged"]) and bd.has("enrage") and world.online_hero_count() >= 2 and t - float(st["start"]) > float(bd["enrage"]):
+	if not bool(st["enraged"]) and bd.has("enrage") and world.mode.mob_players() >= 2 and t - float(st["start"]) > float(bd["enrage"]):
 		st["enraged"] = true
 		u.add_buff("boss_enrage", t + 1e6, {"dmg": 1.5, "haste": 0.5})
 		world.announce_all("%s впадает в ярость!" % u.display_name, Color(1, 0.2, 0.1))
@@ -1578,9 +1585,12 @@ func _boss_died(m: Mob) -> void:
 		_transform_pending += 1
 		_delayed.append({"at": t + delay, "pos": m.pos2, "r": r, "fx": [{"type": "damage", "min": 40.0, "max": 50.0}], "school": "fire",
 			"power": u.power, "transform": od["transform"], "say": od.get("say", ""), "route": m.route,
-			"wave": m.boss["wave"], "players": m.boss["players"], "hp_scale": m.boss["hp_scale"]})
+			"wave": m.boss["wave"], "players": m.boss["players"], "hp_scale": m.boss["hp_scale"], "sent_by": u.sent_by, "bounty": u.bounty})
 		return
-	world.economy.roll_boss_loot(u.pos, u.level, bd.get("loot", []), bd.get("rank", "lieutenant"))
+	if world.mode.loot_gear_k(u) > 0.0:
+		world.economy.roll_boss_loot(u.pos, u.level, bd.get("loot", []), bd.get("rank", "lieutenant"))
+	else:
+		world.economy.roll_loot(u.pos, u.level, "boss", 0.0)      # отправленный босс — без вещей, только зелья
 	world.announce_all("%s повержен!" % u.display_name, Color(1, 0.85, 0.3))
 
 ## Отложенный удар босса: метка (следует за героем), мина, взрыв машины (и превращение).
@@ -1609,7 +1619,7 @@ func _explode_boss(d: Dictionary, _t: float) -> void:
 	world.spells.fx_at(_nova_kind(school), Vector3(c.x, 0, c.y), Vector3(c.x, 0, c.y), float(d["r"]), 0)
 	if d.has("transform"):
 		_transform_pending -= 1
-		spawn(d["transform"], int(d["route"]), int(d["wave"]), int(d["players"]), float(d["hp_scale"]), {"pos": c})
+		spawn(d["transform"], int(d["route"]), int(d["wave"]), int(d["players"]), float(d["hp_scale"]), {"pos": c, "sent_by": int(d.get("sent_by", 0)), "bounty": int(d.get("bounty", 0))})
 		if str(d.get("say", "")) != "":
 			world.announce_all(d["say"], BOSS_COLOR)
 
@@ -1693,7 +1703,7 @@ func _finish_boss_cast(m: Mob, ab: Dictionary, sid: String, school: String, fx: 
 				ev_shockwave.rpc(Vector3(m.pos2.x, 0, m.pos2.y), delay, float(wv["speed"]), float(wv["width"]), float(wv["max"]))
 		"tomb":
 			if tu and tu.alive and tu.kind == "hero":
-				var tid: int = spawn(ab["tomb"], m.route, u.level, world.online_hero_count(), 1.0, {"pos": Vector2(tu.pos.x, tu.pos.z), "owner": u.id})
+				var tid: int = spawn(ab["tomb"], m.route, u.level, world.mode.mob_players(), 1.0, {"pos": Vector2(tu.pos.x, tu.pos.z), "owner": u.id})
 				var tm: Mob = mobs.get(tid, null)
 				var dur := float(ab.get("dur", 12.0))
 				if tm:
@@ -2076,6 +2086,8 @@ func _send_pet_state(hero) -> void:
 	var data := {"kind": st["kind"], "mode": st["mode"], "cmd": st["cmd"], "dead": st["dead"]}
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_pet_state(data)
+	elif Net.is_bot_peer(hero.peer_id):
+		pass
 	else:
 		ev_pet_state.rpc_id(hero.peer_id, data)
 
@@ -2230,7 +2242,7 @@ func send_full(peer: int) -> void:
 	var batch: Array = []
 	for m: Mob in mobs.values() + pets.values():
 		var u := m.unit
-		batch.append([u.id, u.type_id, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, u.level, u.affixes, u.elite, u.owner_id])
+		batch.append([u.id, u.type_id, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, u.level, u.affixes, u.elite, u.owner_id, u.sent_by])
 		if batch.size() >= 60:
 			bytes += var_to_bytes(batch).size()
 			parts += 1

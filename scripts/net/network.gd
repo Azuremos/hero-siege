@@ -13,6 +13,12 @@ const PORT := 7777
 func port() -> int:
 	return int(cli.get("port", PORT))
 const MAX_PLAYERS := 6
+## Герои-боты («Добавить бота в команду», --teams=): записи игроков с такими «номерами соединения».
+## Настоящих соединений с ними нет — ими управляет хост (PlayerController в режиме ИИ).
+const BOT_PEER_BASE := 2100000000
+
+func is_bot_peer(pid: int) -> bool:
+	return pid >= BOT_PEER_BASE
 
 ## peer_id -> {name, class, race, version, hero_id}
 var players: Dictionary = {}
@@ -166,7 +172,7 @@ func game_version() -> String:
 ## уходит не туда. Отпечаток не даёт подключиться с несовместимой сборкой.
 const NET_SCRIPTS := ["res://scripts/net/network.gd", "res://scripts/world/economy.gd", "res://scripts/world/hero.gd",
 	"res://scripts/world/marks.gd", "res://scripts/world/meter.gd", "res://scripts/world/mob_manager.gd",
-	"res://scripts/world/spell_system.gd", "res://scripts/world/world.gd"]
+	"res://scripts/world/spell_system.gd", "res://scripts/world/world.gd", "res://scripts/modes/lines_mode.gd"]
 var _fp := ""
 
 func net_fingerprint() -> String:
@@ -207,6 +213,8 @@ func host_game(is_solo: bool = false) -> Error:
 	lobby_notice = ""
 	players[1] = local_info.duplicate()
 	players[1]["version"] = game_version()
+	if str(settings.get("mode", "siege")) == "lines":
+		players[1]["team"] = 0
 	players_changed.emit()
 	return OK
 
@@ -283,6 +291,8 @@ func _register_player(info: Dictionary) -> void:
 			rec["class"] = players[pid]["class"]
 			rec["race"] = players[pid]["race"]
 			players.erase(pid)
+	if str(settings.get("mode", "siege")) == "lines":
+		rec["team"] = 0 if team_size(0) <= team_size(1) else 1      # «Линии»: новичок — в меньшую команду
 	players[id] = rec
 	players_changed.emit()
 	_sync_players.rpc(players)
@@ -311,6 +321,10 @@ func _sync_players(p: Dictionary) -> void:
 func start_game() -> void:
 	if not is_server():
 		return
+	if str(settings.get("mode", "siege")) == "lines":
+		fill_teams()
+		if int(settings.get("teams_n", 0)) > 0:
+			fill_bots(int(settings["teams_n"]))      # пустые места в командах — боты
 	var ids := players.keys()
 	ids.sort()
 	var hero_id := 1
@@ -338,6 +352,71 @@ func back_to_menu(reason: String = "") -> void:
 	if reason != "":
 		await get_tree().process_frame
 		disconnected.emit(reason)
+
+# ---------------------------------------------------------------- команды и боты («Война линий»)
+
+const LinesData := preload("res://scripts/data/lines_data.gd")
+
+func team_size(team: int) -> int:
+	var n := 0
+	for pid in players:
+		if pid > 0 and int(players[pid].get("team", -1)) == team:
+			n += 1
+	return n
+
+## Игрокам без команды — меньшая команда (до 3 человек на сторону).
+func fill_teams() -> void:
+	var ids := players.keys()
+	ids.sort()
+	for pid in ids:
+		if pid > 0 and not players[pid].has("team"):
+			players[pid]["team"] = 0 if team_size(0) <= team_size(1) else 1
+
+## Хост: поставить игрока в команду (места по 3 на сторону).
+func set_team(pid: int, team: int) -> bool:
+	if not players.has(pid) or (int(players[pid].get("team", -1)) != team and team_size(team) >= LinesData.MAX_LANES):
+		return false
+	players[pid]["team"] = team
+	_lobby_changed()
+	return true
+
+## Хост: «Случайные команды» — перемешать всех (вместе с ботами) и раздать поровну.
+func shuffle_teams() -> void:
+	var ids: Array = players.keys().filter(func(k): return k > 0)
+	ids.shuffle()
+	for i in ids.size():
+		players[ids[i]]["team"] = i % 2
+	_lobby_changed()
+
+## Хост: добавить бота в команду. false — команда полна или в отряде нет мест.
+func add_bot(team: int) -> bool:
+	var count: int = players.keys().filter(func(k): return k > 0).size()
+	if count >= MAX_PLAYERS or team_size(team) >= LinesData.MAX_LANES:
+		return false
+	var i := 0
+	while players.has(BOT_PEER_BASE + i):
+		i += 1
+	var cls: String = LinesData.BOT_CLASSES[(i + team) % LinesData.BOT_CLASSES.size()]
+	players[BOT_PEER_BASE + i] = {"name": LinesData.BOT_NAMES[i % LinesData.BOT_NAMES.size()], "class": cls,
+		"race": GameData.ClassData.fix_race(cls, "human"), "version": game_version(), "uid": "", "team": team, "bot": true}
+	_lobby_changed()
+	return true
+
+func remove_bot(pid: int) -> void:
+	if is_bot_peer(pid) and players.erase(pid):
+		_lobby_changed()
+
+## Тест (--teams=2v2): добить обе команды ботами до n человек.
+func fill_bots(n: int) -> void:
+	fill_teams()
+	for team in 2:
+		while team_size(team) < mini(n, LinesData.MAX_LANES) and add_bot(team):
+			pass
+
+func _lobby_changed() -> void:
+	players_changed.emit()
+	if is_server() and not solo:
+		_sync_players.rpc(players)
 
 func hero_id_of_peer(peer: int) -> int:
 	return int(players.get(peer, {}).get("hero_id", 0))

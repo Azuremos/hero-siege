@@ -53,6 +53,10 @@ var _xp_label: Label
 var _mode_title: Label
 var _mode_bar: ProgressBar
 var _mode_bar_label: Label
+var _mode_bar2: ProgressBar
+var _mode_bar2_label: Label
+var _sends: Control           # окно Вербовщика («Война линий»)
+var _buyback_btn: Button
 var _gold_label: Label
 var _announce: Label
 var _announce_t := 0.0
@@ -469,7 +473,7 @@ func rebuild_party() -> void:
 		_party_frames[hid] = {"frame": frame, "style": st, "hp": hp, "mp": mp, "info": info, "buffs": buffs, "name": nl, "pet": pet_bar}
 
 func party_order() -> Array:
-	var ids: Array = world.heroes.keys()
+	var ids: Array = world.heroes.keys().filter(func(id): return world.mode.party_visible(world.local_hero, world.heroes[id]))
 	ids.sort()
 	if world.local_hero:
 		ids.erase(world.local_hero.hero_id)
@@ -858,6 +862,14 @@ func _build_mode_panel() -> void:
 	_mode_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_mode_bar_label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_mode_bar.add_child(_mode_bar_label)
+	# вторая полоса — у режимов «команда на команду» (база соперника)
+	_mode_bar2 = _bar(Color(1, 0.4, 0.3), 18)
+	_mode_bar2.visible = false
+	v.add_child(_mode_bar2)
+	_mode_bar2_label = _label("", 12)
+	_mode_bar2_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_mode_bar2_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_mode_bar2.add_child(_mode_bar2_label)
 	_gold_label = _label("", 15, GOLD)
 	_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_gold_label)
@@ -891,6 +903,14 @@ func _build_messages() -> void:
 	_death_label.size = Vector2(800, 40)
 	_death_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_death_label)
+	# «Война линий»: выкуп — воскреснуть сразу за золото
+	_buyback_btn = Button.new()
+	_buyback_btn.visible = false
+	_buyback_btn.set_anchors_preset(Control.PRESET_CENTER)
+	_buyback_btn.position = Vector2(-110, -10)
+	_buyback_btn.custom_minimum_size = Vector2(220, 36)
+	_buyback_btn.pressed.connect(func(): world.mode.buyback())
+	_root.add_child(_buyback_btn)
 
 func _center_panel(w: float) -> Array:
 	var holder := CenterContainer.new()
@@ -1230,6 +1250,12 @@ func toggle_character() -> void:
 			_char_window.reset_size()
 
 func open_shop(vid: String) -> void:
+	if world.economy.VENDORS[world.economy.vkind(vid)]["kind"] == "sends":
+		open_sends(vid)
+		return
+	if not world.mode.vendor_allowed(world.local_hero, vid):
+		error("Это лавка чужой команды")
+		return
 	if _shop == null:
 		_shop = preload("res://scripts/ui/shop_window.gd").new()
 		_shop.setup(world)
@@ -1244,6 +1270,21 @@ func open_shop(vid: String) -> void:
 
 func shop_open() -> bool:
 	return _shop != null and _shop.visible
+
+## Окно Вербовщика («Война линий»): отправка врагов сопернику.
+func open_sends(vid: String) -> void:
+	if not world.mode.vendor_allowed(world.local_hero, vid):
+		error("Это Вербовщик чужой команды")
+		return
+	if _sends == null:
+		_sends = preload("res://scripts/ui/sends_window.gd").new()
+		_sends.setup(world)
+		_root.add_child(_sends)
+	_sends.open(vid)
+	_sends.reset_size()
+	var vp := get_viewport().get_visible_rect().size
+	_sends.position = Vector2(40, (vp.y - _sends.size.y) * 0.5 - 40)
+	Sfx.play("ui_open")
 
 # ---------------------------------------------------------------- обмен
 
@@ -1325,7 +1366,7 @@ func close_windows() -> bool:
 	if _edit_layer:
 		set_edit_mode(false)
 		closed = true
-	for w in [_talent_window, _spellbook, _keybinds, _char_window, _shop, _settings_win, _menu, _help]:
+	for w in [_talent_window, _spellbook, _keybinds, _char_window, _shop, _sends, _settings_win, _menu, _help]:
 		if w and w.visible:
 			w.visible = false
 			closed = true
@@ -1404,6 +1445,11 @@ func fill_summary() -> void:
 		return
 	for c in _summary_box.get_children():
 		c.queue_free()
+	var first: Array = world.summary[0]
+	if first.size() > 8 and (first[8] as Dictionary).has("team"):
+		_fill_summary_lines()
+		return
+	_summary_box.columns = 6
 	for head in ["Герой", "Урон", "Лечение", "Убито", "Вещей", "Уровень"]:
 		_summary_box.add_child(_label(head, 13, GOLD))
 	for row in world.summary:
@@ -1418,6 +1464,37 @@ func fill_summary() -> void:
 		var l := _label("Поход: уровень угрозы теперь %d." % (world.summary.map(func(r): return int(r[7])).max()), 15, Color(1, 0.7, 0.4))
 		_summary_box.get_parent().add_child(l)
 		_summary_box.get_parent().move_child(l, _summary_box.get_index() + 1)
+
+## Итоги «Войны линий»: по командам — урон, лечение, убийства, уровень, золото заработано и потрачено,
+## отправлено врагов (кому — в подсказке) и сколько из них прорвалось к базе соперника.
+func _fill_summary_lines() -> void:
+	var L := GameData.LinesData
+	_summary_box.columns = 9
+	for head in ["Герой", "Урон", "Лечение", "Убито", "Уровень", "Золото +", "Потрачено", "Отправлено", "Прорвалось"]:
+		_summary_box.add_child(_label(head, 13, GOLD))
+	var rows: Array = world.summary.duplicate()
+	rows.sort_custom(func(a, b): return int(a[8]["team"]) < int(b[8]["team"]))
+	for row in rows:
+		var ex: Dictionary = row[8]
+		var team := clampi(int(ex["team"]), 0, 1)
+		var nl := _label("%s%s" % ["★ " if int(ex.get("winner", -1)) == team else "", str(row[0])], 14, L.TEAMS[team]["color"])
+		nl.tooltip_text = "%s, %s" % [L.TEAMS[team]["full"], GameData.CLASSES.get(str(row[1]), {}).get("name", "")]
+		nl.mouse_filter = Control.MOUSE_FILTER_PASS
+		_summary_box.add_child(nl)
+		_summary_box.add_child(_label(MeterWindowScript.fmt(float(row[2])), 14))
+		_summary_box.add_child(_label(MeterWindowScript.fmt(float(row[3])), 14))
+		_summary_box.add_child(_label(str(row[4]), 14))
+		_summary_box.add_child(_label(str(row[6]), 14))
+		_summary_box.add_child(_label(str(int(ex["gold_in"])), 14, GOLD))
+		_summary_box.add_child(_label(str(int(ex["gold_out"])), 14))
+		var sl := _label(str(int(ex["sent_n"])), 14)
+		var parts: Array = []
+		for who in ex["sent"]:
+			parts.append("%s — %d" % [who, int(ex["sent"][who])])
+		sl.tooltip_text = "Кому: " + (", ".join(parts) if not parts.is_empty() else "никому")
+		sl.mouse_filter = Control.MOUSE_FILTER_PASS
+		_summary_box.add_child(sl)
+		_summary_box.add_child(_label(str(int(ex["leaked"])), 14))
 
 func floating_number(u: Unit, amount: float, kind: String, school: String, crit: bool, on_me: bool) -> void:
 	var text := str(int(round(amount)))
@@ -1492,6 +1569,8 @@ func _process(delta: float) -> void:
 			title = ("★ Чемпион: " if tu.elite == 2 else "★ ") + title
 		if tu.kind == "mob":
 			title += "  •  ур. %d" % tu.level
+			if tu.sent_by != 0 and world.heroes.has(tu.sent_by):
+				title += "  •  от игрока %s" % world.heroes[tu.sent_by].player_name      # «Линии»: отправленный враг
 			_bar_color(_target_frame["hp"], Color(0.8, 0.15, 0.12))
 		else:
 			title += "  •  %d ур." % tu.level
@@ -1542,9 +1621,11 @@ func _process(delta: float) -> void:
 		_hover_ring.scale = Vector3(hr, 1, hr)
 	# подсказка у торговца
 	var near_v: String = world.economy.nearest_vendor(lh.global_position)
-	_vendor_hint.visible = near_v != "" and not shop_open()
+	_vendor_hint.visible = near_v != "" and not shop_open() and not (_sends != null and _sends.visible)
 	if _shop and _shop.visible and near_v != _shop.vendor:
 		_shop.visible = false
+	if _sends and _sends.visible and near_v != _sends.vendor:
+		_sends.visible = false
 
 	# группа
 	for hid in _party_frames:
@@ -1667,10 +1748,24 @@ func _process(delta: float) -> void:
 	_mode_bar.max_value = maxf(1.0, mp["bar_max"])
 	_mode_bar.value = mp["bar"]
 	_mode_bar_label.text = mp["bar_text"]
+	if mp.has("bar_color"):
+		_bar_color(_mode_bar, mp["bar_color"])
+	_mode_bar2.visible = mp.has("bar2")
+	if mp.has("bar2"):
+		_mode_bar2.max_value = maxf(1.0, mp["bar2_max"])
+		_mode_bar2.value = mp["bar2"]
+		_mode_bar2_label.text = mp["bar2_text"]
+		_bar_color(_mode_bar2, mp["bar2_color"])
 	_skip_btn.text = mp["skip_text"]
 	_skip_btn.visible = Net.is_server() and mp["can_skip"]
 
 	_death_label.text = "Вы погибли. Воскрешение через %d сек." % int(ceil(lh.net_respawn_left)) if not lh.alive_visual else ""
+	var lm_bb := world.mode as LinesMode
+	_buyback_btn.visible = lm_bb != null and not lh.alive_visual and lh.net_respawn_left > 1.0 and not lm_bb.is_over()
+	if _buyback_btn.visible:
+		var bbp: int = GameData.LinesData.buyback_price(lh.unit.level)
+		_buyback_btn.text = "Выкуп — %d золота" % bbp
+		_buyback_btn.disabled = lh.gold < bbp
 
 	if _announce_t > 0.0:
 		_announce_t -= delta

@@ -129,3 +129,61 @@ func game_over_text(victory: bool) -> String:
 ## Строка под заголовком в окне итогов партии.
 func game_over_details(_victory: bool) -> String:
 	return ""
+
+## Окно итогов у этого игрока — победа? (в режиме «команда на команду» — своя команда победила)
+func local_victory() -> bool:
+	return state == "victory"
+
+# ---------------------------------------------------------------- хуки режима (значения по умолчанию — как в осаде)
+## Режимы с другими правилами («Война линий») переопределяют их; осада пользуется значениями отсюда,
+## поэтому баланс осады от новых режимов не меняется.
+
+func map_path() -> String:
+	return "res://scenes/map.tscn"
+
+## Где появляется герой игрока info (у режимов с командами — у своей базы).
+func hero_spawn_for(_info: Dictionary, index: int, count: int) -> Vector3:
+	return hero_spawn_point(index, count)
+
+func hero_spawn_yaw_for(_info: Dictionary) -> float:
+	return hero_spawn_yaw()
+
+## Сколько героев считать для силы врагов и механик «на группу».
+func mob_players() -> int:
+	return world.online_hero_count()
+
+## Получает ли герой h опыт и золото за врага u (у «Линий» — только своя команда).
+func can_share(_h, _u: Unit) -> bool:
+	return true
+
+## Опыт и золото за убийство врага u: [xp, gold].
+func kill_reward(_u: Unit, xp: int, gold: int) -> Array:
+	return [xp, gold]
+
+## Множитель доли вещей в добыче врага u (0 — только зелья).
+func loot_gear_k(_u: Unit) -> float:
+	return 1.0
+
+## Синие вещи в лавке кузнеца: {} — как в осаде (60% ротаций, 1–2 штуки).
+func shop_blue() -> Dictionary:
+	return {}
+
+## Можно ли герою торговать у этого торговца (у «Линий» — только у своей базы).
+func vendor_allowed(_hero, _vid: String) -> bool:
+	return true
+
+## Показывать ли героя other в рамках группы игрока me.
+func party_visible(_me, _other) -> bool:
+	return true
+
+## Команда для игрока, вошедшего посреди партии.
+func team_for_new() -> int:
+	return 0
+
+## Сервер: герой вошёл посреди партии.
+func on_hero_joined(_h) -> void:
+	pass
+
+## Дополнительные поля итогов героя (у «Линий» — золото, отправки, прорывы).
+func summary_extra(_h) -> Dictionary:
+	return {}

@@ -29,7 +29,10 @@ var local_hero: CharacterBody3D = null
 
 ## Режимы игры. Выбор режима — Net.settings["mode"]: осада и предпросмотр интерфейса из главного меню.
 const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd"), "preview": preload("res://scripts/modes/preview_mode.gd"),
-	"arena": preload("res://scripts/modes/arena_mode.gd")}
+	"arena": preload("res://scripts/modes/arena_mode.gd"), "lines": preload("res://scripts/modes/lines_mode.gd")}
+
+## Сервер: герой-бот («Добавить бота в команду»), от чьего имени сейчас идёт запрос (spells, economy, режим).
+var acting_hero = null
 
 var _snap_accum := 0.0
 var _state_accum := 0.0
@@ -43,8 +46,6 @@ func is_server() -> bool:
 
 func _ready() -> void:
 	name = "World"
-	map = (load("res://scenes/map.tscn") as PackedScene).instantiate()
-	add_child(map)
 	heroes_root = Node3D.new()
 	heroes_root.name = "Heroes"
 	add_child(heroes_root)
@@ -63,6 +64,10 @@ func _ready() -> void:
 	mode.name = "Mode"
 	add_child(mode)
 	mode.setup(self)
+	# карта — своя у режима (у «Войны линий» — map_lines.tscn)
+	map = (load(mode.map_path()) as PackedScene).instantiate()
+	add_child(map)
+	move_child(map, 0)
 	economy = EconomyScript.new()
 	economy.name = "Economy"
 	add_child(economy)
@@ -119,8 +124,8 @@ func _spawn_heroes() -> void:
 		var hid := int(info.get("hero_id", i + 1))
 		hero.name = "Hero_%d" % hid
 		hero.setup(self, hid, pid, info)
-		hero.position = mode.hero_spawn_point(i, peers.size())
-		hero.rotation.y = mode.hero_spawn_yaw()
+		hero.position = mode.hero_spawn_for(info, i, peers.size())
+		hero.rotation.y = mode.hero_spawn_yaw_for(info)
 		heroes_root.add_child(hero)
 		heroes[hid] = hero
 		units[hid] = hero.unit
@@ -222,14 +227,16 @@ func ev_mode_state(snap: Array, alive_mobs: int) -> void:
 		mode.apply_snapshot(snap)
 	mobs.client_alive_count = alive_mobs
 	if mode.is_over() and not hud.game_over_shown:
-		hud.show_game_over(mode.state == "victory")
+		hud.show_game_over(mode.local_victory())
 
 # ---------------------------------------------------------------- опыт и уровни (сервер)
 
-func award_kill(mob_pos: Vector3, xp: int, gold: int) -> void:
+## u — убитый враг: режим решает, кому из героев рядом идёт награда (у «Линий» — только своей команде).
+func award_kill(mob_pos: Vector3, xp: int, gold: int, u: Unit = null) -> void:
 	var near: Array = []
 	for h in heroes.values():
-		if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(Vector2(mob_pos.x, mob_pos.z)) <= GameData.XP_SHARE_RADIUS:
+		if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(Vector2(mob_pos.x, mob_pos.z)) <= GameData.XP_SHARE_RADIUS \
+				and mode.can_share(h, u):
 			near.append(h)
 	if near.is_empty():
 		return
@@ -237,6 +244,7 @@ func award_kill(mob_pos: Vector3, xp: int, gold: int) -> void:
 	var share := float(xp) * (1.0 + 0.5 * float(n - 1)) / float(n)
 	for h in near:
 		h.gold += gold
+		h.gold_in += gold
 		give_xp(h, share)
 
 func give_xp(h, amount: float) -> void:
@@ -319,6 +327,18 @@ func announce_all(text: String, color: Color = Color(1, 0.9, 0.6)) -> void:
 func ev_announce(text: String, color: Color) -> void:
 	hud.announce(text, color)
 
+## Объявление только игрокам одной команды (режимы «команда на команду»).
+func announce_team(team: int, text: String, color: Color = Color(1, 0.9, 0.6)) -> void:
+	if not Net.cli.is_empty():
+		print("ANNOUNCE team%d [t=%d]: %s" % [team, int(now()), text])
+	for h in heroes.values():
+		if h.team != team or h.offline or Net.is_bot_peer(h.peer_id):
+			continue
+		if h.peer_id == multiplayer.get_unique_id():
+			ev_announce(text, color)
+		else:
+			ev_announce.rpc_id(h.peer_id, text, color)
+
 ## Звук сразу у всех игроков.
 func sound_all(name: String) -> void:
 	ev_sound.rpc(name)
@@ -390,6 +410,8 @@ func _process(delta: float) -> void:
 		var lh = local_hero
 		if lh:
 			print("   talents=%s  bar=%s" % [str(lh.talents), str(lh.controller.bar)])
+		if mode.has_method("log_line") and (is_server() or not mode.is_over()):
+			print(mode.log_line())
 		print("[t=%d] fps=%d wave=%d mobs=%d castle=%d hero_lvl=%d xp=%d hp=%d/%d mana=%d gold=%d" % [
 			int(_test_t), Engine.get_frames_per_second(), siege.wave if siege else 0,
 			mobs.alive_count() if is_server() else mobs.client_alive_count, int(siege.castle.hp) if siege else 0,
@@ -915,11 +937,13 @@ func server_join(peer: int, rec: Dictionary) -> bool:
 	for h in heroes.keys():
 		hid = maxi(hid, int(h) + 1)
 	rec["hero_id"] = hid
+	rec["team"] = mode.team_for_new()       # «Линии»: новичок — в меньшую команду
 	Net.players[peer] = rec
 	ev_add_hero.rpc(peer, rec)
 	_late_setup(heroes[hid])
+	mode.on_hero_joined(heroes[hid])
 	_rejoining[peer] = hid
-	announce_all("%s присоединился к осаде." % rec["name"], Color(0.6, 1.0, 0.7))
+	announce_all("%s присоединился к партии." % rec["name"], Color(0.6, 1.0, 0.7))
 	return true
 
 var _rejoining: Dictionary = {}       # сервер: peer -> hero_id, ждём, пока у него загрузится мир
@@ -1108,7 +1132,7 @@ func send_summary() -> void:
 	for h in heroes.values():
 		var r: Dictionary = total.get(h.hero_id, {})
 		rows.append([h.player_name, h.class_id, float(r.get("dmg", 0.0)), float(r.get("heal", 0.0)),
-			int(kills.get(h.hero_id, 0)), int(items_got.get(h.hero_id, 0)), h.unit.level, h.threat])
+			int(kills.get(h.hero_id, 0)), int(items_got.get(h.hero_id, 0)), h.unit.level, h.threat, mode.summary_extra(h)])
 	ev_summary.rpc(rows, int(Net.settings.get("threat", 0)), is_campaign())
 
 @rpc("authority", "call_local", "reliable")

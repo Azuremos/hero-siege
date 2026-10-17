@@ -421,7 +421,8 @@ func make_gear(base: String, ilvl: int, q: int, seed: int = -1) -> String:
 ## Ассортимент лавки для героя уровня level. Кузнец: каждый шаблон белым и зелёным на уровне героя и
 ## на 3 уровня ниже, плюс изредка одна-две синие вещи — дорого. Фиолетового и легендарного не продают.
 ## Ассортимент детерминирован по (уровень, rotation): сервер пересчитывает его и проверяет покупку.
-func vendor_stock(kind: String, level: int, rotation: int) -> Array:
+## blue — правило синих вещей режима: {chance, min, extra}; {} — как в осаде (60% ротаций, 1–2 вещи).
+func vendor_stock(kind: String, level: int, rotation: int, blue: Dictionary = {}) -> Array:
 	var out: Array = []
 	if kind == "consumable":
 		var ids: Array = ItemData.CONSUMABLES.keys()
@@ -442,8 +443,8 @@ func vendor_stock(kind: String, level: int, rotation: int) -> Array:
 		var base: String = tr[(rotation * 4 + i) % tr.size()]
 		out.append(make_gear(base, level, i % 2, rng.randi() % 1000000))
 	# синее — не каждый раз: с 5-го уровня, одна-две вещи
-	if level >= 5 and rng.randf() < 0.6:
-		for i in 1 + int(rng.randf() < 0.3):
+	if level >= 5 and rng.randf() < float(blue.get("chance", 0.6)):
+		for i in int(blue.get("min", 1)) + int(rng.randf() < float(blue.get("extra", 0.3))):
 			out.append(make_gear(bases[rng.randi() % bases.size()], level, 2, rng.randi() % 1000000))
 	return out
 

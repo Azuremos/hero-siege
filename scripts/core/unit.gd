@@ -58,6 +58,9 @@ var def_ranged := false         # моб дальнего боя (для отр�
 ## Элитные мобы: 0 — обычный, 1 — элитный, 2 — чемпион фракции; аффиксы — id из affixes.gd
 var elite := 0
 var affixes: Array = []
+## «Война линий»: враг, которого отправил игрок (id героя), и золото за его убийство (доля цены отправки)
+var sent_by := 0
+var bounty := 0
 var damage_taken_mult: float = 1.0   # пересчитывается каждый тик (барьеры)
 
 ## Периодические эффекты: {key, kind: "dot"/"hot", per_tick, tick, next, until, school, source}

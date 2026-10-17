@@ -10,6 +10,9 @@ const DRAG_THRESHOLD := 4.0
 
 var hero: CharacterBody3D
 var world: Node3D
+## Герой-бот на хосте («Добавить бота в команду»): без камеры и ввода, всё решает bot_tick, просьбы идут
+## прямо в серверный код от имени героя (world.acting_hero).
+var ai := false
 
 var cam_yaw := 0.0
 var cam_pitch := -0.32
@@ -47,6 +50,12 @@ func _ready() -> void:
 	hero = get_parent()
 	world = hero.world
 	cam_yaw = hero.rotation.y
+	if ai:
+		bars = [[], []]
+		for b in BAR_COUNT:
+			bars[b].resize(BAR_SIZE)
+			bars[b].fill("")
+		return
 	rig = Node3D.new()
 	rig.top_level = true
 	add_child(rig)
@@ -237,6 +246,9 @@ func consume_jump() -> bool:
 	return j
 
 func _process(delta: float) -> void:
+	if ai:
+		_ai_process(delta)
+		return
 	var typing: bool = world.hud.is_typing()
 	var w := Input.is_action_pressed("move_forward") and not typing
 	var s := Input.is_action_pressed("move_back") and not typing
@@ -656,14 +668,15 @@ func on_cast_started(sid: String, duration: float, channel: bool = false) -> voi
 	_cancel_sent = false
 
 func on_cast_ended(ok: bool) -> void:
-	if cast_spell != "" and not ok:
+	if cast_spell != "" and not ok and not ai:
 		world.hud.error("Прервано")
 	cast_spell = ""
 	_cancel_sent = false
 
 func on_feedback(sid: String, err: String, cd: float, gcd: float) -> void:
 	if err != "":
-		world.hud.error(err)
+		if not ai:
+			world.hud.error(err)
 		return
 	if cd > 0.0:
 		cd_until[sid] = now() + cd
@@ -673,7 +686,21 @@ func on_feedback(sid: String, err: String, cd: float, gcd: float) -> void:
 		gcd_until = now() + gcd
 
 func _send_server(method: String, args: Array) -> void:
+	if ai:
+		world.acting_hero = hero
+		world.spells.callv(method, args)
+		world.acting_hero = null
+		return
 	world.spells.send_to_server(method, args)
+
+## Просьба к экономике (у бота на хосте — сразу в серверный код от имени героя).
+func _eco(method: String, args: Array) -> void:
+	if ai:
+		world.acting_hero = hero
+		world.economy.callv(method, args)
+		world.acting_hero = null
+		return
+	world.economy.send(method, args)
 
 # ---------------------------------------------------------------- бот для автотестов (--bot)
 
@@ -681,11 +708,14 @@ var _bot_t := 0.0
 var _bot_ally := 0
 
 func bot_active() -> bool:
-	return Net.cli.has("bot")
+	return ai or Net.cli.has("bot")
 
 func bot_tick(delta: float) -> void:
-	var post: Vector3 = world.mode.bot_post()
-	if Net.cli.has("post"):
+	var post: Vector3 = world.mode.bot_post_for(hero) if world.mode.has_method("bot_post_for") else world.mode.bot_post()
+	var lines_post: Variant = _bot_lines(delta)
+	if lines_post != null:
+		post = lines_post
+	elif Net.cli.has("post") and not ai:
 		var f: PackedFloat64Array = Net.cli["post"].split_floats(",")
 		post = Vector3(f[0], 0, f[1])
 	var to := post - hero.global_position
@@ -735,18 +765,18 @@ func bot_tick(delta: float) -> void:
 	if first and (tu == null or not GameData.MOBS.get(tu.type_id, {}).get("kill_first", false)):
 		target_id = first.id
 		tu = first
-	if tu == null or not tu.alive or tu.team != Unit.Team.ENEMIES or _dist_to(tu) > 32.0:
+	if tu == null or not tu.alive or tu.team != Unit.Team.ENEMIES or _dist_to(tu) > 32.0 or not _target_ok(tu):
 		target_id = 0
 		var best := 1e9
 		for u: Unit in world.units.values():
-			if u.team == Unit.Team.ENEMIES and u.alive and _dist_to(u) < minf(best, 32.0):
+			if u.team == Unit.Team.ENEMIES and u.alive and _dist_to(u) < minf(best, 32.0) and _target_ok(u):
 				best = _dist_to(u)
 				target_id = u.id
 		tu = world.get_unit(target_id)
 	# самый раненый союзник
 	var weakest: Unit = null
 	for h in world.heroes.values():
-		if h.unit.alive and (weakest == null or h.unit.hp_frac() < weakest.hp_frac()):
+		if h.unit.alive and h.team == hero.team and (weakest == null or h.unit.hp_frac() < weakest.hp_frac()):
 			weakest = h.unit
 	var near_enemies := 0
 	for u: Unit in world.units.values():
@@ -761,12 +791,12 @@ func bot_tick(delta: float) -> void:
 			if GameData.ItemData.ITEM_PROCS[use].has("heal_pct") and hero.unit.hp_frac() > 0.5:
 				continue
 			hero.use_ready[use] = now() + 1.0       # не слать повторно, пока сервер не ответит
-			world.economy.send("request_use_slot", [ts])
+			_eco("request_use_slot", [ts])
 	# питомцы охотников тоже союзники: лекарь подлечивает раненого зверя
 	for pu: Unit in world.mobs.pet_units():
 		if pu.alive and _dist_to(pu) < 30.0 and pu.hp_frac() < 0.6 and (weakest == null or pu.hp_frac() < weakest.hp_frac()):
 			weakest = pu
-	if hero.class_id == "hunter" and _bot_hunter_pet():
+	if hero.class_id == "hunter" and not ai and _bot_hunter_pet():
 		return
 	for sid in _bot_priority():
 		var sp: Dictionary = GameData.SPELLS[sid]
@@ -890,7 +920,7 @@ const BOT_TREE := {"mage": 2, "paladin": 0, "priest": 1}
 var _bot_learn_wait := 0.0
 
 func _bot_main_tree() -> int:
-	return int(Net.cli["bottree"]) if Net.cli.has("bottree") else BOT_TREE.get(hero.class_id, 0)
+	return int(Net.cli["bottree"]) if Net.cli.has("bottree") and not ai else BOT_TREE.get(hero.class_id, 0)
 
 func _bot_learn_talents() -> void:
 	if now() < _bot_learn_wait:
@@ -983,3 +1013,164 @@ func replace_spell(old: String, new_sid: String) -> void:
 	if not _seen.has(new_sid):
 		_seen.append(new_sid)
 	save_bar()
+
+# ---------------------------------------------------------------- герой-бот на хосте и бот «Войны линий»
+
+## Бот на хосте: без камеры и ввода — только решения бота; движение прерывает произнесение, как у игрока.
+func _ai_process(delta: float) -> void:
+	move_strafe = 0.0
+	turn_input = 0.0
+	steering = false
+	bot_tick(delta)
+	if cast_spell != "" and hero.is_moving() and not _cancel_sent and not _cast_move_buff():
+		_cancel_sent = true
+		_send_server("request_cancel", [])
+	var tu: Unit = world.get_unit(target_id)
+	if tu and not tu.alive and tu.kind == "mob":
+		target_id = 0
+
+## «Линии»: бот бьёт только врагов своей линии (соседние коридоры — за лесополосой).
+func _target_ok(u: Unit) -> bool:
+	var lm := world.mode as LinesMode
+	if lm == null:
+		return true
+	return lm.on_my_lane(hero, u.pos)
+
+## «Линии»: раз в BOT_SHOP_EVERY сек. (или когда золота много) бот идёт на базу: у Вербовщика тратит
+## долю золота BOT_SEND_SHARE на отправки, у кузнеца — остальное на вещи получше, затем надевает их.
+## Возвращает точку, куда идти (или null — держать линию).
+var _shop_phase := 0
+var _shop_t := 20.0
+var _shop_wait := 0.0
+var _equip_t := 0.0
+var _equip_tried: Dictionary = {}
+var _send_local: Dictionary = {}     # отправка -> до какого времени не пробовать (снимок перезарядок приходит позже)
+
+func _bot_lines(delta: float) -> Variant:
+	var lm := world.mode as LinesMode
+	if lm == null or lm.is_over() or not hero.unit.alive:
+		return null
+	_shop_t -= delta
+	_equip_t -= delta
+	if _equip_t <= 0.0:
+		_equip_t = 1.5
+		_bot_equip_upgrades()
+	var L := GameData.LinesData
+	var rec: Vector3 = world.economy.vendor_pos.get("recruiter#%d" % hero.team, Vector3.ZERO)
+	var smith: Vector3 = world.economy.vendor_pos.get("smith#%d" % hero.team, Vector3.ZERO)
+	match _shop_phase:
+		0:
+			if (_shop_t <= 0.0 and hero.gold >= 60) or hero.gold >= 600:
+				_shop_phase = 1
+			else:
+				return null
+		1:
+			if _dist_to_point(rec) > 5.0:
+				return rec
+			_bot_buy_sends(int(hero.gold * L.BOT_SEND_SHARE))
+			_shop_phase = 2
+			return rec
+		2:
+			if _dist_to_point(smith) > 5.0:
+				return smith
+			_bot_buy_gear(hero.gold)
+			_shop_phase = 3
+			_shop_wait = 1.5
+			return smith
+		3:
+			_shop_wait -= delta
+			if _shop_wait > 0.0:
+				return smith
+			_bot_equip_upgrades()
+			_shop_phase = 0
+			_shop_t = L.BOT_SHOP_EVERY
+			return null
+	return null
+
+func _bot_buy_sends(budget: int) -> void:
+	var lm := world.mode as LinesMode
+	var SD := GameData.SendData
+	for k in 4:
+		var opts: Array = []
+		for sid in SD.SENDS:
+			var s: Dictionary = SD.SENDS[sid]
+			if lm.minute() >= float(s["minute"]) and lm.cd_left_view(hero, sid) <= 0.0 and now() >= float(_send_local.get(sid, 0.0)) \
+					and int(s["price"]) <= budget:
+				opts.append(sid)
+		if opts.is_empty():
+			return
+		opts.sort_custom(func(a, b): return [int(SD.SENDS[a]["tier"]), int(SD.SENDS[a]["price"])] > [int(SD.SENDS[b]["tier"]), int(SD.SENDS[b]["price"])])
+		var sid: String = opts[randi() % mini(3, opts.size())]
+		budget -= int(SD.SENDS[sid]["price"])
+		_send_local[sid] = now() + float(SD.SENDS[sid]["cd"]) + 1.0
+		if ai:
+			world.acting_hero = hero
+			lm.request_send(sid, -1, "")
+			world.acting_hero = null
+		else:
+			lm.send(sid, -1, "")
+
+## Ценность вещи для героя: характеристики с весами по роли (заклинатель — интеллект и сила заклинаний,
+## боец — сила, ловкость и сила атаки), выносливость и броня — всем.
+func _item_value(id) -> float:
+	if id == null or str(id) == "":
+		return 0.0
+	var it := GameData.item(str(id))
+	if it.is_empty() or it.get("kind", "") != "gear":
+		return 0.0
+	var caster: bool = hero.class_id in ["mage", "priest"] or (hero.class_id in ["shaman", "paladin"] and _bot_main_tree() == 0) \
+		or (hero.class_id == "shaman" and _bot_main_tree() == 2)
+	var w := {"sta": 1.0, "armor": 120.0, "crit": 120.0, "block": 40.0}
+	if caster:
+		w.merge({"int": 1.3, "sp": 1.3, "spi": 0.6})
+	else:
+		w.merge({"str": 1.3, "agi": 1.1, "ap": 1.1})
+	var v := 0.0
+	for k in it.get("stats", {}):
+		v += float(it["stats"][k]) * float(w.get(k, 0.15))
+	return v
+
+func _slot_value(slot: String) -> float:
+	if slot == "trinket":
+		return minf(_item_value(hero.equip.get("trinket1", "")), _item_value(hero.equip.get("trinket2", "")))
+	return _item_value(hero.equip.get(slot, ""))
+
+func _can_wear(it: Dictionary) -> bool:
+	return it.get("kind", "") == "gear" and hero.unit.level >= int(it.get("level", 1)) \
+		and (it.get("classes", []).is_empty() or it["classes"].has(hero.class_id))
+
+func _bot_buy_gear(budget: int) -> void:
+	var vid := "smith#%d" % hero.team
+	if not world.economy.vendor_pos.has(vid):
+		return
+	var cands: Array = []
+	for id in world.economy.vendor_items(vid, hero.unit.level):
+		var it := GameData.item(id)
+		if not _can_wear(it):
+			continue
+		var gain := _item_value(id) - _slot_value(it["slot"])
+		if gain > 0.5:
+			cands.append([gain / maxf(1.0, float(GameData.shop_price(id))), id, it["slot"]])
+	cands.sort_custom(func(a, b): return a[0] > b[0])
+	var bought := {}
+	for c in cands:
+		var price := GameData.shop_price(c[1])
+		if price > budget or bought.has(c[2]):
+			continue
+		budget -= price
+		bought[c[2]] = true
+		_eco("request_buy", [vid, c[1]])
+
+## Надеть из сумки вещь получше надетой (по одной за раз — индексы сумки не сдвигаются).
+func _bot_equip_upgrades() -> void:
+	for i in hero.bag.size():
+		var s = hero.bag[i]
+		if s == null or _equip_tried.has(s["id"]):
+			continue
+		var it := GameData.item(s["id"])
+		if not _can_wear(it):
+			continue
+		if _item_value(s["id"]) > _slot_value(it["slot"]) * 1.05 + 0.5:
+			_equip_tried[s["id"]] = true
+			_eco("request_use", [i])
+			return

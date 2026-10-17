@@ -35,6 +35,13 @@ var threat := 0
 var played := 0
 ## Игрок отключился: герой ждёт его до конца партии — скрыт, враги его не видят, опыт не идёт.
 var offline := false
+## Команда (режим «Война линий»: 0 — юг, 1 — север). В осаде все в команде 0.
+var team := 0
+## Герой-бот на хосте («Добавить бота в команду»): им управляет PlayerController в режиме ИИ, позицию рассылает хост.
+var ai := false
+## Золото за партию (итоги «Линий»): заработано и потрачено.
+var gold_in := 0
+var gold_out := 0
 
 # прогресс (сервер — истина, клиенты — из снимков)
 var xp := 0
@@ -73,6 +80,8 @@ func setup(w: Node3D, hid: int, pid: int, info: Dictionary) -> void:
 	race_id = GameData.ClassData.fix_race(class_id, info.get("race", "human"))      # шаман — только дворф или дреней
 	player_name = info.get("name", "Герой")
 	is_local = pid == Net.my_id()
+	team = clampi(int(info.get("team", 0)), 0, 1)
+	ai = Net.is_server() and bool(info.get("bot", false))
 	unit = Unit.new()
 	unit.id = hid
 	unit.kind = "hero"
@@ -275,11 +284,12 @@ func _ready() -> void:
 	_shield.visible = false
 	add_child(_shield)
 
-	if is_local:
+	if is_local or ai:
 		controller = PlayerControllerScript.new()
 		controller.name = "Controller"
+		controller.ai = ai
 		add_child(controller)
-	else:
+	if not is_local:
 		_nameplate = Label3D.new()
 		_nameplate.text = "%s" % player_name
 		_nameplate.modulate = GameData.CLASSES[class_id]["color"]
@@ -298,7 +308,7 @@ func server_position() -> Vector3:
 	return _net_pos
 
 func _physics_process(delta: float) -> void:
-	if is_local:
+	if is_local or ai:
 		_local_move(delta)
 		_send_accum += delta
 		if _send_accum >= 0.05:
@@ -371,8 +381,9 @@ func is_moving() -> bool:
 
 @rpc("any_peer", "unreliable_ordered")
 func net_move(p: Vector3, yaw: float, st: int) -> void:
-	if multiplayer.get_remote_sender_id() != peer_id:
-		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != peer_id and not (sender == 1 and Net.is_bot_peer(peer_id)):
+		return      # позицию героя-бота рассылает хост
 	# под оглушением и в полёте после отбрасывания сервер не принимает движение героя
 	if Net.is_server() and (unit.is_stunned(world.now()) or world.now() < unit.knock_until) and _net_initialized and p.distance_to(_net_pos) > 0.3:
 		return
@@ -401,7 +412,7 @@ func ev_control(kind: String, dur: float, from: Vector3) -> void:
 ## Отбрасывание: своего героя относит в точку, которую посчитал сервер.
 @rpc("authority", "call_local", "reliable")
 func ev_knock(dest: Vector3) -> void:
-	if not is_local:
+	if not (is_local or ai):
 		return
 	velocity = Vector3.ZERO
 	var tw := create_tween()
@@ -410,7 +421,7 @@ func ev_knock(dest: Vector3) -> void:
 ## Рывок воина: свой герой стремительно переносится к цели.
 @rpc("authority", "reliable")
 func ev_dash(dest: Vector3) -> void:
-	if not is_local:
+	if not (is_local or ai):
 		return
 	var to := dest - global_position
 	to.y = 0.0
@@ -424,7 +435,7 @@ func ev_dash(dest: Vector3) -> void:
 ## Скачок: сервер разрешил — свой герой переносится вперёд (стены и здания останавливают).
 @rpc("authority", "reliable")
 func ev_blink(dist: float) -> void:
-	if not is_local:
+	if not (is_local or ai):
 		return
 	var dir := -global_transform.basis.z
 	if dist < 0.0:

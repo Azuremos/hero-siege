@@ -10,7 +10,14 @@ const VENDORS := {
 		"work": {"anim": "1H_Melee_Attack_Chop", "every": 3.2, "hit_at": 0.42}, "kind": "gear"},
 	"alchemist": {"marker": "Alchemy", "name": "Алхимик Мирра", "desc": "Зелья и эликсиры", "model": "Rogue_Hooded",
 		"show": ["Throwable"], "kind": "consumable"},
+	# «Война линий»: продаёт врагов на линию соперника (окно отправок). На осадной карте его нет (нет точки).
+	"recruiter": {"marker": "Recruiter", "name": "Вербовщик Борислав", "desc": "Отправка врагов сопернику", "model": "Knight",
+		"show": ["1H_Sword"], "kind": "sends", "optional": true},
 }
+
+## Вид торговца по id: у режимов с командами торговцы у каждой базы — «smith#0», «recruiter#1».
+static func vkind(vid: String) -> String:
+	return vid.get_slice("#", 0)
 const VENDOR_RANGE := 9.0
 const PICKUP_RANGE := 2.6
 const LOOT_TIME := 90.0
@@ -31,12 +38,26 @@ var _pickup_t := 0.0
 func _ready() -> void:
 	world = get_parent()
 
-## Торговцы появляются у мастерских (точки Shops на карте).
+## Торговцы появляются у мастерских (точки Shops на карте). На карте «Линий» — у каждой базы свои:
+## точка «Blacksmith_0» — торговец «smith#0» (команда 0).
 func spawn_vendors() -> void:
 	var shops: Node = world.map.get_node_or_null("Shops")
-	for vid in VENDORS:
-		var v: Dictionary = VENDORS[vid]
+	var spots: Array = []         # [vid, вид, точка]
+	for kind in VENDORS:
+		var v: Dictionary = VENDORS[kind]
 		var m: Node3D = shops.get_node_or_null(v["marker"]) if shops else null
+		if m:
+			spots.append([kind, kind, m])
+		for team in 2:
+			var mt: Node3D = shops.get_node_or_null("%s_%d" % [v["marker"], team]) if shops else null
+			if mt:
+				spots.append(["%s#%d" % [kind, team], kind, mt])
+		if m == null and spots.filter(func(s): return s[1] == kind).is_empty() and not v.get("optional", false):
+			spots.append([kind, kind, null])
+	for sp in spots:
+		var vid: String = sp[0]
+		var v: Dictionary = VENDORS[sp[1]]
+		var m: Node3D = sp[2]
 		var pos: Vector3 = m.position if m else Vector3.ZERO
 		vendor_pos[vid] = pos
 		var holder := Node3D.new()
@@ -64,8 +85,8 @@ func spawn_vendors() -> void:
 			ap.play("Idle")
 		world.add_child(holder)
 		holder.position = pos
-		# лицом к центру замка
-		holder.rotation.y = atan2(pos.x, pos.z) + PI
+		# лицом к центру замка (или куда задано точкой карты)
+		holder.rotation.y = float(m.get_meta("yaw")) if m and m.has_meta("yaw") else atan2(pos.x, pos.z) + PI
 		var tag := Label3D.new()
 		tag.text = "%s\n<%s>" % [v["name"], v["desc"]]
 		tag.modulate = Color(1.0, 0.85, 0.4)
@@ -103,7 +124,7 @@ func nearest_vendor(pos: Vector3) -> String:
 
 ## Что продаёт торговец герою уровня level (ассортимент кузнеца меняется каждые 3 волны).
 func vendor_items(vid: String, level: int) -> Array:
-	return GameData.vendor_stock(VENDORS[vid]["kind"], level, _rotation())
+	return GameData.vendor_stock(VENDORS[vkind(vid)]["kind"], level, _rotation(), world.mode.shop_blue())
 
 func _rotation() -> int:
 	var w = world.mode.get("wave")
@@ -121,12 +142,16 @@ func send(method: String, args: Array) -> void:
 			3: rpc_id(1, method, args[0], args[1], args[2])
 
 func _sender_hero() -> Node:
+	if world.acting_hero != null:
+		return world.acting_hero      # герой-бот на хосте
 	var sender := multiplayer.get_remote_sender_id()
 	if sender == 0:
 		sender = multiplayer.get_unique_id()
 	return world.heroes.get(Net.hero_id_of_peer(sender), null)
 
 func _say(hero, text: String) -> void:
+	if Net.is_bot_peer(hero.peer_id):
+		return
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_message(text)
 	else:
@@ -141,7 +166,7 @@ func request_buy(vid: String, item_id: String) -> void:
 	if not Net.is_server():
 		return
 	var hero = _sender_hero()
-	if hero == null or not VENDORS.has(vid):
+	if hero == null or not vendor_pos.has(vid) or VENDORS[vkind(vid)]["kind"] == "sends" or not world.mode.vendor_allowed(hero, vid):
 		return
 	# покупать можно только то, что сейчас лежит в лавке у этого героя (ассортимент сервер считает сам)
 	if not vendor_items(vid, hero.unit.level).has(item_id):
@@ -157,6 +182,7 @@ func request_buy(vid: String, item_id: String) -> void:
 	if not hero.bag_add(item_id):
 		return _say(hero, "Сумка полна")
 	hero.gold -= cost
+	hero.gold_out += cost
 	_sync(hero)
 	_sound(hero, "coins")
 
@@ -174,7 +200,9 @@ func request_sell(idx: int) -> void:
 		return _say(hero, "Продать можно только у торговца")
 	var s: Dictionary = hero.bag[idx]
 	var it := GameData.item(s["id"])
-	hero.gold += int(float(it["price"]) * GameData.ItemData.SELL_RATIO) * int(s["n"])
+	var got := int(float(it["price"]) * GameData.ItemData.SELL_RATIO) * int(s["n"])
+	hero.gold += got
+	hero.gold_in += got
 	hero.bag[idx] = null
 	_sync(hero)
 	_sound(hero, "coins")
@@ -216,6 +244,8 @@ func request_use(idx: int) -> void:
 	hero.potion_ready_at = t + GameData.POTION_CD
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_potion_cd(GameData.POTION_CD)
+	elif hero.ai:
+		hero.controller.potion_until = world.now() + GameData.POTION_CD
 	else:
 		ev_potion_cd.rpc_id(hero.peer_id, GameData.POTION_CD)
 
@@ -252,6 +282,8 @@ func _send_use_cd(hero) -> void:
 		left[k] = maxf(0.0, float(hero.use_ready[k]) - world.now())
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_use_cd(left)
+	elif Net.is_bot_peer(hero.peer_id):
+		pass      # бот на хосте читает use_ready героя напрямую
 	else:
 		ev_use_cd.rpc_id(hero.peer_id, left)
 
@@ -367,6 +399,8 @@ func _sync(hero) -> void:
 	ev_appearance.rpc(hero.hero_id, look_of(hero))
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_inventory(hero.hero_id, hero.bag, hero.equip)
+	elif Net.is_bot_peer(hero.peer_id):
+		pass      # бот на хосте: сумка и снаряжение — те же данные героя
 	else:
 		ev_inventory.rpc_id(hero.peer_id, hero.hero_id, hero.bag, hero.equip)
 
@@ -392,23 +426,24 @@ func _sound(hero, snd: String) -> void:
 const MOB_GEAR_SHARE := 0.3
 const ELITE_GEAR := 0.75
 ## Сервер: добыча с убитого врага. source: mob / elite / champion / boss — повышает качество вещи и шанс зелий.
-func roll_loot(pos: Vector3, wave: int, source: String) -> void:
+## gear_k — множитель доли вещей (режим: «Линии» — общие волны вдвое реже, отправленные враги — 0, только зелья).
+func roll_loot(pos: Vector3, wave: int, source: String, gear_k: float = 1.0) -> void:
 	var drops: Array = []
 	match source:
 		"boss", "champion":
-			drops.append(_random_gear(wave, pos, source))
-			drops.append(_random_gear(wave, pos, source))
+			for i in 2:
+				drops.append(_random_gear(wave, pos, source) if gear_k >= 1.0 or randf() < gear_k else _random_consumable(pos))
 			drops.append(_random_consumable(pos))
 			drops.append(_random_consumable(pos))
 		"elite":
 			# элитный — вещь получше в ELITE_GEAR случаев (иначе зелье), часто ещё зелье
-			drops.append(_random_gear(wave, pos, source) if randf() < ELITE_GEAR else _random_consumable(pos))
+			drops.append(_random_gear(wave, pos, source) if randf() < ELITE_GEAR * gear_k else _random_consumable(pos))
 			if randf() < 0.75:
 				drops.append(_random_consumable(pos))
 		_:
 			if randf() < (float(Net.cli["lootrate"]) if Net.cli.has("lootrate") else 0.06):
-				drops.append(_random_gear(wave, pos, source) if randf() < MOB_GEAR_SHARE else _random_consumable(pos))
-	if source != "mob":
+				drops.append(_random_gear(wave, pos, source) if randf() < MOB_GEAR_SHARE * gear_k else _random_consumable(pos))
+	if source != "mob" and gear_k > 0.0 and (gear_k >= 1.0 or randf() < gear_k):
 		_roll_special(pos, wave, source)      # части сетов и именные легендарки
 	for id in drops:
 		_spawn_loot(id, pos + Vector3(randf_range(-1.2, 1.2), 0, randf_range(-1.2, 1.2)))
@@ -574,6 +609,8 @@ func _say_loot(hero, id: String) -> void:
 		world.items_got[hero.hero_id] = int(world.items_got.get(hero.hero_id, 0)) + 1      # итоги партии
 	if hero.peer_id == multiplayer.get_unique_id():
 		ev_got(id)
+	elif Net.is_bot_peer(hero.peer_id):
+		pass
 	else:
 		ev_got.rpc_id(hero.peer_id, id)
 
@@ -750,7 +787,7 @@ static func _make_anvil() -> Node3D:
 ## Кузнец время от времени бьёт молотом по наковальне: искры и негромкий звон. Только визуал, у каждого игрока свой.
 func _process(delta: float) -> void:
 	for vid in _vendor_nodes:
-		var v: Dictionary = VENDORS[vid]
+		var v: Dictionary = VENDORS[vkind(vid)]
 		if not v.has("work"):
 			continue
 		var w: Dictionary = v["work"]

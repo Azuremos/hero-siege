@@ -70,6 +70,8 @@ func _rpc_server(method: String, args: Array) -> void:
 		5: rpc_id(1, method, args[0], args[1], args[2], args[3], args[4])
 
 func _sender_hero() -> Node:
+	if world.acting_hero != null:
+		return world.acting_hero      # герой-бот на хосте
 	var sender := multiplayer.get_remote_sender_id()
 	if sender == 0:
 		sender = multiplayer.get_unique_id()
@@ -198,7 +200,11 @@ func request_auto(target_id: int) -> void:
 func _feedback(peer: int, sid: String, err: String, cd: float = 0.0, gcd: float = 0.0) -> void:
 	if err != "" and Net.cli.has("castlog"):
 		print("CAST FAIL ", sid, ": ", err)
-	if peer == multiplayer.get_unique_id():
+	if Net.is_bot_peer(peer):
+		var bh = world.heroes.get(Net.hero_id_of_peer(peer), null)
+		if bh and bh.controller:
+			bh.controller.on_feedback(sid, err, cd, gcd)
+	elif peer == multiplayer.get_unique_id():
 		ev_feedback(sid, err, cd, gcd)
 	else:
 		ev_feedback.rpc_id(peer, sid, err, cd, gcd)
@@ -216,7 +222,7 @@ func ev_cast_start(caster_id: int, sid: String, duration: float, channel: bool) 
 		return
 	h.casting = true
 	Sfx.play_at("cast_start", h.global_position + Vector3(0, 1.5, 0))
-	if h == world.local_hero:
+	if h == world.local_hero or h.ai:
 		h.controller.on_cast_started(sid, duration, channel)
 
 @rpc("authority", "call_local", "reliable")
@@ -227,7 +233,7 @@ func ev_cast_end(caster_id: int, sid: String, ok: bool) -> void:
 	h.casting = false
 	if ok and sid != "":
 		h.play_action(GameData.SPELLS[sid].get("anim", "cast"))
-	if h == world.local_hero:
+	if h == world.local_hero or h.ai:
 		h.controller.on_cast_ended(ok)
 
 func _interrupt(hero) -> void:
@@ -467,7 +473,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			st["auto_target"] = tu.id
 			fx_at(sp["vfx"], tu.pos, u.pos, 0.0, tu.id)
 			var dest: Vector3 = tu.pos + (u.pos - tu.pos).normalized() * (tu.radius + 1.2)
-			if hero.peer_id == multiplayer.get_unique_id():
+			if hero.peer_id == multiplayer.get_unique_id() or hero.ai:
 				hero.ev_dash(dest)
 			else:
 				hero.ev_dash.rpc_id(hero.peer_id, dest)
@@ -517,7 +523,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			if sp.has("effects"):
 				apply_effects(u, u, sp["effects"], sid, school)
 			fx_at("blink", u.pos, u.pos, 0.0, u.id)
-			if hero.peer_id == multiplayer.get_unique_id():
+			if hero.peer_id == multiplayer.get_unique_id() or hero.ai:
 				hero.ev_blink(dist)
 			else:
 				hero.ev_blink.rpc_id(hero.peer_id, dist)
@@ -567,7 +573,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 		"leap":
 			# прыжок в точку: герой переносится, удар при приземлении
 			var dest := Vector3(ground.x, 0, ground.z)
-			if hero.peer_id == multiplayer.get_unique_id():
+			if hero.peer_id == multiplayer.get_unique_id() or hero.ai:
 				hero.ev_dash(dest)
 			else:
 				hero.ev_dash.rpc_id(hero.peer_id, dest)
@@ -590,7 +596,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			# Вмешательство: рывок к союзнику и защита
 			if tu and tu != u:
 				var dest2: Vector3 = tu.pos + (u.pos - tu.pos).normalized() * 1.5
-				if hero.peer_id == multiplayer.get_unique_id():
+				if hero.peer_id == multiplayer.get_unique_id() or hero.ai:
 					hero.ev_dash(dest2)
 				else:
 					hero.ev_dash.rpc_id(hero.peer_id, dest2)

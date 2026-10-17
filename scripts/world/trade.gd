@@ -53,6 +53,8 @@ func request_open(target_id: int) -> void:
 	var other = world.heroes.get(target_id, null)
 	if hero == null or other == null or other == hero:
 		return
+	if other.ai:
+		return _say(hero, "С ботом обмениваться нельзя")
 	if _side.has(hero.hero_id):
 		return _say(hero, "Вы уже обмениваетесь")
 	if _side.has(other.hero_id):
