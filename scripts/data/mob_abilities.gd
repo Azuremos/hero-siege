@@ -79,7 +79,7 @@ const ABILITIES := {
 
 	# ======================= боссы (фазы — boss_data.gd) =======================
 	# ---------------- Лич-некромант
-	"lich_raise": {"name": "Поднять мёртвых", "cd": 16.0, "range": 0.0, "target": "self", "cast": 2.5, "interrupt": true,
+	"lich_raise": {"name": "Поднять мёртвых", "cd": 16.0, "range": 0.0, "target": "self", "cast": 3.75, "interrupt": true,
 		"school": "shadow", "delivery": "summon", "summon": "minion", "count": 3, "solo": {"count": 2}, "anim": "Spellcast_Summon"},
 	"lich_tomb": {"name": "Ледяная гробница", "cd": 22.0, "range": 30.0, "target": "enemy_random", "cast": 1.5, "interrupt": false,
 		"school": "frost", "delivery": "tomb", "tomb": "ice_tomb", "dur": 12.0, "dot_pct": 0.02, "anim": "Spellcast_Shoot"},
@@ -96,7 +96,7 @@ const ABILITIES := {
 	"warlord_whirl": {"name": "Вихрь клинков", "cd": 11.0, "range": 0.0, "target": "self", "cast": 1.6, "interrupt": false,
 		"school": "physical", "delivery": "area", "cond": {"enemy_near": 7.0}, "telegraph": {"shape": "circle", "radius": 6.5},
 		"effects": [{"type": "damage", "min": 40.0, "max": 50.0}], "anim": "2H_Melee_Attack_Spinning"},
-	"warlord_shields": {"name": "Призыв щитоносцев", "cd": 20.0, "range": 0.0, "target": "self", "cast": 2.5, "interrupt": true,
+	"warlord_shields": {"name": "Призыв щитоносцев", "cd": 20.0, "range": 0.0, "target": "self", "cast": 3.75, "interrupt": true,
 		"school": "shadow", "delivery": "summon", "summon": "warrior", "count": 2, "solo": {"count": 1}, "anim": "Spellcast_Summon"},
 	# ---------------- Вождь орды
 	"chief_smash": {"name": "Тяжёлый удар", "cd": 9.0, "range": 6.0, "target": "enemy", "cast": 1.4, "interrupt": false,
@@ -105,7 +105,7 @@ const ABILITIES := {
 	"chief_roar": {"name": "Боевой рёв", "cd": 18.0, "range": 0.0, "target": "self", "cast": 1.8, "interrupt": false,
 		"school": "physical", "delivery": "area", "cond": {"enemy_near": 9.0}, "telegraph": {"shape": "circle", "radius": 9.0},
 		"effects": [{"type": "damage", "min": 15.0, "max": 20.0}, {"type": "fear", "dur": 3.0}], "anim": "Cheer"},
-	"chief_call": {"name": "Зов орды", "cd": 20.0, "range": 0.0, "target": "self", "cast": 2.5, "interrupt": true,
+	"chief_call": {"name": "Зов орды", "cd": 20.0, "range": 0.0, "target": "self", "cast": 3.75, "interrupt": true,
 		"school": "nature", "delivery": "summon", "summon": "grunt", "count": 3, "solo": {"count": 2}, "anim": "Spellcast_Raise"},
 	"chief_bloodlust": {"name": "Жажда крови", "cd": 20.0, "range": 0.0, "target": "self", "cast": 0.0, "interrupt": false,
 		"school": "nature", "delivery": "allies", "radius": 16.0,
@@ -120,7 +120,7 @@ const ABILITIES := {
 	# ---------------- Вожак волчьей стаи
 	"pack_hunt": {"name": "Травля", "cd": 15.0, "range": 0.0, "target": "self", "cast": 0.0, "interrupt": false,
 		"school": "physical", "delivery": "pack", "pack": "pack_wolf", "radius": 30.0, "dur": 6.0, "anim": "Cheer"},
-	"pack_howl": {"name": "Вой стаи", "cd": 20.0, "range": 0.0, "target": "self", "cast": 2.5, "interrupt": true,
+	"pack_howl": {"name": "Вой стаи", "cd": 20.0, "range": 0.0, "target": "self", "cast": 3.75, "interrupt": true,
 		"school": "nature", "delivery": "summon", "summon": "pack_wolf", "count": 3, "solo": {"count": 2}, "anim": "Spellcast_Raise"},
 	"pack_leap": {"name": "Прыжок вожака", "cd": 12.0, "range": 20.0, "target": "enemy_point", "cast": 1.4, "interrupt": false,
 		"school": "physical", "delivery": "leap", "cond": {"min_dist": 6.0}, "telegraph": {"shape": "circle", "radius": 4.0},
@@ -129,7 +129,7 @@ const ABILITIES := {
 	"fel_rain": {"name": "Огненный дождь", "cd": 9.0, "range": 40.0, "target": "enemy", "cast": 1.8, "interrupt": false,
 		"school": "fire", "delivery": "barrage", "count": 6, "spread": 8.0, "telegraph": {"shape": "circle", "radius": 3.5},
 		"effects": [{"type": "damage", "min": 40.0, "max": 50.0}], "anim": "Spellcast_Raise"},
-	"fel_gate": {"name": "Врата легиона", "cd": 22.0, "range": 0.0, "target": "self", "cast": 3.0, "interrupt": true,
+	"fel_gate": {"name": "Врата легиона", "cd": 22.0, "range": 0.0, "target": "self", "cast": 4.5, "interrupt": true,
 		"school": "fire", "delivery": "summon", "summon": "fel_portal", "count": 1, "ring": 10.0, "anim": "Spellcast_Summon"},
 	"fel_cleave": {"name": "Рассечение Скверной", "cd": 8.0, "range": 5.5, "target": "enemy", "cast": 1.2, "interrupt": false,
 		"school": "fire", "delivery": "cone", "telegraph": {"shape": "cone", "radius": 6.5, "angle": 90.0},
