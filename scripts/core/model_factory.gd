@@ -435,7 +435,7 @@ static func set_hand_item(model: Node3D, side: String, look: Dictionary, default
 			w = _donor(mdl)          # щит рыцаря — уже на своём месте в руке
 			if w and mdl.begins_with("Mage/Spellbook"):
 				# книга мага KayKit по задумке парит у бедра — кладём том в кисть
-				w.transform = Transform3D(Basis.from_euler(Vector3(0, PI * 0.5, 0)), Vector3(0, 0, 0))   # обложкой наружу
+				w.transform = Transform3D(Basis.from_euler(Vector3(0, PI * 0.5, 0)).scaled(Vector3.ONE * 0.85), Vector3(0, 0, 0))   # обложкой наружу
 		else:
 			w = weapon_scene(mdl).instantiate() as Node3D
 			w.scale = Vector3.ONE * 0.8      # оружие Fantasy Weapons Bits крупнее родного оружия героев KayKit
