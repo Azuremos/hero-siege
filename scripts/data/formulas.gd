@@ -16,6 +16,9 @@ static func wave_budget(wave: int, players: int) -> float:
 ## Состав волны из бюджета. lane_factions — фракция для каждой открытой полосы (по индексу).
 ## Возвращает {"list": [[тип, индекс полосы, "" | "champion"], …], "special": "" | "scout" | "siege" | "arcane"}.
 ## Случайность — от зерна волны и полосы: хост и тесты получают одну и ту же волну.
+## Босс-волна — каждая BOSS_EVERY-я (совпадает с передышкой), главный босс — каждая вторая из них.
+const BOSS_EVERY := 3
+
 static func wave_plan(wave: int, lane_factions: Array, players: int, final_boss: bool = false) -> Dictionary:
 	var Factions = load("res://scripts/data/factions.gd")
 	var Mobs = load("res://scripts/data/mob_data.gd")
@@ -68,12 +71,12 @@ static func wave_plan(wave: int, lane_factions: Array, players: int, final_boss:
 			if Mobs.MOBS[pick]["role"] == "support":
 				supports += 1
 			list.append([pick, li, ""])
-	# босс-волна (каждая 5-я): лейтенант одной из сторон по очереди; каждая 10-я и финальная — главный босс.
+	# босс-волна (каждая 3-я — перед передышкой): лейтенант одной из сторон по очереди; каждая 6-я и финальная — главный босс.
 	# Остальные стороны выводят чемпиона (элитный с тремя аффиксами).
-	if wave % 5 == 0 or final_boss:
+	if wave % BOSS_EVERY == 0 or final_boss:
 		var Bosses = load("res://scripts/data/boss_data.gd")
-		var main := wave % 10 == 0 or final_boss
-		var boss_lane: int = (maxi(wave / (10 if main else 5), 1) - 1) % maxi(lane_factions.size(), 1)
+		var main := wave % (BOSS_EVERY * 2) == 0 or final_boss
+		var boss_lane: int = (maxi(wave / (BOSS_EVERY * 2 if main else BOSS_EVERY), 1) - 1) % maxi(lane_factions.size(), 1)
 		for li in lane_factions.size():
 			var f: String = lane_factions[li]
 			if li == boss_lane:

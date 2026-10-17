@@ -127,10 +127,10 @@ func _start_wave(t: float) -> void:
 	world.meter.new_segment("Волна %d" % wave)
 	state = "running"
 	var w: int = wave
-	# В короткой партии (меньше 5 волн) последняя волна заканчивается боссом
+	# Последняя волна партии (от 3 волн) — главный босс; в партии на 1–2 волны босса нет
 	var short_final: bool = wave_count > 0 and wave_count < 5 and w == wave_count
 	var factions_by_index: Array = active_lanes.map(func(l): return lane_faction[l])
-	var plan: Dictionary = GameData.wave_plan(w, factions_by_index, world.online_hero_count(), wave_count > 0 and w == wave_count)
+	var plan: Dictionary = GameData.wave_plan(w, factions_by_index, world.online_hero_count(), wave_count >= GameData.Formulas.BOSS_EVERY and w == wave_count)
 	var comp: Array = plan["list"]
 	var per_lane_time: Dictionary = {}
 	var headliners: Array = []
