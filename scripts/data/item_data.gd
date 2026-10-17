@@ -138,6 +138,15 @@ const TEMPLATES := {
 	"ring_mind": {"name": "кольцо мудрости", "g": 2, "slot": "ring", "icon": "ring", "role": "caster", "suffix": false, "stats": {"int": 2, "spi": 2, "sp": 2}},
 	"ring_might": {"name": "кольцо силы", "g": 2, "slot": "ring", "icon": "ring", "role": "phys", "suffix": false, "stats": {"str": 2, "agi": 2, "ap": 2}},
 	"amulet": {"name": "амулет", "g": 0, "slot": "amulet", "icon": "amulet", "role": "any", "stats": {"sta": 3, "sp": 2, "ap": 2}},
+	# вещи на ловкость (охотник: сила атаки — от ловкости; ловкость полезна и всем — крит и броня). Силы на них не бывает.
+	"leather": {"name": "кожаный доспех", "g": 0, "slot": "chest", "icon": "leather", "role": "phys", "no_affix": ["str"],
+		"stats": {"agi": 3, "sta": 3, "armor": 0.015}, "wear": {"body": "mail"}},
+	"leather_hood": {"name": "кожаная шапка", "g": 1, "slot": "helm", "icon": "leather_hood", "role": "phys", "no_affix": ["str"],
+		"stats": {"agi": 2, "sta": 1, "armor": 0.006}, "wear": {"head": "hooded"}},
+	"ring_agile": {"name": "кольцо ловкости", "g": 2, "slot": "ring", "icon": "ring_agile", "role": "phys", "suffix": false, "no_affix": ["str"],
+		"stats": {"agi": 3, "ap": 2}},
+	"amulet_hunt": {"name": "амулет ловчего", "g": 0, "slot": "amulet", "icon": "amulet_hunt", "role": "phys", "no_affix": ["str"],
+		"stats": {"agi": 2, "sta": 2, "ap": 2}},
 }
 
 ## Аксессуары (как в WoW): две ячейки, без материала в названии. Белые и зелёные — только характеристики,
