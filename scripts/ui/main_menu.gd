@@ -65,6 +65,9 @@ func _ready() -> void:
 		# снимок героев в снаряжении вместо меню (tools/hero_shot.gd)
 		add_child(preload("res://tools/hero_shot.gd").new())
 		return
+	if Net.cli.has("mobicons"):
+		add_child(load("res://tools/mob_icons.gd").new())      # иконки врагов для окна Вербовщика
+		return
 	var map := (load("res://scenes/map.tscn") as PackedScene).instantiate()
 	add_child(map)
 	var roads := map.get_node_or_null("Roads") as MeshInstance3D

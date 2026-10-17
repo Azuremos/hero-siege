@@ -1,0 +1,6 @@
+Иконки врагов для окна Вербовщика («Война линий») — снимки моделей игры (tools/mob_icons.gd).
+Лицензия — как у исходных моделей:
+- скелеты — KayKit Skeletons (Kay Lousberg, CC0);
+- орки, демоны, гоблины, огры, банши и др. — Quaternius «Ultimate Monsters» (CC0);
+- вурдалак (ghoul.png) — Zombie, Quaternius (CC BY 3.0, автор — Quaternius).
+Оружие в руках — KayKit Fantasy Weapons Bits (Kay Lousberg, CC0).
