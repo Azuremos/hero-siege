@@ -82,6 +82,7 @@ func refresh() -> void:
 		if _only_mine.visible and _only_mine.button_pressed and not it["classes"].is_empty() and not it["classes"].has(hero.class_id):
 			continue
 		var row := HBoxContainer.new()
+		RichTip.attach(row)
 		row.add_theme_constant_override("separation", 8)
 		var cost := GameData.shop_price(id)
 		row.tooltip_text = GameData.item_tooltip(id, hero.class_id, hero.unit.level, cost)

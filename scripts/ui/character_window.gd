@@ -69,6 +69,7 @@ func _lbl(text: String, size: int, col: Color) -> Label:
 
 func _cell(content: Control, tip: String) -> Panel:
 	var p := Panel.new()
+	RichTip.attach(p)        # сравнение с надетым — цветными стрелками
 	p.custom_minimum_size = Vector2(CELL, CELL)
 	var st := StyleBoxFlat.new()
 	st.bg_color = Color(0, 0, 0, 0.55)

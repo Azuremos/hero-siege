@@ -387,6 +387,10 @@ func _sound(hero, snd: String) -> void:
 
 # ---------------------------------------------------------------- добыча с врагов
 
+## Доля вещей в добыче обычного врага (остальное — зелья и эликсиры) и шанс вещи с элитного.
+## Было 0,4 и 1,0 — пользователь попросил вещей чуть меньше (после v0.14.2).
+const MOB_GEAR_SHARE := 0.3
+const ELITE_GEAR := 0.75
 ## Сервер: добыча с убитого врага. source: mob / elite / champion / boss — повышает качество вещи и шанс зелий.
 func roll_loot(pos: Vector3, wave: int, source: String) -> void:
 	var drops: Array = []
@@ -397,13 +401,13 @@ func roll_loot(pos: Vector3, wave: int, source: String) -> void:
 			drops.append(_random_consumable(pos))
 			drops.append(_random_consumable(pos))
 		"elite":
-			# элитный — вещь получше наверняка, часто ещё зелье
-			drops.append(_random_gear(wave, pos, source))
+			# элитный — вещь получше в ELITE_GEAR случаев (иначе зелье), часто ещё зелье
+			drops.append(_random_gear(wave, pos, source) if randf() < ELITE_GEAR else _random_consumable(pos))
 			if randf() < 0.75:
 				drops.append(_random_consumable(pos))
 		_:
 			if randf() < (float(Net.cli["lootrate"]) if Net.cli.has("lootrate") else 0.06):
-				drops.append(_random_gear(wave, pos, source) if randf() < 0.4 else _random_consumable(pos))
+				drops.append(_random_gear(wave, pos, source) if randf() < MOB_GEAR_SHARE else _random_consumable(pos))
 	if source != "mob":
 		_roll_special(pos, wave, source)      # части сетов и именные легендарки
 	for id in drops:

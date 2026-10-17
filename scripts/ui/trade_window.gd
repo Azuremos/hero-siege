@@ -94,6 +94,7 @@ func _column(parent: Control, title: String) -> Array:
 
 func _cell(id: String, n: int) -> Panel:
 	var p := Panel.new()
+	RichTip.attach(p)
 	p.custom_minimum_size = Vector2(CELL, CELL)
 	var st := StyleBoxFlat.new()
 	st.bg_color = Color(0, 0, 0, 0.55)

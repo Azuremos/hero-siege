@@ -439,6 +439,14 @@ func _process(delta: float) -> void:
 		_test_cam.current = true
 	if Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) and _test_t - delta < float(Net.cli["charwin"]):
 		hud.toggle_character()   # --charwin=T: открыть окно персонажа (снимок)
+	# --hover=x,y: через 1 сек. после --charwin навести мышь на точку экрана — снимок всплывающей подсказки
+	if Net.cli.has("hover") and Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) + 1.0 and _test_t - delta < float(Net.cli["charwin"]) + 1.0:
+		var hp: PackedFloat64Array = str(Net.cli["hover"]).split_floats(",")
+		get_viewport().warp_mouse(Vector2(hp[0], hp[1]))
+		var mm := InputEventMouseMotion.new()
+		mm.position = Vector2(hp[0], hp[1])
+		mm.global_position = mm.position
+		get_viewport().push_input(mm)
 	if Net.cli.has("shot2") and absf(_test_t - float(Net.cli["shot2"])) < delta * 0.5 + 0.001:
 		_save_shot(Net.cli.get("shot", "user://shot.png").get_basename() + "_b.png")
 	if Net.cli.has("freezeall") and is_server() and absf(_test_t - float(Net.cli["freezeall"])) < delta * 0.5 + 0.001:

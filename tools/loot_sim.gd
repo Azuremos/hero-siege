@@ -10,7 +10,7 @@ const Formulas := preload("res://scripts/data/formulas.gd")
 const MobData := preload("res://scripts/data/mob_data.gd")
 const ItemData := preload("res://scripts/data/item_data.gd")
 const N := 200000
-const GEAR_PER_MOB := 0.06 * 0.4
+const GEAR_PER_MOB := 0.06 * 0.3     # как economy.MOB_GEAR_SHARE
 
 func _init() -> void:
 	seed(12345)
@@ -88,7 +88,7 @@ func _run(title: String, players: int, kill_frac: float) -> void:
 			var def: Dictionary = MobData.MOBS[e[0]]
 			xp += float(def["xp"]) * (1.0 + 0.1 * float(wave - 1)) * share * kill_frac * 1.1   # 1.1 — человек
 			var src := "boss" if def.get("boss", false) else ("elite" if wave >= 4 and randf() < 0.06 else "mob")
-			var n := 2 if src == "boss" else (1 if src == "elite" else (1 if randf() < GEAR_PER_MOB else 0))
+			var n := 2 if src == "boss" else ((1 if randf() < 0.75 else 0) if src == "elite" else (1 if randf() < GEAR_PER_MOB else 0))
 			for i in n:
 				var q := ItemData.roll_quality(Formulas.typical_level(levels), src, randf())
 				var ilvl := Formulas.gear_ilvl(wave, levels, src)
