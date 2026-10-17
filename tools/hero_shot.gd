@@ -1,7 +1,7 @@
 extends Node3D
 ## Снимок героев в снаряжении (флаг --heroshot=<out.png>): ряд моделей «классы × расы» на сером фоне.
 ## Запускается из главного меню вместо него. Дополнительно: --classes=mage,warrior|all --races=all
-## --outfit=<уровень>:<качество>:<вариант>|none (как в бою) --yaw=<поворот°> --zoom=<крупность> --anim=<анимация>.
+## --outfit=<уровень>:<качество>:<вариант>|none (как в бою) --yaw=<поворот°> --zoom=<крупность> --anim=<анимация>. --leg=<id> — именная легендарка в руке.
 
 func _ready() -> void:
 	var cli: Dictionary = Net.cli
@@ -64,6 +64,10 @@ func _ready() -> void:
 					if slot == "weapon" and looks.has("weapon"):
 						continue
 					looks[slot] = GameData.ItemData.look(id)
+				# --leg=<id>: в руке именная легендарка своего класса
+				var lid := str(cli.get("leg", ""))
+				if GameData.SetData.LEGENDARIES.has(lid) and GameData.SetData.LEGENDARIES[lid]["class"] == cid:
+					looks["weapon"] = GameData.ItemData.look(GameData.make_legendary(lid, int(op[0]), 7))
 				if looks.get("weapon", {}).get("two_hand", false):
 					looks.erase("offhand")
 				ModelFactory.apply_outfit(m, cid, looks)

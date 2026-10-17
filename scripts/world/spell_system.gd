@@ -867,7 +867,10 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 							deal_damage(caster, m, amount * 0.6, school, false, "sweep:" + sid)
 				if caster and caster.kind == "hero":
 					_on_damage_dealt(caster, target, amount, school, crit, t)
-					if sid != "auto":
+					if sid == "auto":
+						if crit:
+							_trigger_procs(caster, target, "auto_crit", sid, school, true, t)   # критическая автоатака
+					else:
 						_trigger_procs(caster, target, "spell_hit", sid, school, crit, t)
 			"heal":
 				var amount := randf_range(e["min"], e["max"]) * pw * (caster.heal_mult if caster else 1.0) * (1.0 + amp + _m(caster, "heal"))
@@ -1129,7 +1132,7 @@ func gain_rage(u: Unit, amount: float, t: float) -> void:
 var _proc_cd: Dictionary = {}
 var _proc_count: Dictionary = {}     # «каждое N-е событие»: ключ прока -> счётчик
 
-## Проверка проков талантов и вещей: on = spell_hit | heal | auto | cast | hit_taken | interrupt.
+## Проверка проков талантов и вещей: on = spell_hit | heal | auto | auto_crit (критическая автоатака) | cast | hit_taken | interrupt.
 ## Условия: school, spells, crit, magic (урон не физический), below (здоровье ниже доли), every (каждое N-е событие).
 func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: String, crit: bool, t: float) -> void:
 	if u == null or u.kind != "hero" or u.mods.is_empty() or GameData.AUTO_SPELLS.has(sid):

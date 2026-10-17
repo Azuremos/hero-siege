@@ -93,7 +93,9 @@ static func material(ilvl: int, gender: int) -> String:
 const TEMPLATES := {
 	"staff": {"name": "посох", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "staff", "role": "caster", "stats": {"int": 4, "spi": 2, "sp": 6}, "models": ["staff_A", "staff_A", "staff_B", "staff_B", "staff_B", "staff_B"]},
 	"wand": {"name": "жезл", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "wand", "role": "caster", "stats": {"int": 3, "sp": 8}, "models": ["wand_A"]},
-	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_C", "sword_D", "sword_E"]},
+	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_B", "sword_C", "sword_C"]},
+	# двуручный меч: сильнее одноручного, но левая рука пуста (без щита) и удары двуручные
+	"greatsword": {"name": "двуручный меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "greatsword", "role": "phys", "stats": {"str": 7, "sta": 3, "ap": 10}, "models": ["sword_D", "sword_D", "sword_D", "sword_E", "sword_E", "sword_E"]},
 	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
 	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
 	"bow": {"name": "лук", "g": 0, "slot": "weapon", "classes": ["hunter"], "icon": "bow", "role": "phys", "stats": {"agi": 5, "sta": 2, "ap": 6},
@@ -229,13 +231,13 @@ const ITEM_PROCS := {
 		"on": "heal", "chance": 0.12, "icd": 15.0, "buff": "proc_mend", "dur": 10.0, "mods": {"heal": 0.12},
 		"desc": "Иногда при лечении: +12% к лечению на 10 сек."},
 	"a_frenzy": {"tier": "weak", "role": "phys", "name": "Неистовство",
-		"on": ["auto", "spell_hit"], "crit": true, "chance": 0.2, "icd": 20.0, "buff": "proc_frenzy", "dur": 10.0, "mods": {"haste": 0.15},
+		"on": ["auto_crit", "spell_hit"], "crit": true, "chance": 0.2, "icd": 20.0, "buff": "proc_frenzy", "dur": 10.0, "mods": {"haste": 0.15},
 		"desc": "При критическом ударе с шансом 20%: +15% к скорости атак и заклинаний на 10 сек."},
 	"a_static": {"tier": "weak", "role": "any", "name": "Статический заряд",
-		"on": ["auto", "spell_hit"], "crit": true, "chance": 0.2, "icd": 20.0, "buff": "proc_static", "dur": 10.0, "mods": {"crit": 0.05},
+		"on": ["auto_crit", "spell_hit"], "crit": true, "chance": 0.2, "icd": 20.0, "buff": "proc_static", "dur": 10.0, "mods": {"crit": 0.05},
 		"desc": "При критическом ударе с шансом 20%: +5% к шансу крит. удара на 10 сек."},
 	"a_swift": {"tier": "weak", "role": "any", "name": "Попутный ветер",
-		"on": ["auto", "spell_hit", "heal"], "crit": true, "chance": 0.1, "icd": 20.0, "buff": "proc_swift", "dur": 10.0, "mods": {"speed": 0.2},
+		"on": ["auto_crit", "spell_hit", "heal"], "crit": true, "chance": 0.1, "icd": 20.0, "buff": "proc_swift", "dur": 10.0, "mods": {"speed": 0.2},
 		"desc": "При критическом эффекте с шансом 10%: +20% к скорости бега на 10 сек."},
 	"a_silencer": {"tier": "weak", "role": "any", "name": "Каратель магов",
 		"on": "interrupt", "chance": 1.0, "icd": 10.0, "buff": "proc_silencer", "dur": 8.0, "mods": {"dmg": 0.15},
@@ -244,7 +246,7 @@ const ITEM_PROCS := {
 		"on": "hit_taken", "magic": true, "chance": 0.15, "icd": 20.0, "buff": "proc_ward", "dur": 8.0, "mods": {"magic_taken": -0.2},
 		"desc": "Иногда при получении урона от магии: −20% урона от магии на 8 сек."},
 	"a_shadow": {"tier": "weak", "role": "any", "name": "Тень",
-		"on": ["auto", "spell_hit"], "crit": true, "chance": 0.15, "icd": 20.0, "buff": "proc_shadow", "dur": 10.0, "mods": {"dmg": 0.1},
+		"on": ["auto_crit", "spell_hit"], "crit": true, "chance": 0.15, "icd": 20.0, "buff": "proc_shadow", "dur": 10.0, "mods": {"dmg": 0.1},
 		"desc": "При критическом ударе с шансом 15%: +10% к урону на 10 сек."},
 	"a_firestorm": {"tier": "acc", "role": "caster", "name": "Огненная буря",
 		"on": "spell_hit", "school": "fire", "every": 5, "icd": 2.0, "spell": "flame_burst",
@@ -469,7 +471,7 @@ static func describe(id: String) -> Dictionary:
 	var price := int(ilvl_price(ilvl) * float(QUALITY_PRICE[q]) * (0.6 if small else 1.0))
 	var is_use: bool = d["proc"] != "" and str(ITEM_PROCS[d["proc"]]["on"]) == "use"
 	return {"id": id, "name": name, "kind": "gear", "slot": slot, "stats": st, "level": mini(ilvl, MAX_REQ_LEVEL), "ilvl": ilvl, "price": price,
-		"q": q, "icon": tp["icon"], "classes": classes, "base": d["base"], "affixes": d["affixes"],
+		"q": q, "icon": _legend_field(d, "icon", tp["icon"]), "classes": classes, "base": d["base"], "affixes": d["affixes"],
 		"proc": "" if is_use else d["proc"], "use": d["proc"] if is_use else "", "trinket": trinket,
 		"set_id": d["set_id"], "unique_id": d["unique_id"]}
 
@@ -587,7 +589,7 @@ static func look(id: String) -> Dictionary:
 		out["set"] = it["set_id"]
 	if tp.has("models"):
 		var models: Array = tp["models"]
-		var mdl: String = models[mini(ti, models.size() - 1)]
+		var mdl: String = _legend_field(it, "model", models[mini(ti, models.size() - 1)])
 		out["model"] = mdl
 		out["two_hand"] = TWO_HANDED.has(mdl)
 	return out
@@ -599,3 +601,8 @@ static func is_offhand_base(base: String) -> bool:
 ## Двуручная ли вещь (по её модели).
 static func is_two_handed(id: String) -> bool:
 	return bool(look(id).get("two_hand", false))
+
+## Поле именной легендарки (своя иконка, модель в руке), иначе — по шаблону.
+static func _legend_field(d: Dictionary, key: String, fallback: String) -> String:
+	var ld: Dictionary = SetData.LEGENDARIES.get(str(d.get("unique_id", "")), {})
+	return str(ld.get(key, fallback))

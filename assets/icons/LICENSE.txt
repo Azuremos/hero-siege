@@ -26,3 +26,5 @@
 
 Сессия 06 — Охотник (game-icons.net, CC BY 3.0, Lorc и Delapouite): иконки заклинаний и талантов охотника
 (spells/steady_shot … wolf_howl, talents/lethal_shots … expose_weakness), лук (pocket-bow), арбалет (arrow-cluster).
+
+Двуручный меч (two-handed-sword, Delapouite), легендарные двуручные мечи (relic-blade, Lorc) — game-icons.net, CC BY 3.0.
