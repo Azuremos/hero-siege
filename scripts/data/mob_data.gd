@@ -24,7 +24,7 @@ const MODELS := {
 	"Orc": {"fit": 0.72, "set": "beast", "rigid": {"Orc_Weapon": "LowerArm.R"},
 		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.0, 0.0), "rot": Vector3(0, 180, 0), "scale": 1.0},
 		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.0, 0.0), "rot": Vector3(0, 0, 0), "scale": 1.0}},
-	"Demon": {"fit": 0.75, "set": "beast",
+	"Demon": {"fit": 0.75, "set": "beast", "rigid": {"Trident": "LowerArm.R"},
 		"grip_r": {"bone": "LowerArm.R", "pos": Vector3(0, 0.0, 0.0), "rot": Vector3(0, 0, 0), "scale": 1.0},
 		"grip_l": {"bone": "LowerArm.L", "pos": Vector3(0, 0.0, 0.0), "rot": Vector3(0, 0, 0), "scale": 1.0}},
 	"BlueDemon": {"fit": 0.58, "set": "beast",
@@ -138,6 +138,7 @@ const MOBS := {
 		"xp": 40, "gold": 6, "scale": 1.25, "radius": 0.85, "armor": 0.25, "cleave": 3.0},
 	"succubus": {"name": "Суккуба", "faction": "demons", "role": "support", "cost": 3.0, "min_wave": 5,
 		"src": "monster", "model": "BlueDemon", "mats": {"BlueDemon_Main": Color(0.78, 0.38, 0.62), "BlueDemon_Secondary": Color(0.3, 0.08, 0.25), "Wood": Color(0.25, 0.06, 0.2), "Straps": Color(0.2, 0.05, 0.18)},
+		"anims": {"attack": "Weapon"},   # дубинка — часть модели в левой руке: бьёт ею (Weapon), а не правым кулаком
 		"hp": 150.0, "min": 12.0, "max": 15.0, "atk_speed": 1.6, "range": 2.5, "speed": 4.6,
 		"xp": 36, "gold": 5, "scale": 1.0, "radius": 0.6, "armor": 0.0, "abilities": ["seduce"]},
 	"infernal": {"name": "Инфернал", "faction": "demons", "role": "special", "cost": 4.5, "min_wave": 7,

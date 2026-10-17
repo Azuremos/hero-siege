@@ -41,7 +41,14 @@ func _ready() -> void:
 			var map := ModelFactory.find_anim(mm)
 			if map:
 				var an: String = cli.get("anim", "idle")
-				map.play(ModelFactory.monster_anim(mid, "Idle") if an == "idle" else an)
+				var mdef: Dictionary = GameData.MOBS[mid]
+				var monster: bool = mdef.get("src", "enemy") == "monster"
+				if an == "attack":       # --anim=attack — своя анимация удара каждого моба
+					var kk: String = mdef.get("attack_anim", "1H_Melee_Attack_Chop")
+					an = ModelFactory.monster_anim(mid, kk) if monster else kk
+				elif an == "idle":
+					an = ModelFactory.monster_anim(mid, "Idle") if monster else "Idle"
+				map.play(an)
 				if cli.has("animt"):       # --animt= — кадр анимации (сек.), например середина удара
 					map.seek(float(cli["animt"]), true)
 					map.pause()
