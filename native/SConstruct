@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+# Сборка GDExtension Hero Siege (мобы на C++). Инструкция — docs/BUILD.md.
+#   scons platform=windows use_mingw=yes target=template_release custom_api_file=extension_api.json
+import os
+
+env = SConscript("godot-cpp/SConstruct")
+env.Append(CPPPATH=["src/"])
+sources = Glob("src/*.cpp")
+library = env.SharedLibrary(
+    "../bin/herosiege_native{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+    source=sources,
+)
+Default(library)

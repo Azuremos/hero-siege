@@ -155,7 +155,10 @@ func _physics_process(delta: float) -> void:
 	for h in heroes.values():
 		h.unit.pos = h.server_position()
 	spells.server_tick(delta, t)
+	var t_mob := Time.get_ticks_usec()
 	mobs.server_tick(delta, t)
+	if _stress_on:
+		_stress_record(Time.get_ticks_usec() - t_mob)
 	mode.server_tick(delta, t)
 	economy.server_tick(delta, t)
 	trade.server_tick(t)
@@ -724,6 +727,8 @@ func _process(delta: float) -> void:
 		var cid: int = mobs.spawn("cast_dummy", 2, 5, 1, 1.0, {"pos": Vector2(cp.x, cp.z)})
 		get_unit(cid).root_until = now() + 1e6
 		local_hero.controller.target_id = cid
+	if _stress_on:
+		_stress_tick()
 	if Net.cli.has("godmode") and is_server():
 		for gh in heroes.values():
 			gh.unit.hp = maxf(gh.unit.hp, gh.unit.max_hp * 0.35)   # не погибает, но лекарю есть кого лечить
@@ -1151,3 +1156,51 @@ func ev_summary(rows: Array, threat: int, campaign: bool) -> void:
 
 var summary_threat := 0
 var summary_campaign := false
+
+# ---------------------------------------------------------------- --stress=N: замер системы мобов (сессия 08)
+## N мобов на полосах осады (замок неуязвим, враги живут в 50 раз дольше), раз в 5 сек. — время серверного
+## тика мобов (среднее и максимум, мс) и FPS. Сравнение путей: --mobsim=gd|cpp.
+var _stress_on: bool = Net.cli.has("stress")
+var _stress_acc := {"n": 0, "sum": 0, "max": 0, "t": 0.0, "spawned": false, "log": []}
+
+func _stress_record(usec: int) -> void:
+	var s := _stress_acc
+	s["n"] = int(s["n"]) + 1
+	s["sum"] = int(s["sum"]) + usec
+	s["max"] = maxi(int(s["max"]), usec)
+
+func _stress_tick() -> void:
+	var s := _stress_acc
+	if not s["spawned"] and _test_t > 3.0 and is_server():
+		s["spawned"] = true
+		var siege := mode as SiegeMode
+		if siege:
+			siege.castle.immune_until = 1e12
+		var n := int(Net.cli["stress"])
+		var types: Array = ["minion", "warrior", "rogue", "crossbow", "grunt", "berserker", "imp", "felguard", "gunner", "ogre"]
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(Net.cli.get("stressseed", 1))
+		for i in n:
+			var lane := i % 4
+			var pts: PackedVector2Array = siege.lanes[lane] if siege else PackedVector2Array([Vector2.ZERO, Vector2(0, -1)])
+			var k := rng.randf_range(0.0, float(pts.size() - 2))
+			var a: Vector2 = pts[int(k)]
+			var b: Vector2 = pts[int(k) + 1]
+			var p := a.lerp(b, k - floorf(k)) + Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3))
+			mobs.spawn(types[i % types.size()], lane, 5, 1, 50.0, {"pos": p, "no_elite": true})
+		print("STRESS spawned %d mobs (path=%s)" % [n, mobs.sim_path()])
+	if _test_t - float(s["t"]) >= 5.0 and int(s["n"]) > 0:
+		s["t"] = _test_t
+		var frames := maxf(1.0, float(Engine.get_frames_drawn() - int(s.get("frames0", 0))))
+		s["frames0"] = Engine.get_frames_drawn()
+		var line := "STRESS t=%d mobs=%d tick_avg=%.2f ms tick_max=%.2f ms visual=%.2f ms/кадр fps=%d path=%s" % [int(_test_t), mobs.alive_count(),
+			float(s["sum"]) / float(s["n"]) / 1000.0, float(s["max"]) / 1000.0, float(mobs.vis_usec) / frames / 1000.0, Engine.get_frames_per_second(), mobs.sim_path()]
+		mobs.vis_usec = 0
+		var pr: Dictionary = mobs.prof
+		var st := maxf(1.0, float(pr.get("steps", 0)))
+		print("STRESS шаг (мс): сетка %.2f  весь _sim %.2f  из них движение %.2f, решения %.2f" % [float(pr.get("grid", 0)) / st / 1000.0, float(pr.get("sim", 0)) / st / 1000.0, float(pr.get("move", 0)) / st / 1000.0, float(pr.get("think", 0)) / st / 1000.0])
+		mobs.prof = {}
+		print(line)
+		s["n"] = 0
+		s["sum"] = 0
+		s["max"] = 0

@@ -7,3 +7,12 @@ export/
 
 # Скачанные архивы ассетов до встраивания
 assets/_incoming/
+
+# C++ (native/): промежуточные файлы сборки; extension_api.json — godot --dump-extension-api (docs/BUILD.md)
+native/src/*.o
+native/.sconsign*.dblite
+native/extension_api.json
+bin/*.a
+bin/*.exp
+bin/*.lib
+export/

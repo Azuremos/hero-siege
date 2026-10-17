@@ -65,6 +65,7 @@ class Mob:
 	var owner := 0                    # кто призвал (босс) — его объекты пропадают вместе с ним
 	var bind := 0                     # ледяная гробница: id вмороженного героя
 	var until := 0.0                  # объект пропадает сам в это время (0 — нет)
+	var gi := -1                      # номер в сетке этого шага (путь C++: индекс в массивах MobSimNative)
 
 var world: Node3D
 var mobs: Dictionary = {}          # id -> Mob (живые)
@@ -87,6 +88,7 @@ var _pending_deaths := PackedInt32Array()
 
 func _ready() -> void:
 	world = get_parent()
+	_init_native()
 
 func alive_count() -> int:
 	return mobs.size()
@@ -123,6 +125,15 @@ func build_static_obstacles(colliders: Node) -> void:
 				_add_static(o - axis * half, o + axis * half, w * 0.5)
 			elif cs.shape is CylinderShape3D:
 				_add_static(o, o, (cs.shape as CylinderShape3D).radius)
+	if _native != null:
+		var oa := PackedVector2Array()
+		var ob := PackedVector2Array()
+		var orr := PackedFloat32Array()
+		for s: Array in _static_obs:
+			oa.append(s[0])
+			ob.append(s[1])
+			orr.append(s[2])
+		_native.set_obstacles(oa, ob, orr)
 
 func _add_static(a: Vector2, b: Vector2, r: float) -> void:
 	var idx := _static_obs.size()
@@ -305,9 +316,15 @@ func server_tick(delta: float, t: float) -> void:
 	_sim_acc += delta
 	while _sim_acc >= SIM_STEP:
 		_sim_acc -= SIM_STEP
+		var tp0 := Time.get_ticks_usec()
 		_rebuild_grid()
+		var tp1 := Time.get_ticks_usec()
 		for m: Mob in mobs.values():
 			_sim(m, SIM_STEP, t)
+		_apply_moves(SIM_STEP, t)
+		prof["grid"] = int(prof.get("grid", 0)) + tp1 - tp0
+		prof["sim"] = int(prof.get("sim", 0)) + Time.get_ticks_usec() - tp1
+		prof["steps"] = int(prof.get("steps", 0)) + 1
 		for p: Mob in pets.values():
 			_pet_sim(p, SIM_STEP, t)
 		var expired: Array = []
@@ -329,6 +346,23 @@ func server_tick(delta: float, t: float) -> void:
 			ev_snapshot.rpc(_encode_snapshot())
 
 func _rebuild_grid() -> void:
+	if _native != null:
+		# путь C++: позиции и радиусы всех мобов — в MobSimNative, сетки строит он
+		_grid_list = mobs.values()
+		var pos := PackedVector2Array()
+		var rad := PackedFloat32Array()
+		var alive := PackedByteArray()
+		pos.resize(_grid_list.size())
+		rad.resize(_grid_list.size())
+		alive.resize(_grid_list.size())
+		for i in _grid_list.size():
+			var gm: Mob = _grid_list[i]
+			gm.gi = i
+			pos[i] = gm.pos2
+			rad[i] = gm.unit.radius
+			alive[i] = 1 if gm.unit.alive else 0
+		_native.set_mobs(pos, rad, alive)
+		return
 	_grid.clear()
 	_sep_grid.clear()
 	for m: Mob in mobs.values():
@@ -347,6 +381,10 @@ static func _sep_key(cx: int, cy: int) -> int:
 ## Враги в радиусе (для заклинаний по области).
 func query_radius(p: Vector2, r: float) -> Array:
 	var out: Array = []
+	if _native != null:
+		for i in _native.query_radius(p, r):
+			out.append(_grid_list[i].unit)
+		return out
 	for cx in range(floori((p.x - r) / CELL), floori((p.x + r) / CELL) + 1):
 		for cy in range(floori((p.y - r) / CELL), floori((p.y + r) / CELL) + 1):
 			for m: Mob in _grid.get(Vector2i(cx, cy), []):
@@ -440,8 +478,8 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 			moving = true
 
 	if moving and not u.is_rooted(t):
-		_move(m, goal, dt, t)
-		_elite_trail(m, t)
+		# движение — пачкой после решений всех мобов (_apply_moves): одинаково на путях GDScript и C++
+		_queue_move(m, goal, float(m.def["speed"]) * u.speed_mult(t))
 		m.anim_state = AN.MOVE
 	elif m.anim_state == AN.MOVE or m.anim_state == AN.STUN or m.anim_state == AN.SPAWN:
 		m.anim_state = AN.IDLE
@@ -495,6 +533,127 @@ func _drop_chase(m: Mob, leash: bool) -> void:
 		m.reaggro_at = world.now() + REAGGRO_DELAY
 	world.mode.mob_resume(m)
 
+## Пачка движений шага: все мобы решили, куда идти, — теперь движутся одновременно (позиции соседей —
+## на начало шага). Путь C++ — MobSimNative.move_batch, путь GDScript — _move_calc; результат одинаковый.
+var _mv_mobs: Array = []
+var _mv_goals := PackedVector2Array()
+var _mv_speeds := PackedFloat32Array()
+var _mv_wall := PackedByteArray()
+var _grid_list: Array = []
+
+func _queue_move(m: Mob, goal: Vector2, speed: float) -> void:
+	_mv_mobs.append(m)
+	_mv_goals.append(goal)
+	_mv_speeds.append(speed)
+	_mv_wall.append(1 if (m.state == S.MOVE or (m.state == S.CHASE and not m.def.get("ranged", false))) else 0)
+
+func _apply_moves(dt: float, t: float) -> void:
+	var n := _mv_mobs.size()
+	if n == 0:
+		return
+	var tm := Time.get_ticks_usec()
+	var res_pos := PackedVector2Array()
+	var res_yaw := PackedFloat32Array()
+	var res_wall := PackedInt32Array()
+	if _native != null:
+		var idx := PackedInt32Array()
+		idx.resize(n)
+		for k in n:
+			idx[k] = _mv_mobs[k].gi
+		var wa := PackedVector2Array()
+		var wb := PackedVector2Array()
+		var wid := PackedInt32Array()
+		for id in walls:
+			wa.append(walls[id]["a"])
+			wb.append(walls[id]["b"])
+			wid.append(id)
+		var r: Array = _native.move_batch(idx, _mv_goals, _mv_speeds, _mv_wall, dt, wa, wb, wid)
+		res_pos = r[0]
+		res_yaw = r[1]
+		res_wall = r[2]
+	else:
+		res_pos.resize(n)
+		res_yaw.resize(n)
+		res_wall.resize(n)
+		for k in n:
+			var out: Array = _move_calc(_mv_mobs[k], _mv_goals[k], _mv_speeds[k], _mv_wall[k] == 1, dt)
+			res_pos[k] = out[0]
+			res_yaw[k] = out[1]
+			res_wall[k] = out[2]
+	for k in n:
+		var m: Mob = _mv_mobs[k]
+		m.pos2 = res_pos[k]
+		if not is_nan(res_yaw[k]):
+			m.yaw = res_yaw[k]
+		if res_wall[k] != 0 and walls.has(res_wall[k]):
+			m.state = S.WALL
+			m.wall = res_wall[k]
+		m.unit.pos = Vector3(m.pos2.x, 0, m.pos2.y)
+		_elite_trail(m, t)
+	_mv_mobs.clear()
+	_mv_goals.clear()
+	_mv_speeds.clear()
+	_mv_wall.clear()
+	prof["move"] = int(prof.get("move", 0)) + Time.get_ticks_usec() - tm
+
+## Путь GDScript: куда сдвинется моб (позиции соседей не меняются до конца пачки).
+## Возвращает [новая позиция, yaw (NAN — не менялся), id стены, в которую упёрся (0 — нет)]. То же, что MobSimNative.move_batch.
+func _move_calc(m: Mob, goal: Vector2, speed: float, can_wall: bool, dt: float) -> Array:
+	var u := m.unit
+	var to := goal - m.pos2
+	if to.length() < 0.05:
+		return [m.pos2, NAN, 0]
+	var dir := to.normalized()
+	var v := dir * speed
+	var kx := floori(m.pos2.x / SEP_CELL)
+	var ky := floori(m.pos2.y / SEP_CELL)
+	var pushes := 0
+	for cx in range(kx - 1, kx + 2):
+		for cy in range(ky - 1, ky + 2):
+			for nb: Mob in _sep_grid.get(_sep_key(cx, cy), []):
+				if nb == m:
+					continue
+				var diff := m.pos2 - nb.pos2
+				var min_d := u.radius + nb.unit.radius
+				var d2 := diff.length_squared()
+				if d2 < min_d * min_d and d2 > 0.0001:
+					var d := sqrt(d2)
+					v += diff / d * (min_d - d) * 5.0
+					pushes += 1
+					if pushes >= MAX_NEIGHBORS:
+						break
+			if pushes >= MAX_NEIGHBORS:
+				break
+		if pushes >= MAX_NEIGHBORS:
+			break
+	var np := m.pos2 + v * dt
+	var hit := 0
+	for id in walls:
+		var w: Dictionary = walls[id]
+		var cp := Geometry2D.get_closest_point_to_segment(np, w["a"], w["b"])
+		if cp.distance_to(np) < u.radius + 0.9:
+			var was := Geometry2D.get_closest_point_to_segment(m.pos2, w["a"], w["b"])
+			if cp.distance_to(np) < was.distance_to(m.pos2) + 0.01:
+				np = m.pos2
+				if can_wall:
+					hit = id
+				break
+	var okey := Vector2i(floori(np.x / CELL), floori(np.y / CELL))
+	for oi in _obs_grid.get(okey, []):
+		var ob: Array = _static_obs[oi]
+		var ocp := Geometry2D.get_closest_point_to_segment(np, ob[0], ob[1])
+		var odiff := np - ocp
+		var omin: float = ob[2] + u.radius
+		var od := odiff.length()
+		if od < omin:
+			if od < 0.001:
+				odiff = -dir
+				od = 1.0
+			np = ocp + odiff / od * omin
+	return [np, atan2(-v.x, -v.y) if v.length_squared() > 0.01 else NAN, hit]
+
+## Немедленное движение (питомцы, убегающий вор) — их мало, считаются по одному в GDScript.
+## На пути C++ мелкой сетки в GDScript нет — расталкивание для них не считается.
 func _move(m: Mob, goal: Vector2, dt: float, t: float) -> void:
 	var u := m.unit
 	var to := goal - m.pos2
@@ -611,6 +770,26 @@ func ev_wall_damage(id: int, stage: int) -> void:
 func _encode_snapshot() -> PackedByteArray:
 	var buf := PackedByteArray()
 	var all: Array = mobs.values() + pets.values()      # питомцы — в том же снимке
+	if _native != null:
+		var n := all.size()
+		var ids := PackedInt32Array()
+		var pos := PackedVector2Array()
+		var yaws := PackedFloat32Array()
+		var st := PackedByteArray()
+		var hp := PackedFloat32Array()
+		ids.resize(n)
+		pos.resize(n)
+		yaws.resize(n)
+		st.resize(n)
+		hp.resize(n)
+		for i in n:
+			var sm: Mob = all[i]
+			ids[i] = sm.unit.id
+			pos[i] = sm.pos2
+			yaws[i] = sm.yaw
+			st[i] = (sm.anim_state & 7) | ((sm.swing & 31) << 3)
+			hp[i] = sm.unit.hp_frac()
+		return _native.encode_snapshot(ids, pos, yaws, st, hp)
 	buf.resize(2 + all.size() * 11)
 	buf.encode_u16(0, all.size())
 	var o := 2
@@ -754,7 +933,15 @@ func _begin_dying(m: Mob) -> void:
 	_play(m, "Death_C_Skeletons" if m.def.get("src", "enemy") == "enemy" else "Death_A", 0.1)
 	dying.append(m)
 
+var prof: Dictionary = {}   # --stress: время частей шага симуляции (мкс)
+var vis_usec := 0          # --stress: время визуала мобов за кадр (анимации, сглаживание)
+
 func _process(delta: float) -> void:
+	var t_vis := Time.get_ticks_usec()
+	_process_visual(delta)
+	vis_usec += Time.get_ticks_usec() - t_vis
+
+func _process_visual(delta: float) -> void:
 	_frame += 1
 	var cam := get_viewport().get_camera_3d()
 	var cam_pos := cam.global_position if cam else Vector3.ZERO
@@ -2261,3 +2448,19 @@ func send_full(peer: int) -> void:
 		var b: Vector2 = w["b"]
 		var c := (a + b) * 0.5
 		world.spells.ev_zone.rpc_id(peer, id, "wall_ice", Vector3(c.x, 0, c.y), -(b - a).angle(), a.distance_to(b), maxf(0.5, float(w["until"]) - world.now()))
+
+# ---------------------------------------------------------------- C++ (GDExtension, сессия 08)
+## Горячие циклы серверной симуляции — в C++ (native/, класс MobSimNative из bin/herosiege_native.dll):
+## сетка соседей, запросы по радиусу, расталкивание и движение с препятствиями и стенами, кодирование снимка.
+## Решения (погоня, поводок, способности, боссы) — здесь, в GDScript. Если библиотека не загрузилась —
+## всё работает на GDScript (запасной путь). --mobsim=gd|cpp — выбрать путь для сравнения.
+var _native: Object = null
+
+func _init_native() -> void:
+	var want := str(Net.cli.get("mobsim", "cpp"))
+	if want == "gd" or not ClassDB.class_exists("MobSimNative"):
+		return
+	_native = ClassDB.instantiate("MobSimNative")
+
+func sim_path() -> String:
+	return "cpp" if _native != null else "gd"

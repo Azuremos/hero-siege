@@ -65,6 +65,9 @@ func _ready() -> void:
 		# снимок героев в снаряжении вместо меню (tools/hero_shot.gd)
 		add_child(preload("res://tools/hero_shot.gd").new())
 		return
+	if Net.cli.has("mobsimtest"):
+		add_child(load("res://tools/mobsim_equiv.gd").new())      # тест эквивалентности путей симуляции мобов
+		return
 	if Net.cli.has("mobicons"):
 		add_child(load("res://tools/mob_icons.gd").new())      # иконки врагов для окна Вербовщика
 		return
