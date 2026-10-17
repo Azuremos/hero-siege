@@ -98,13 +98,17 @@ const TEMPLATES := {
 	"greatsword": {"name": "двуручный меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "greatsword", "role": "phys", "stats": {"str": 7, "sta": 3, "ap": 10}, "models": ["sword_D", "sword_D", "sword_D", "sword_E", "sword_E", "sword_E"]},
 	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
 	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
-	"bow": {"name": "лук", "g": 0, "slot": "weapon", "classes": ["hunter"], "icon": "bow", "role": "phys", "stats": {"agi": 5, "sta": 2, "ap": 6},
+	"bow": {"name": "лук", "g": 0, "slot": "weapon", "classes": ["hunter"], "no_affix": ["str"], "icon": "bow", "role": "phys", "stats": {"agi": 5, "sta": 2, "ap": 6},
 		"models": ["bow_A_withString", "bow_A_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString"]},
-	"crossbow": {"name": "арбалет", "g": 0, "slot": "weapon", "classes": ["hunter"], "icon": "crossbow", "role": "phys", "stats": {"agi": 4, "str": 1, "ap": 8},
+	"crossbow": {"name": "арбалет", "g": 0, "slot": "weapon", "classes": ["hunter"], "no_affix": ["str"], "icon": "crossbow", "role": "phys", "stats": {"agi": 5, "ap": 8},
 		"models": ["Rogue/1H_Crossbow", "Rogue/1H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow"]},
 	"shield": {"name": "щит", "g": 0, "slot": "offhand", "classes": ["paladin", "warrior"], "icon": "shield", "role": "phys",
 		"stats": {"sta": 3, "str": 1, "armor": 0.015, "block": 0.012},
 		"models": ["Barbarian/Barbarian_Round_Shield", "Knight/Round_Shield", "Knight/Rectangle_Shield", "Knight/Badge_Shield", "Knight/Spike_Shield", "Knight/Spike_Shield"]},
+	# щит заклинателя (паладин Света, шаман): интеллект и сила заклинаний вместо силы, блок ниже
+	"ward_shield": {"name": "священный щит", "g": 0, "slot": "offhand", "classes": ["paladin"], "icon": "ward_shield", "role": "caster",
+		"stats": {"int": 3, "sta": 2, "sp": 4, "armor": 0.012, "block": 0.008},
+		"models": ["Knight/Badge_Shield", "Knight/Badge_Shield", "Knight/Round_Shield", "Knight/Badge_Shield", "Knight/Badge_Shield", "Knight/Badge_Shield"]},
 	"tome": {"name": "том", "g": 0, "slot": "offhand", "classes": ["mage", "priest"], "icon": "tome", "role": "caster",
 		"stats": {"int": 2, "spi": 2, "sp": 4}, "models": ["Mage/Spellbook"]},
 	"orb": {"name": "сфера", "g": 1, "slot": "offhand", "classes": ["mage", "priest"], "icon": "orb", "role": "caster",
@@ -398,7 +402,7 @@ static func roll(base: String, ilvl: int, q: int, seed: int) -> Dictionary:
 	var pool: Array = []
 	for a in AFFIXES:
 		var r: String = AFFIXES[a]["role"]
-		if r == "any" or tp["role"] == "any" or r == tp["role"]:
+		if (r == "any" or tp["role"] == "any" or r == tp["role"]) and not tp.get("no_affix", []).has(a):   # у лука нет «Силы»: охотник бьёт от ловкости
 			pool.append(a)
 	var n_aff: int = QUALITY_AFFIXES[q]
 	var proc := ""
