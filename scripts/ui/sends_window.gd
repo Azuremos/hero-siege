@@ -12,6 +12,7 @@ var _title: Label
 var _gold: Label
 var _income: Label
 var _lane: OptionButton
+var _lane_label: Label
 var _affix: OptionButton
 var _list: VBoxContainer
 var _rows: Dictionary = {}          # отправка -> {row, buy, state}
@@ -53,9 +54,9 @@ func setup(w: Node3D) -> void:
 	var opts := HBoxContainer.new()
 	opts.add_theme_constant_override("separation", 8)
 	v.add_child(opts)
-	var lt := Label.new()
-	lt.text = "Куда:"
-	opts.add_child(lt)
+	_lane_label = Label.new()
+	_lane_label.text = "Куда:"
+	opts.add_child(_lane_label)
 	_lane = OptionButton.new()
 	_lane.tooltip_text = "Линия соперника для отправок «на выбранную» (массовка и тяжёлые всегда идут на линию напротив)"
 	opts.add_child(_lane)
@@ -115,6 +116,7 @@ func _fill_lanes() -> void:
 	var mine := mini(int(lm.slot.get(lh.hero_id, 0)), lm.lane_count - 1)
 	_lane.select(keep if keep >= 0 and keep < _lane.item_count else mine)
 	_lane.visible = lm.lane_count > 1
+	_lane_label.visible = _lane.visible
 
 func _build_rows() -> void:
 	var SD := GameData.SendData

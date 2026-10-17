@@ -176,6 +176,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	m.unit = u
 	m.def = def
 	m.route = source
+	u.route = source
 	if opts.has("pet_owner"):
 		return _spawn_pet(m, u, type, opts)
 	u.sent_by = int(opts.get("sent_by", 0))      # «Линии»: кто отправил (рамка цели, награда, итоги)

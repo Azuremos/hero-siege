@@ -2254,8 +2254,11 @@ func _build_boss_bar() -> void:
 
 func _update_boss_bar() -> void:
 	var bm = null
+	var lm := world.mode as LinesMode
 	for m in world.mobs.mobs.values():
 		if GameData.BOSSES.has(m.unit.type_id) and m.unit.alive:
+			if lm and world.local_hero and not lm.on_my_lane(world.local_hero, m.unit.pos):
+				continue      # «Линии»: полоса босса — только своей линии
 			bm = m
 			break
 	_boss_panel.visible = bm != null

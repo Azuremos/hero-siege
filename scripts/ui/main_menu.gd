@@ -163,7 +163,7 @@ func _build_ui() -> void:
 	title.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	title.add_theme_constant_override("outline_size", 10)
 	_ui.add_child(title)
-	var sub := _label("Осада замка  •  кооператив до 6 героев", 18, Color(1, 1, 1, 0.85))
+	var sub := _label("Осада замка и Война линий  •  до 6 героев", 18, Color(1, 1, 1, 0.85))
 	sub.autowrap_mode = TextServer.AUTOWRAP_OFF
 	sub.position = Vector2(44, 96)
 	sub.add_theme_color_override("font_outline_color", Color(0, 0, 0))
@@ -657,6 +657,7 @@ func _refresh_lobby() -> void:
 		c.queue_free()
 	var lines: bool = str(Net.settings.get("mode", "siege")) == "lines"
 	_start_btn.text = "Начать битву!" if lines else "Начать осаду!"
+	(_screens["lobby"] as Control).custom_minimum_size.x = 680.0 if lines else 460.0
 	if lines:
 		_refresh_lobby_teams()
 		return
@@ -803,6 +804,8 @@ func _run_cli() -> void:
 		_on_solo()
 	elif _cli.has("host"):
 		_on_host()
+		for i in int(_cli.get("lobbybots", 0)):
+			Net.add_bot(1 - i % 2)      # --lobbybots=N: боты в лобби «Войны линий» (снимок)
 	elif _cli.has("join"):
 		_ip_edit.text = _cli["join"]
 		_on_join()

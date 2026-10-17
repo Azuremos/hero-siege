@@ -745,6 +745,8 @@ func bot_tick(delta: float) -> void:
 		move_forward = 1.0
 	if world.mobs.wave_near(hp2):
 		_jump_queued = true
+	if lines_post != null and _shop_phase > 0:
+		return      # «Линии»: идёт за покупками — не колдует, иначе лекарь не дойдёт до базы
 	_bot_t -= delta
 	if _bot_t <= 0.0 and hero.unit.alive and _bot_try_interrupt():
 		_bot_t = 0.25

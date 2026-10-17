@@ -67,7 +67,7 @@ func read_map(map: Node3D) -> void:
 		b.kind = "castle"
 		b.team = Unit.Team.PLAYERS
 		b.display_name = L.TEAMS[team]["full"]
-		b.max_hp = L.BASE_HP
+		b.max_hp = float(Net.cli.get("basehp", L.BASE_HP))      # --basehp=: тест — быстрая победа
 		b.hp = b.max_hp
 		b.radius = float(core.get_meta("radius", L.BASE_RADIUS))
 		b.pos = Vector3(core.position.x, 0, core.position.z)
@@ -79,9 +79,9 @@ func read_map(map: Node3D) -> void:
 
 func begin() -> void:
 	_started = true
-	_t0 = world.now()
-	_next_wave_at = _t0 + L.FIRST_WAVE_DELAY
-	_next_income_at = _t0 + L.INCOME_EVERY
+	_t0 = world.now() - float(Net.cli.get("startmin", 0.0)) * 60.0      # --startmin=N: тест поздней партии
+	_next_wave_at = world.now() + (L.FIRST_WAVE_DELAY if not Net.cli.has("startmin") else 3.0)
+	_next_income_at = world.now() + L.INCOME_EVERY
 	_assign_slots()
 	for h in world.heroes.values():
 		h.gold = maxi(h.gold, L.START_GOLD)
@@ -265,8 +265,9 @@ func _general_wave(t: float) -> void:
 	var txt := "Общая волна %d: %s." % [wave, fname.to_lower()]
 	if headliner != "":
 		txt += " Идёт %s!" % headliner
-	world.announce_all(txt, Color(1, 0.6, 0.3) if headliner != "" else Color(1, 0.9, 0.6))
+	# объявляем только первую волну и босс-волны (таймер следующей — на панели режима), чтобы не засорять экран
 	if headliner != "" or wave == 1:
+		world.announce_all(txt, Color(1, 0.6, 0.3) if headliner != "" else Color(1, 0.9, 0.6))
 		world.sound_all("bell")
 
 func _wave_faction(n: int) -> String:
@@ -535,8 +536,7 @@ func can_share(h, u: Unit) -> bool:
 
 ## Команда, на чьей линии идёт моб.
 func route_team(u: Unit) -> int:
-	var m = world.mobs.mobs.get(u.id, null)
-	return int(m.route) / 3 if m else 0
+	return clampi(u.route / 3, 0, 1)
 
 func vendor_allowed(hero, vid: String) -> bool:
 	return not vid.contains("#") or vid.ends_with("#%d" % hero.team)

@@ -61,6 +61,7 @@ var affixes: Array = []
 ## «Война линий»: враг, которого отправил игрок (id героя), и золото за его убийство (доля цены отправки)
 var sent_by := 0
 var bounty := 0
+var route := 0                  # откуда вышел (данные режима: у «Линий» — команда × 3 + линия)
 var damage_taken_mult: float = 1.0   # пересчитывается каждый тик (барьеры)
 
 ## Периодические эффекты: {key, kind: "dot"/"hot", per_tick, tick, next, until, school, source}

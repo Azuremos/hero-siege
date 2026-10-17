@@ -396,7 +396,7 @@ func add_bot(team: int) -> bool:
 	var i := 0
 	while players.has(BOT_PEER_BASE + i):
 		i += 1
-	var cls: String = LinesData.BOT_CLASSES[(i + team) % LinesData.BOT_CLASSES.size()]
+	var cls: String = LinesData.BOT_CLASSES[(i * 2 + team) % LinesData.BOT_CLASSES.size()]
 	players[BOT_PEER_BASE + i] = {"name": LinesData.BOT_NAMES[i % LinesData.BOT_NAMES.size()], "class": cls,
 		"race": GameData.ClassData.fix_race(cls, "human"), "version": game_version(), "uid": "", "team": team, "bot": true}
 	_lobby_changed()

@@ -635,8 +635,14 @@ func _process(delta: float) -> void:
 		if Net.cli["open"] == "char":
 			hud.toggle_character()
 		elif Net.cli["open"] == "shop":
-			local_hero.global_position = economy.vendor_pos["smith"] + Vector3(2, 0, 2)
-			hud.open_shop("smith")
+			var svid: String = "smith" if economy.vendor_pos.has("smith") else "smith#%d" % local_hero.team
+			local_hero.global_position = economy.vendor_pos[svid] + Vector3(2, 0, 2)
+			hud.open_shop(svid)
+		elif Net.cli["open"] == "sends":
+			# «Война линий»: окно Вербовщика своей команды (снимок)
+			var rvid := "recruiter#%d" % local_hero.team
+			local_hero.global_position = economy.vendor_pos[rvid] + Vector3(2, 0, 2)
+			hud.open_shop(rvid)
 		elif Net.cli["open"] == "edit":
 			hud.set_edit_mode(true)
 		elif Net.cli["open"] == "keys":
