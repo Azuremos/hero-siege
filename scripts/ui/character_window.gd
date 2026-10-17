@@ -175,7 +175,9 @@ func refresh() -> void:
 				if ev.button_index == MOUSE_BUTTON_LEFT and ev.double_click == false:
 					pass
 				if ev.button_index == MOUSE_BUTTON_RIGHT:
-					if world.hud.shop_open():
+					if world.hud.shop_open() and not ev.shift_pressed:
+						_sell_confirm(idx)          # ПКМ у лавки — с подтверждением (хотели надеть, а продали)
+					elif world.hud.shop_open():         # Shift + ПКМ — продать сразу
 						world.economy.send("request_sell", [idx])
 					elif world.hud.trade_open():
 						world.trade.toggle_slot(idx)
@@ -240,3 +242,44 @@ func _notification(what: int) -> void:
 			var hud = world.hud
 			if not (hud.trade_open() and hud._trade_win.get_global_rect().has_point(get_global_mouse_position())):
 				world.economy.send("request_drop", [idx])
+
+# ---------------------------------------------------------------- подтверждение продажи
+
+var _sell_dialog: ConfirmationDialog
+var _sell_idx := -1
+var _sell_id := ""
+var _sell_equip: Button
+
+## ПКМ по вещи у открытой лавки: «Продать … за N золота?» — Продать / Надеть / Отмена.
+## Shift + ПКМ продаёт сразу. Если вещь в ячейке успела смениться, ничего не делаем.
+func _sell_confirm(idx: int) -> void:
+	var hero = world.local_hero
+	var s = hero.bag[idx]
+	if s == null:
+		return
+	var it := GameData.item(s["id"])
+	var gold := int(float(it["price"]) * GameData.ItemData.SELL_RATIO) * int(s["n"])
+	if _sell_dialog == null:
+		_sell_dialog = ConfirmationDialog.new()
+		_sell_dialog.title = "Продажа"
+		_sell_dialog.ok_button_text = "Продать"
+		_sell_dialog.cancel_button_text = "Отмена"
+		_sell_equip = _sell_dialog.add_button("Надеть", true, "equip")
+		_sell_dialog.confirmed.connect(func():
+			if _sell_still_there():
+				world.economy.send("request_sell", [_sell_idx]))
+		_sell_dialog.custom_action.connect(func(action: StringName):
+			if action == "equip" and _sell_still_there():
+				world.economy.send("request_use", [_sell_idx])
+			_sell_dialog.hide())
+		add_child(_sell_dialog)
+	_sell_idx = idx
+	_sell_id = s["id"]
+	var count := (" ×%d" % int(s["n"])) if int(s["n"]) > 1 else ""
+	_sell_dialog.dialog_text = "Продать «%s»%s за %d золота?\n\nShift + ПКМ — продать без вопроса." % [it["name"], count, gold]
+	_sell_equip.visible = it["kind"] == "gear"     # «Надеть» — только для снаряжения
+	_sell_dialog.popup_centered()
+
+func _sell_still_there() -> bool:
+	var s = world.local_hero.bag[_sell_idx] if _sell_idx >= 0 and _sell_idx < world.local_hero.bag.size() else null
+	return s != null and s["id"] == _sell_id

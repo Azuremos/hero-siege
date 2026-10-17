@@ -439,6 +439,13 @@ func _process(delta: float) -> void:
 		_test_cam.current = true
 	if Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) and _test_t - delta < float(Net.cli["charwin"]):
 		hud.toggle_character()   # --charwin=T: открыть окно персонажа (снимок)
+	# --sellconfirm: вместе с --charwin открыть лавку и окно подтверждения продажи первой вещи сумки (снимок)
+	if Net.cli.has("sellconfirm") and Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) + 0.5 and _test_t - delta < float(Net.cli["charwin"]) + 0.5:
+		hud.open_shop("smith")
+		for bi in local_hero.bag.size():
+			if local_hero.bag[bi] != null and GameData.item(local_hero.bag[bi]["id"])["kind"] == "gear":
+				hud._char_window._sell_confirm(bi)
+				break
 	# --hover=x,y: через 1 сек. после --charwin навести мышь на точку экрана — снимок всплывающей подсказки
 	if Net.cli.has("hover") and Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) + 1.0 and _test_t - delta < float(Net.cli["charwin"]) + 1.0:
 		var hp: PackedFloat64Array = str(Net.cli["hover"]).split_floats(",")
