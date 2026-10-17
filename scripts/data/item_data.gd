@@ -26,7 +26,7 @@ const QUALITY_MULT := [1.0, 1.25, 1.55, 1.9, 2.4]
 ## Дополнительных свойств: у зелёного 1, у синего и выше 2.
 const QUALITY_AFFIXES := [0, 1, 2, 2, 2]
 ## Цена от качества.
-const QUALITY_PRICE := [1.0, 1.6, 2.6, 4.5, 8.0]
+const QUALITY_PRICE := [1.0, 1.5, 2.2, 3.2, 5.0]
 ## Синее в лавке — дороже, чем стоит при продаже/выпадении.
 const SHOP_BLUE_MARKUP := 1.8
 
@@ -70,9 +70,10 @@ const MAX_REQ_LEVEL := 30
 static func ilvl_mult(ilvl: int) -> float:
 	return 0.8 + 0.2 * float(ilvl)
 
-## Базовая цена белой вещи уровня ilvl.
+## Базовая цена белой вещи уровня ilvl: почти линейная — квадратичная (15 + 2,2·ilvl²) давала
+## к 50-й волне ~100 тыс. золота с продажи (вещь 50-го уровня — 5500, синяя — 14 тыс.).
 static func ilvl_price(ilvl: int) -> float:
-	return 15.0 + 2.2 * float(ilvl * ilvl)
+	return 20.0 + 8.0 * float(ilvl) + 0.6 * float(ilvl * ilvl)
 
 static func material(ilvl: int, gender: int) -> String:
 	var adj: String = TIERS[0]["adj"][gender]
@@ -569,7 +570,7 @@ const CONSUMABLES := {
 }
 
 const STACK := 20
-const SELL_RATIO := 0.25
+const SELL_RATIO := 0.2
 
 # ---------------------------------------------------------------- облик вещи на герое
 
