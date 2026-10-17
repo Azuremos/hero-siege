@@ -432,7 +432,10 @@ static func set_hand_item(model: Node3D, side: String, look: Dictionary, default
 		if mdl == "orb":
 			w = _orb(look)
 		elif mdl.contains("/"):
-			w = _donor(mdl)          # щит рыцаря, книга мага — уже на своём месте в руке
+			w = _donor(mdl)          # щит рыцаря — уже на своём месте в руке
+			if w and mdl.begins_with("Mage/Spellbook"):
+				# книга мага KayKit по задумке парит у бедра — кладём том в кисть
+				w.transform = Transform3D(Basis.from_euler(Vector3(0, PI * 0.5, 0)), Vector3(0, 0, 0))   # обложкой наружу
 		else:
 			w = weapon_scene(mdl).instantiate() as Node3D
 			w.scale = Vector3.ONE * 0.8      # оружие Fantasy Weapons Bits крупнее родного оружия героев KayKit
@@ -473,7 +476,7 @@ static func _orb(look: Dictionary) -> Node3D:
 			m.set_meta("pulse_base", m.emission_energy_multiplier)
 	var root := Node3D.new()
 	var ball := _prim(_ball(0.16), _material_cache[key])
-	ball.position = Vector3(0, 0.22, 0.05)
+	ball.position = Vector3(0, 0.1, 0.0)   # в ладони, а не в стороне от руки
 	root.add_child(ball)
 	return root
 

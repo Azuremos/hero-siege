@@ -106,7 +106,7 @@ const TEMPLATES := {
 		"stats": {"sta": 3, "str": 1, "armor": 0.015, "block": 0.012},
 		"models": ["Barbarian/Barbarian_Round_Shield", "Knight/Round_Shield", "Knight/Rectangle_Shield", "Knight/Badge_Shield", "Knight/Spike_Shield", "Knight/Spike_Shield"]},
 	"tome": {"name": "том", "g": 0, "slot": "offhand", "classes": ["mage", "priest"], "icon": "tome", "role": "caster",
-		"stats": {"int": 2, "spi": 2, "sp": 4}, "models": ["Mage/Spellbook", "Mage/Spellbook", "Mage/Spellbook_open"]},
+		"stats": {"int": 2, "spi": 2, "sp": 4}, "models": ["Mage/Spellbook"]},
 	"orb": {"name": "сфера", "g": 1, "slot": "offhand", "classes": ["mage", "priest"], "icon": "orb", "role": "caster",
 		"stats": {"int": 3, "sp": 5}, "models": ["orb"]},
 	"robe": {"name": "мантия", "g": 1, "slot": "chest", "icon": "robe", "role": "caster", "stats": {"int": 3, "spi": 3, "sta": 2, "armor": 0.01},
