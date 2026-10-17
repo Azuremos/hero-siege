@@ -514,16 +514,19 @@ func _ally_target() -> Unit:
 	if hover_id == 0:
 		var mp := get_viewport().get_mouse_position()
 		var under := pick_unit(mp)
-		var uu: Unit = world.get_unit(under)
-		if uu and uu.kind == "hero" and uu.alive:
+		if _is_ally(world.get_unit(under)):
 			hover_id = under
 	var u: Unit = world.get_unit(hover_id)
-	if u and u.kind == "hero" and u.alive:
+	if _is_ally(u):
 		return u
 	u = world.get_unit(target_id)
-	if u and u.kind == "hero" and u.alive:
+	if _is_ally(u):
 		return u
 	return hero.unit
+
+## Союзник для лечения и щитов: герой или питомец охотника (сервер принимает обоих).
+func _is_ally(u: Unit) -> bool:
+	return u != null and u.alive and u.team == Unit.Team.PLAYERS and (u.kind == "hero" or u.kind == "pet")
 
 func _cast_move_buff() -> bool:
 	for b in hero.net_buffs:
