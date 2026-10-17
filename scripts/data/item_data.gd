@@ -91,18 +91,18 @@ static func material(ilvl: int, gender: int) -> String:
 ## «hooded» — голова в капюшоне), cape — плащ, body — ткань/кольчуга/латы туловища, pads — наплечники
 ## (cloth / mail / plate), legs — цвет ног по сапогам. Щит, том и сфера — оружие: в сеты не входят.
 const TEMPLATES := {
-	"staff": {"name": "посох", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "staff", "role": "caster", "stats": {"int": 4, "spi": 2, "sp": 6}, "models": ["staff_A", "staff_A", "staff_B", "staff_B", "staff_B", "staff_B"]},
+	"staff": {"name": "посох", "g": 0, "slot": "weapon", "classes": ["mage", "priest", "shaman"], "icon": "staff", "role": "caster", "stats": {"int": 4, "spi": 2, "sp": 6}, "models": ["staff_A", "staff_A", "staff_B", "staff_B", "staff_B", "staff_B"]},
 	"wand": {"name": "жезл", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "wand", "role": "caster", "stats": {"int": 3, "sp": 8}, "models": ["wand_A"]},
-	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_B", "sword_C", "sword_C"]},
+	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior", "shaman"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_B", "sword_C", "sword_C"]},
 	# двуручный меч: сильнее одноручного, но левая рука пуста (без щита) и удары двуручные
-	"greatsword": {"name": "двуручный меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior"], "icon": "greatsword", "role": "phys", "stats": {"str": 7, "sta": 3, "ap": 10}, "models": ["sword_D", "sword_D", "sword_D", "sword_E", "sword_E", "sword_E"]},
-	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
-	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
+	"greatsword": {"name": "двуручный меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior", "shaman"], "icon": "greatsword", "role": "phys", "stats": {"str": 7, "sta": 3, "ap": 10}, "models": ["sword_D", "sword_D", "sword_D", "sword_E", "sword_E", "sword_E"]},
+	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior", "shaman"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
+	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest", "shaman"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
 	"bow": {"name": "лук", "g": 0, "slot": "weapon", "classes": ["hunter"], "no_affix": ["str"], "icon": "bow", "role": "phys", "stats": {"agi": 5, "sta": 2, "ap": 6},
 		"models": ["bow_A_withString", "bow_A_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString"]},
 	"crossbow": {"name": "арбалет", "g": 0, "slot": "weapon", "classes": ["hunter"], "no_affix": ["str"], "icon": "crossbow", "role": "phys", "stats": {"agi": 5, "ap": 8},
 		"models": ["Rogue/1H_Crossbow", "Rogue/1H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow", "Rogue/2H_Crossbow"]},
-	"shield": {"name": "щит", "g": 0, "slot": "offhand", "classes": ["paladin", "warrior"], "icon": "shield", "role": "phys",
+	"shield": {"name": "щит", "g": 0, "slot": "offhand", "classes": ["paladin", "warrior", "shaman"], "icon": "shield", "role": "phys",
 		"stats": {"sta": 3, "str": 1, "armor": 0.015, "block": 0.012},
 		"models": ["Barbarian/Barbarian_Round_Shield", "Knight/Round_Shield", "Knight/Rectangle_Shield", "Knight/Badge_Shield", "Knight/Spike_Shield", "Knight/Spike_Shield"]},
 	# щит заклинателя (паладин Света, шаман): интеллект и сила заклинаний вместо силы, блок ниже
@@ -147,6 +147,18 @@ const TEMPLATES := {
 		"stats": {"agi": 3, "ap": 2}},
 	"amulet_hunt": {"name": "амулет ловчего", "g": 0, "slot": "amulet", "icon": "amulet_hunt", "role": "phys", "no_affix": ["str"],
 		"stats": {"agi": 2, "sta": 2, "ap": 2}},
+	# ---- шаман (сессия 11): оружие и броня стихий. Молот — одноручный (с талантом — и в левую руку), посох — двуручный.
+	"totem_hammer": {"name": "тотемный молот", "g": 0, "slot": "weapon", "classes": ["shaman"], "icon": "totem_hammer", "role": "any",
+		"stats": {"str": 3, "int": 3, "ap": 5, "sp": 4}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_B", "hammer_B"]},
+	"storm_staff": {"name": "посох бури", "g": 0, "slot": "weapon", "classes": ["shaman"], "icon": "storm_staff", "role": "caster",
+		"stats": {"int": 5, "spi": 2, "sp": 8}, "models": ["staff_A", "staff_A", "staff_B", "staff_B", "staff_B", "staff_B"]},
+	"totem_shield": {"name": "щит предков", "g": 0, "slot": "offhand", "classes": ["shaman"], "icon": "totem_shield", "role": "any",
+		"stats": {"sta": 2, "int": 2, "armor": 0.012, "block": 0.008},
+		"models": ["Barbarian/Barbarian_Round_Shield", "Barbarian/Barbarian_Round_Shield", "Knight/Round_Shield", "Knight/Round_Shield", "Knight/Spike_Shield", "Knight/Spike_Shield"]},
+	"mail_caster": {"name": "кольчуга стихий", "g": 1, "slot": "chest", "classes": ["shaman"], "icon": "mail_caster", "role": "caster",
+		"stats": {"int": 3, "spi": 2, "sta": 3, "armor": 0.018}, "wear": {"cape": "Barbarian/Barbarian_Cape", "body": "mail"}},
+	"spirit_hat": {"name": "шапка духов", "g": 1, "slot": "helm", "classes": ["shaman"], "icon": "spirit_hat", "role": "caster",
+		"stats": {"int": 2, "spi": 1, "sta": 1, "armor": 0.006}, "wear": {"head": "Barbarian/Barbarian_Hat", "head_scale": 1.16}},
 }
 
 ## Аксессуары (как в WoW): две ячейки, без материала в названии. Белые и зелёные — только характеристики,

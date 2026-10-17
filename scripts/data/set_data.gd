@@ -21,6 +21,9 @@ const BASES := {
 	"cloth_hood": {"helm": "hood", "shoulders": "pads_cloth", "chest": "robe", "boots": "boots", "ring": "ring_mind", "amulet": "amulet"},
 	"plate": {"helm": "helm", "shoulders": "pads_plate", "chest": "plate", "boots": "boots", "ring": "ring_might", "amulet": "amulet"},
 	"mail": {"helm": "hood", "shoulders": "pads_mail", "chest": "mail", "boots": "boots", "ring": "ring_might", "amulet": "amulet"},
+	# шаман-заклинатель: кольчуга стихий и шапка духов (сессия 11); Совершенствование носит обычную кольчугу
+	"mail_shaman": {"helm": "spirit_hat", "shoulders": "pads_mail", "chest": "mail_caster", "boots": "boots", "ring": "ring_mind", "amulet": "amulet"},
+	"mail_shaman_melee": {"helm": "spirit_hat", "shoulders": "pads_mail", "chest": "mail", "boots": "boots", "ring": "ring_might", "amulet": "amulet"},
 }
 const SLOT_NOUN := {"helm": "Венец", "shoulders": "Наплечье", "chest": "Облачение", "boots": "Поступь", "ring": "Перстень", "amulet": "Медальон"}
 
@@ -150,6 +153,31 @@ const SETS := {
 				"desc": "Урон и длительность эффектов ловушек +25%, Разрывной выстрел на 15% сильнее."},
 			5: {"proc": {"on": "spell_hit", "spells": ["explosive_trap", "immolation_trap", "explosive_shot", "serpent_sting", "chimera_shot", "black_arrow", "multi_shot", "volley"], "chance": 0.15, "icd": 4.0, "buff": "lock_and_load"},
 				"desc": "Ловушки, яды и выстрелы по площади с вероятностью 15% дают Наготове: следующий выстрел по готовности или добивающий — мгновенно, бесплатно и на 25% сильнее."}}},
+	# ---------------- Шаман (сессия 11)
+	"set_elemental": {"class": "shaman", "tree": 0, "name": "Повелителя Бури", "armor": "mail_shaman", "affixes": ["int", "crit"],
+		"look": Color(0.55, 0.75, 1.15),
+		"bonuses": {
+			2: {"stats": {"int": 12, "sp": 10}, "desc": "+12 к интеллекту, +10 к силе заклинаний."},
+			3: {"mods": [["spell:lightning_bolt", "amount", 0.15], ["spell:chain_lightning", "amount", 0.15], ["spell:lava_burst", "amount", 0.15]],
+				"desc": "Молния, заклинание ряда «Ротация» и заклинание ряда «Площадь» (любой вариант) на 15% сильнее."},
+			5: {"proc": {"on": "spell_hit", "spells": ["lightning_bolt", "chain_lightning"], "every": 4, "icd": 1.0, "spell": "lava_eruption"},
+				"desc": "Каждая 4-я Молния или Цепная молния вызывает Извержение лавы под целью: 46–56 урона огнём в 6 м и горение."}}},
+	"set_enhancement": {"class": "shaman", "tree": 1, "name": "Духа Волка", "armor": "mail_shaman_melee", "affixes": ["str", "crit"],
+		"look": Color(0.75, 0.95, 1.1),
+		"bonuses": {
+			2: {"stats": {"str": 12, "crit": 0.02}, "desc": "+12 к силе, +2% к шансу крит. удара."},
+			3: {"mods": [["spell:stormstrike", "amount", 0.15], ["global", "auto", 0.1]],
+				"desc": "Удар бури (и варианты ряда «Ротация») на 15% сильнее, урон автоатакой +10%."},
+			5: {"proc": {"on": "auto", "chance": 0.15, "icd": 3.0, "buff": "maelstrom_weapon"},
+				"desc": "Автоатаки с вероятностью 15% дают Оружие водоворота: следующая Молния, Цепная молния, Выброс лавы, Волна или Цепное исцеление — мгновенно, бесплатно и на 20% сильнее."}}},
+	"set_restoration": {"class": "shaman", "tree": 2, "name": "Хранителя Приливов", "armor": "mail_shaman", "affixes": ["int", "spi"],
+		"look": Color(0.5, 1.05, 0.9),
+		"bonuses": {
+			2: {"stats": {"int": 10, "spi": 10}, "desc": "+10 к интеллекту и духу."},
+			3: {"mods": [["spell:healing_wave", "amount", 0.15], ["spell:riptide", "amount", 0.15], ["spell:chain_heal", "amount", 0.15]],
+				"desc": "Волна исцеления, заклинание ряда «Ротация» и заклинание ряда «Площадь» (любой вариант) на 15% сильнее."},
+			5: {"proc": {"on": "heal", "every": 4, "icd": 1.0, "spell": "tidal_surge"},
+				"desc": "Каждое 4-е лечение вызывает Всплеск прилива: 36–42 лечения союзникам в 8 м от цели."}}},
 }
 
 ## Именные легендарки: свой шаблон (оружие, левая рука или аксессуар), класс (пусто — любой), название и
@@ -195,6 +223,16 @@ const LEGENDARIES := {
 	"leg_demon_crossbow": {"name": "Арбалет Охотника на Демонов", "base": "crossbow", "class": "hunter", "icon": "crossbow",
 		"effect": {"mods": [["global", "crit", 0.04]], "proc": {"on": "auto_crit", "crit": true, "chance": 0.5, "icd": 6.0, "spell": "flame_burst"}},
 		"desc": "Шанс крита +4%. Критическая автоатака с вероятностью 50% взрывается пламенем вокруг цели."},
+	# шаман (сессия 11). Флаги: totem_power — сила тотемов (доля), totem_dur — их время (доля).
+	"leg_thunder_staff": {"name": "Посох Повелителя Молний", "base": "storm_staff", "class": "shaman", "icon": "storm_staff",
+		"effect": {"flags": [["extra:lightning_bolt", 2.0]], "mods": [["spell:chain_lightning", "chain_add", 2.0]]},
+		"desc": "Молния бьёт ещё 2 врагов рядом с целью, Цепная молния перескакивает ещё на 2 врага."},
+	"leg_storm_hammer": {"name": "Молот Бури Предков", "base": "totem_hammer", "class": "shaman", "icon": "totem_hammer",
+		"effect": {"proc": {"on": "auto", "chance": 0.15, "icd": 3.0, "reset": "stormstrike"}, "stats": {"crit": 0.02}},
+		"desc": "Шанс крита +2%. Автоатаки с вероятностью 15% сразу восстанавливают Удар бури (ряд «Ротация»)."},
+	"leg_tide_shield": {"name": "Щит Бездонного Прилива", "base": "totem_shield", "class": "shaman", "icon": "totem_shield",
+		"effect": {"flags": [["totem_power", 0.25], ["totem_dur", 1.0]]},
+		"desc": "Тотемы действуют на 25% сильнее и стоят вдвое дольше."},
 	# общие: аксессуары
 	"leg_phoenix": {"name": "Сердце Феникса", "base": "tr_flask", "class": "", "icon": "tr_flask",
 		"effect": {"proc": {"on": "hit_taken", "below": 0.25, "chance": 1.0, "icd": 120.0, "heal_pct": 0.5}},
