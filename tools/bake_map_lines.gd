@@ -398,9 +398,9 @@ func _ridge_and_bounds() -> void:
 	var t := -MAP_Z
 	while t <= MAP_Z:
 		var item: String = mountains[rng.randi() % mountains.size()]
-		var s := rng.randf_range(3.6, 4.4)
-		_mm(NATURE + item, Vector2(rng.randf_range(-1.5, 1.5), t), rng.randf() * TAU, Vector3(s, s * rng.randf_range(0.9, 1.4), s))
-		t += 9.0
+		var s := rng.randf_range(5.6, 6.6)
+		_mm(NATURE + item, Vector2(rng.randf_range(-1.0, 1.0), t), rng.randf() * TAU, Vector3(s, s * rng.randf_range(0.9, 1.4), s))
+		t += 8.0
 	# края карты: горы и стены-коллайдеры
 	for side in [-1.0, 1.0]:
 		var bz := -MAP_Z

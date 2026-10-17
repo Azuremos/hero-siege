@@ -1,6 +1,7 @@
 extends SceneTree
 ## Снимок сцены в PNG для быстрой визуальной проверки.
-## godot --script res://tools/shot.gd -- <scene> <out.png> <cam x,y,z> <look x,y,z> [fov]
+## godot --script res://tools/shot.gd -- <scene> <out.png> <cam x,y,z> <look x,y,z> [fov] [nofog]
+## nofog — без тумана (снимок карты сверху с большой высоты)
 
 func _init() -> void:
 	var a := OS.get_cmdline_user_args()
@@ -15,6 +16,9 @@ func _init() -> void:
 	cam.fov = float(a[4]) if a.size() > 4 else 60.0
 	cam.far = 600.0
 	cam.make_current()
+	if a.size() > 5 and a[5] == "nofog":
+		for we in scene.find_children("*", "WorldEnvironment", true, false):
+			(we as WorldEnvironment).environment.fog_enabled = false
 	for i in 12:
 		await process_frame
 	await RenderingServer.frame_post_draw
