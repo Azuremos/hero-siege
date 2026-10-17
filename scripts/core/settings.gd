@@ -85,3 +85,56 @@ func reset_ui_positions() -> void:
 	if cfg.has_section("pos"):
 		cfg.erase_section("pos")
 	cfg.save(UI_PATH)
+
+# ---------------------------------------------------------------- режим совместимости (сессия 08)
+## Для старых видеокарт: отрисовка через OpenGL 3 (Compatibility) вместо Vulkan. Действует после перезапуска.
+## Godot читает override.cfg рядом с HeroSiege.exe (в запуске из папки проекта — в корне проекта) и подменяет
+## им настройки проекта. Если Vulkan и D3D12 не стартуют вообще, Godot 4.7 и так сам перейдёт на OpenGL.
+const OVERRIDE_TEXT := "; Режим совместимости Hero Siege (Настройки → Графика). Удалите файл, чтобы вернуть Vulkan.\n[rendering]\n\nrenderer/rendering_method=\"gl_compatibility\"\nrenderer/rendering_method.mobile=\"gl_compatibility\"\n"
+
+func override_path() -> String:
+	if OS.has_feature("template"):
+		return OS.get_executable_path().get_base_dir().path_join("override.cfg")
+	return ProjectSettings.globalize_path("res://override.cfg")
+
+func compat_mode() -> bool:
+	return FileAccess.file_exists(override_path())
+
+## Сейчас игра рисует через OpenGL (режим совместимости или автоматический откат).
+func compat_running() -> bool:
+	return RenderingServer.get_current_rendering_method() == "gl_compatibility"
+
+## Включить или выключить режим совместимости. "" — получилось, иначе текст ошибки.
+func set_compat_mode(on: bool) -> String:
+	var p := override_path()
+	if on:
+		var f := FileAccess.open(p, FileAccess.WRITE)
+		if f == null:
+			return "Не удалось записать %s — запустите игру из папки, куда можно писать (или ярлыком «режим совместимости»)." % p
+		f.store_string(OVERRIDE_TEXT)
+		f.close()
+	elif FileAccess.file_exists(p):
+		if DirAccess.remove_absolute(p) != OK:
+			return "Не удалось удалить %s" % p
+	return ""
+
+## Режим совместимости (OpenGL) рисует ту же сцену заметно светлее Vulkan (замер: средняя яркость кадра
+## на 28% выше). Чтобы картинка была одинаковой во всех режимах, в OpenGL свет карты приглушается.
+## Коэффициенты подобраны снимками с одной камеры (отчёт 08).
+const COMPAT_SUN := 0.6
+const COMPAT_AMBIENT := 0.55
+const COMPAT_EXPOSURE := 0.72
+
+func apply_lighting(map: Node) -> void:
+	if map == null or not compat_running():
+		return
+	var sun := map.get_node_or_null("Sun") as DirectionalLight3D
+	if sun:
+		sun.light_energy *= COMPAT_SUN
+	for we in map.find_children("*", "WorldEnvironment", true, false):
+		var env: Environment = (we as WorldEnvironment).environment
+		if env:
+			env = env.duplicate()
+			env.ambient_light_energy *= COMPAT_AMBIENT
+			env.tonemap_exposure *= COMPAT_EXPOSURE
+			(we as WorldEnvironment).environment = env

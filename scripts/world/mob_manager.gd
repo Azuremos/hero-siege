@@ -941,6 +941,17 @@ func _process(delta: float) -> void:
 	_process_visual(delta)
 	vis_usec += Time.get_ticks_usec() - t_vis
 
+## Камеры, кадр которых тоже считается «видно» (окно «Обзор линий», когда развёрнуто).
+var extra_cams: Array = []
+
+func _seen(cam: Camera3D, p: Vector3) -> bool:
+	if cam.is_position_in_frustum(p):
+		return true
+	for c: Camera3D in extra_cams:
+		if is_instance_valid(c) and c.is_position_in_frustum(p):
+			return true
+	return false
+
 func _process_visual(delta: float) -> void:
 	_frame += 1
 	var cam := get_viewport().get_camera_3d()
@@ -952,6 +963,11 @@ func _process_visual(delta: float) -> void:
 		m.node.rotation.y = lerp_angle(m.node.rotation.y, m.yaw, k)
 		if not Net.is_server():
 			m.unit.pos = m.node.position
+		# вне кадра камеры анимацию не считаем (сессия 08: при 200+ мобах это заметная доля кадра);
+		# время копится, но не больше полсекунды — вернувшись в кадр, моб продолжит без рывка
+		if cam and not _seen(cam, m.vis_target + Vector3(0, 1.0, 0)):
+			m.anim_acc = minf(m.anim_acc + delta, 0.5)
+			continue
 		_choose_anim(m, delta)
 		_advance_anim(m, delta, cam_pos)
 	var i := 0

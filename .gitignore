@@ -16,3 +16,4 @@ bin/*.a
 bin/*.exp
 bin/*.lib
 export/
+override.cfg

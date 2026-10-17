@@ -59,6 +59,20 @@ func _ready() -> void:
 		var sun := get_tree().current_scene.find_child("Sun", true, false) as DirectionalLight3D
 		Settings.apply_shadows(sun))
 	sh_row.add_child(sh)
+	var cm := CheckBox.new()
+	cm.text = "Режим совместимости для старых видеокарт (OpenGL, после перезапуска)"
+	cm.tooltip_text = "Если игра не запускается, мерцает или рисует с ошибками. Чуть проще графика, зато работает почти везде."
+	cm.button_pressed = Settings.compat_mode()
+	v.add_child(cm)
+	var cm_note := _lbl("Сейчас: %s" % ("OpenGL (совместимость)" if Settings.compat_running() else "Vulkan"), 13, Color(0.8, 0.8, 0.8))
+	v.add_child(cm_note)
+	cm.toggled.connect(func(on):
+		var err := Settings.set_compat_mode(on)
+		if err != "":
+			cm_note.text = err
+			cm.set_pressed_no_signal(not on)
+		else:
+			cm_note.text = "Перезапустите игру — %s." % ("включится OpenGL" if on else "вернётся Vulkan"))
 
 	v.add_child(HSeparator.new())
 	v.add_child(_lbl("Интерфейс", 17, GOLD))

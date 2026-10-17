@@ -181,10 +181,13 @@ func net_fingerprint() -> String:
 		for p in NET_SCRIPTS:
 			var s: Script = load(p)
 			var cfg = s.get_rpc_config()
-			var names: Array = cfg.keys() if cfg is Dictionary else []
+			# имена — обычными строками: StringName сортируется по-разному в разных сборках (exe и редактор)
+			var names: Array = (cfg.keys() if cfg is Dictionary else []).map(func(n): return str(n))
 			names.sort()
 			parts.append(p.get_file() + ":" + ",".join(names))
 		_fp = ("|".join(parts)).md5_text().substr(0, 6)
+		if cli.has("fpdebug"):
+			print("FP ", "|".join(parts))
 	return _fp
 
 ## Адреса этого компьютера — подсказка для хоста (Radmin VPN выдаёт 26.x.x.x).

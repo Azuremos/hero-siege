@@ -65,6 +65,9 @@ func _ready() -> void:
 		# снимок героев в снаряжении вместо меню (tools/hero_shot.gd)
 		add_child(preload("res://tools/hero_shot.gd").new())
 		return
+	if Net.cli.has("makeicon"):
+		add_child(load("res://tools/make_icon.gd").new())      # иконка игры (снимок замка)
+		return
 	if Net.cli.has("mobsimtest"):
 		add_child(load("res://tools/mobsim_equiv.gd").new())      # тест эквивалентности путей симуляции мобов
 		return
@@ -79,6 +82,7 @@ func _ready() -> void:
 		mat.shader = load("res://shaders/cobblestone.gdshader")
 		roads.material_override = mat
 	Settings.apply_shadows(map.get_node_or_null("Sun") as DirectionalLight3D)
+	Settings.apply_lighting(map)
 	_cam = Camera3D.new()
 	_cam.fov = 55
 	_cam.far = 500

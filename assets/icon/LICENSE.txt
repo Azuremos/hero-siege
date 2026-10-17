@@ -1,0 +1,1 @@
+Иконка игры — снимок замка KayKit Medieval Hexagon (Kay Lousberg, CC0), tools/make_icon.gd.

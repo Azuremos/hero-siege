@@ -93,12 +93,19 @@ func setup(w: Node3D) -> void:
 	_cam.rotation_degrees = Vector3(-90, 0, 0)
 	_vp.add_child(_cam)
 	_cam.current = true
+	# своё окружение без тумана: камера высоко над картой, сквозь туман всё в дымке
+	var we := world.map.find_child("WorldEnvironment", true, false) as WorldEnvironment
+	if we and we.environment:
+		var env: Environment = we.environment.duplicate()
+		env.fog_enabled = false
+		_cam.environment = env
 	_marks = Control.new()
 	_marks.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_marks.draw.connect(_draw_marks)
 	_box.add_child(_marks)
 	_follow.call_deferred(_foe_route())
+	_register_cam.call_deferred()
 
 func _btn(text: String, tip: String) -> Button:
 	var b := Button.new()
@@ -129,6 +136,7 @@ func _on_title_input(ev: InputEvent) -> void:
 
 func set_collapsed(on: bool) -> void:
 	_box.visible = not on
+	_register_cam()
 	_collapse.text = "+" if on else "–"
 	reset_size()
 
@@ -255,3 +263,14 @@ func _draw_marks() -> void:
 		_marks.draw_circle(hs, 3.8, col if h.unit.alive else col.darkened(0.6))
 		_marks.draw_string_outline(font, hs + Vector2(6, -4), h.player_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, 3, Color(0, 0, 0, 0.9))
 		_marks.draw_string(font, hs + Vector2(6, -4), h.player_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+
+## Мобы в кадре обзора анимируются (mob_manager считает анимации только видимых мобов).
+func _register_cam() -> void:
+	var list: Array = world.mobs.extra_cams
+	list.erase(_cam)
+	if _box.visible and visible:
+		list.append(_cam)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and world and _cam:
+		_register_cam()

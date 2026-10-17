@@ -113,6 +113,7 @@ func _read_map() -> void:
 	economy.spawn_vendors()
 	_apply_cobblestone()
 	Settings.apply_shadows(map.get_node_or_null("Sun") as DirectionalLight3D)
+	Settings.apply_lighting(map)
 
 func _spawn_heroes() -> void:
 	var peers := Net.players.keys()
