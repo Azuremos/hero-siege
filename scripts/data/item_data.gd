@@ -106,7 +106,7 @@ const TEMPLATES := {
 		"stats": {"sta": 3, "str": 1, "armor": 0.015, "block": 0.012},
 		"models": ["Barbarian/Barbarian_Round_Shield", "Knight/Round_Shield", "Knight/Rectangle_Shield", "Knight/Badge_Shield", "Knight/Spike_Shield", "Knight/Spike_Shield"]},
 	# щит заклинателя (паладин Света, шаман): интеллект и сила заклинаний вместо силы, блок ниже
-	"ward_shield": {"name": "священный щит", "g": 0, "slot": "offhand", "classes": ["paladin"], "icon": "ward_shield", "role": "caster",
+	"ward_shield": {"name": "священный щит", "g": 0, "slot": "offhand", "classes": ["paladin", "shaman"], "icon": "ward_shield", "role": "caster",
 		"stats": {"int": 3, "sta": 2, "sp": 4, "armor": 0.012, "block": 0.008},
 		"models": ["Knight/Badge_Shield", "Knight/Badge_Shield", "Knight/Round_Shield", "Knight/Badge_Shield", "Knight/Badge_Shield", "Knight/Badge_Shield"]},
 	"tome": {"name": "том", "g": 0, "slot": "offhand", "classes": ["mage", "priest"], "icon": "tome", "role": "caster",
