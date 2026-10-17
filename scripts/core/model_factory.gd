@@ -51,8 +51,8 @@ static func build_hero(class_id: String, race_id: String) -> Node3D:
 	holder.set_meta("class_id", class_id)
 	holder.set_meta("race_id", race_id)
 	_setup_anims(inst)
-	if cls.has("default_weapon"):
-		apply_outfit(holder, class_id, {})      # оружие по умолчанию — модель вещи (у шамана молот), а не часть модели
+	if cls.has("default_weapon") or cls.has("default_offhand"):
+		apply_outfit(holder, class_id, {})      # оружие и левая рука по умолчанию — модели вещей (молот шамана, том жреца)
 	return holder
 
 static func _prim(mesh: Mesh, mat: Material) -> MeshInstance3D:
@@ -149,6 +149,9 @@ static func apply_outfit(model: Node3D, class_id: String, looks: Dictionary) -> 
 		# пустая правая рука: оружие класса по умолчанию — белая вещь шаблона default_weapon
 		main = GameData.ItemData.look(GameData.make_gear(str(cls["default_weapon"]), 1, 0, 0))
 	var off: Dictionary = looks.get("offhand", {})
+	if not off.has("model") and cls.has("default_offhand"):
+		# пустая левая рука: вещь класса по умолчанию (том жреца лежит в кисти, как надетый том)
+		off = GameData.ItemData.look(GameData.make_gear(str(cls["default_offhand"]), 1, 0, 0))
 	var two := bool(main.get("two_hand", false))
 	set_hand_item(model, "r", main if main.has("model") else {}, defaults)
 	var left_def: Array = [] if two else defaults
