@@ -731,6 +731,10 @@ func _process(delta: float) -> void:
 	if Net.cli.has("testcast") and is_server() and _test_t >= 9.0 and _test_t - delta < 9.0:
 		var fwd3 := -local_hero.global_transform.basis.z
 		spells._complete_cast(local_hero, Net.cli["testcast"], local_hero.unit.id, local_hero.global_position + fwd3 * 9.0, local_hero.rotation.y)
+	# --castlog2: раз в секунду — идёт ли у своего героя произнесение (клиент и сервер), проверка «залипшего» каста
+	if Net.cli.has("castlog2") and local_hero and int(_test_t) != int(_test_t - delta):
+		var sc: Dictionary = spells._hstate(local_hero.hero_id)["cast"] if is_server() else {}
+		print("CASTSTATE t=%d клиент=«%s» сервер=«%s» дуэль=%d" % [int(_test_t), local_hero.controller.cast_spell, str(sc.get("sid", "")), local_hero.unit.duel])
 	# --chaselog: раз в секунду — сколько врагов гонится за героем (проверка Зеркальных копий, Притворства)
 	if Net.cli.has("chaselog") and is_server() and int(_test_t) != int(_test_t - delta):
 		var chasing := 0

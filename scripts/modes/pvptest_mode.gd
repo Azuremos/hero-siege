@@ -170,6 +170,7 @@ func _restore(h) -> void:
 	u.pvp_since = -100.0
 	u.pvp_last = -100.0
 	h.respawn_at = 0.0
+	world.spells._interrupt(h)      # каст — сбить с рассылкой клиенту (иначе у него «залипает» произнесение)
 	var st: Dictionary = world.spells._hstate(h.hero_id)
 	st["cds"] = {}
 	st.erase("charges")

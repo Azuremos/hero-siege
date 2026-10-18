@@ -37,7 +37,8 @@ var _started := false
 var _next_duel_at := 0.0
 var _duel_at := 0.0                  # warn: когда начнётся; fight: когда началась
 var _duel_saved: Dictionary = {}     # hero_id -> {pos, hp, mana, alive}
-var _duel_turn: Array = [0, 0]       # по очереди: номер героя команды для следующей дуэли
+var _duel_turn: Array = [0, 0]
+var _dct_done := false       # по очереди: номер героя команды для следующей дуэли
 var _tower_at: Array = [0.0, 0.0]
 var _tick_acc := 0.0
 var _home: Dictionary = {}           # id моба -> [номер лагеря, точка в лагере]
@@ -421,8 +422,16 @@ func _duel_tick(t: float) -> void:
 			if t >= _duel_at:
 				_start_duel(t)
 		"fight":
-			duel_left = maxf(0.0, _duel_at + A.DUEL_TIME - t)
-			if t - _duel_at >= A.DUEL_TIME:
+			var dtime := float(Net.cli.get("dueltime", A.DUEL_TIME))      # --dueltime=N: короткая дуэль (тест)
+			duel_left = maxf(0.0, _duel_at + dtime - t)
+			# --duelcasttest: за 1 сек. до конца дуэли свой герой начинает долгое Исцеление (проверка «залипшего» каста)
+			if Net.cli.has("duelcasttest") and not _dct_done and t - _duel_at >= dtime - 1.0 and world.local_hero:
+				_dct_done = true
+				for h in world.heroes.values():
+					if h != world.local_hero:
+						h.unit.silence_until = t + 5.0      # соперник не собьёт каст
+				world.local_hero.controller._send_server("request_cast", ["greater_heal", world.local_hero.hero_id, Vector3.ZERO, 0.0])
+			if t - _duel_at >= dtime:
 				var ha = world.heroes.get(duel_ids[0], null)
 				var hb = world.heroes.get(duel_ids[1], null)
 				var fa: float = ha.unit.hp_frac() if ha else 0.0
@@ -475,9 +484,11 @@ func _restore(h) -> void:
 	u.silence_until = 0.0
 	u.slow_until = 0.0
 	u.absorb = 0.0
+	# произнесение — сбить по-настоящему (ev_cast_end у всех): иначе клиент считает, что каст ещё идёт,
+	# и после дуэли отвечает «Вы уже произносите заклинание» на любое заклинание
+	world.spells._interrupt(h)
 	var st: Dictionary = world.spells._hstate(h.hero_id)
 	st["cds"] = {}
-	st["cast"] = {}
 	st.erase("charges")
 	st.erase("locked")
 	for sid in h.spell_list():
