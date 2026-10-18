@@ -37,6 +37,17 @@ func _load() -> void:
 	vsync = bool(cfg.get_value("graphics", "vsync", vsync))
 	shadows = int(cfg.get_value("graphics", "shadows", shadows))
 
+## Тестовые запуски с параметрами (--solo, --bot, --host…) — без музыки, чтобы не мешать; --music=0.5 — вернуть.
+## Сохранённые настройки игрока не меняются (тестовые запуски их не записывают).
+func _test_music() -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.is_empty():
+		return
+	music = 0.0
+	for a in args:
+		if a.begins_with("--music="):
+			music = clampf(float(a.trim_prefix("--music=")), 0.0, 1.0)
+
 func save() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(PATH)
@@ -54,6 +65,7 @@ func _vol(bus_name: String, v: float) -> void:
 	AudioServer.set_bus_mute(idx, v <= 0.001)
 
 func apply() -> void:
+	_test_music()
 	_vol("Master", master)
 	_vol("Music", music)
 	_vol("SFX", sfx)
