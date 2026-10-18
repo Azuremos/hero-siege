@@ -240,6 +240,8 @@ func _spawn_pet(m: Mob, u: Unit, type: String, opts: Dictionary) -> int:
 	_make_visual(m)
 	var owner_hero = world.heroes.get(u.owner_id, null)
 	if owner_hero:
+		owner_hero.unit.has_pet = true
+	if owner_hero:
 		u.hp = 1.0
 		u.max_hp = 1.0
 		_pet_refresh(m, owner_hero)     # здоровье и сила от хозяина — до рассылки
@@ -854,6 +856,9 @@ func ev_spawn(list: Array) -> void:
 			u.kind = "pet"
 			u.owner_id = int(e[9])
 			pets[u.id] = m
+			var ph = world.heroes.get(u.owner_id, null)
+			if ph:
+				ph.unit.has_pet = true
 		else:
 			mobs[u.id] = m
 		world.units[u.id] = u
@@ -866,7 +871,10 @@ func ev_death(ids: PackedInt32Array) -> void:
 		if m == null:
 			continue
 		mobs.erase(id)
-		pets.erase(id)
+		if pets.erase(id):
+			var ph = world.heroes.get(m.unit.owner_id, null)
+			if ph:
+				ph.unit.has_pet = false
 		world.units.erase(id)
 		m.unit.alive = false
 		_begin_dying(m)
@@ -2222,11 +2230,22 @@ func pet_summon(hero, revive: bool) -> void:
 	_send_pet_state(hero)
 
 func _pet_remove(m: Mob) -> void:
+	var ph = world.heroes.get(m.unit.owner_id, null)
+	if ph:
+		ph.unit.has_pet = false
 	pets.erase(m.unit.id)
 	world.units.erase(m.unit.id)
 	m.unit.alive = false
 	_pending_deaths.append(m.unit.id)
 	_begin_dying(m)
+
+## Сервер: перенести питомца героя в точку (дуэль Арены — вместе с хозяином за ограду и обратно).
+func pet_teleport(hero_id: int, p: Vector3) -> void:
+	for m: Mob in pets.values():
+		if m.unit.owner_id == hero_id:
+			m.pos2 = Vector2(p.x, p.z)
+			m.unit.pos = Vector3(p.x, 0, p.z)
+			m.target = 0
 
 ## Сервер: питомец погиб (spell_system._on_death) — ждёт Воскрешения питомца.
 func pet_died(u: Unit) -> void:
@@ -2248,9 +2267,9 @@ func _pet_refresh(m: Mob, hero) -> void:
 	var frac := u.hp_frac() if u.max_hp > 0.0 else 1.0
 	u.level = hu.level
 	u.duel = hu.duel            # дуэль Арены: питомец — вместе с хозяином
-	u.max_hp = float(m.def["hp"]) * (1.0 + 0.16 * float(hu.level - 1)) * (1.0 + hu.flag("pet_hp"))
+	u.max_hp = float(m.def["hp"]) * (1.0 + 0.2 * float(hu.level - 1)) * (1.0 + hu.flag("pet_hp"))
 	u.hp = u.max_hp * frac
-	u.power = hu.phys_power * (1.0 + hu.flag("pet_dmg")) * 0.85
+	u.power = hu.phys_power * (1.0 + hu.flag("pet_dmg")) * 1.05
 	u.phys_power = u.power
 	u.crit_base = hu.crit_base
 	u.gear_mods = {"dmg_taken": -hu.flag("pet_armor")}
@@ -2267,6 +2286,10 @@ func pet_command(hero, cmd: String, target_id: int) -> void:
 		"follow":
 			st["cmd"] = "follow"
 			st["target"] = 0
+			st["recall"] = true          # бросить бой и вернуться к ноге (иначе тут же выбирал старую цель)
+			var fp: Mob = pets.get(int(st["id"]), null)
+			if fp:
+				fp.target = 0
 		"stay":
 			var p := pet_of(hero.hero_id)
 			st["cmd"] = "stay"
@@ -2385,6 +2408,10 @@ func _pet_target(m: Mob, hero, st: Dictionary, owner_p: Vector2) -> Unit:
 		st["target"] = 0
 	if st["mode"] == "passive":
 		return null
+	if st.get("recall", false):
+		if m.pos2.distance_to(owner_p) > 4.0:
+			return null
+		st["recall"] = false
 	var cur: Unit = world.get_unit(m.target)
 	if cur and cur.alive and m.unit.is_enemy_of(cur) and Vector2(cur.pos.x, cur.pos.z).distance_to(owner_p) < PET_LEASH:
 		return cur

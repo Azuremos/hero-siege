@@ -329,6 +329,8 @@ const TREES := {
 			{"id": "imp_steady", "name": "Улучшенный верный выстрел", "row": 1, "col": 1, "max": 3, "v": 5, "icon": "spell:steady_shot",
 				"proc": {"on": "spell_hit", "spells": ["steady_shot"], "chance": 0.05, "buff": "master_marksman"},
 				"desc": "ПРОК: Верный выстрел с вероятностью {v}% делает следующий Прицельный, Чародейский выстрел или Выстрел химеры мгновенным, бесплатным и на 30% сильнее."},
+			{"id": "lone_wolf", "name": "Одинокий волк", "row": 1, "col": 0, "max": 3, "v": [5, 4], "icon": "spell:aspect_hawk",
+				"desc": "Пока питомец не призван (или погиб): весь урон охотника +{v}%, дальность заклинаний +{v2}%.", "flags": [["lone_wolf", 0.05]]},
 			{"id": "hawk_eye", "name": "Орлиный глаз", "row": 1, "col": 3, "max": 3, "v": 5, "icon": "hawk_eye",
 				"desc": "Дальность выстрелов +{v}%.", "mods": [["global", "range", 0.05]]},
 			{"id": "imp_arcane", "name": "Улучшенный чародейский выстрел", "row": 2, "col": 0, "max": 2, "v": 1, "icon": "spell:arcane_shot",
@@ -337,6 +339,7 @@ const TREES := {
 				"desc": "Весь урон +{v}%.", "mods": [["global", "dmg", 0.02]]},
 			{"id": "trueshot", "name": "Аура меткого выстрела", "row": 3, "col": 1, "max": 3, "v": 2, "icon": "trueshot",
 				"desc": "Шанс крита +{v}%, урон +{v}%.", "mods": [["global", "crit", 0.02], ["global", "dmg", 0.02]]},
+
 			{"id": "aimed_shot_t", "name": "Прицельный выстрел", "row": 4, "col": 1, "max": 1, "v": 1, "icon": "spell:aimed_shot",
 				"req": "trueshot", "spell": "aimed_shot",
 				"desc": "Даёт заклинание «Прицельный выстрел»: долгое прицеливание и огромный урон."},

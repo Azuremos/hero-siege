@@ -53,6 +53,7 @@ const TIERS := {
 }
 const MAX_CAMP_WAVE := 40
 const LEASH := 24.0                     # м от центра лагеря: дальше монстры бросают погоню и возвращаются
+## Лейтенанты — в центре карты (бывшее место арены), главные боссы — в дальних углах.
 ## Лагеря южной половины: id, точка, кольцо, фракция (или босс), min_team — с какого размера команд лагерь открыт
 ## (1 — всегда; 2 — закрыт на 1×1: «половина лагерей у краёв»). Северные — зеркально (id с суффиксом _n).
 const CAMPS := [
@@ -66,8 +67,7 @@ const CAMPS := [
 	{"id": "m4", "pos": Vector2(88, 52), "tier": 2, "faction": "goblins", "min_team": 2},
 	{"id": "s1", "pos": Vector2(-50, 12), "tier": 3, "faction": "orcs", "min_team": 1},
 	{"id": "s2", "pos": Vector2(50, 12), "tier": 3, "faction": "goblins", "min_team": 1},
-	{"id": "s3", "pos": Vector2(-96, 22), "tier": 3, "faction": "undead", "min_team": 2},
-	{"id": "b1", "pos": Vector2(-104, -6), "tier": 4, "boss": "lieutenant", "faction": "undead", "min_team": 1},
+	{"id": "b1", "pos": Vector2(-18, 0), "tier": 4, "boss": "lieutenant", "faction": "undead", "min_team": 1},
 	{"id": "b2", "pos": Vector2(-100, 96), "tier": 4, "boss": "main", "faction": "demons", "min_team": 1},
 ]
 
@@ -76,8 +76,10 @@ const DUEL_FIRST := 180.0               # первая дуэль — на 3-й 
 const DUEL_EVERY := 210.0               # дальше — раз в 3,5 минуты
 const DUEL_WARN := 10.0                 # объявление заранее
 const DUEL_TIME := 90.0                 # бой до смерти или 90 сек. (дальше — у кого больше доля здоровья)
-const DUEL_CENTER := Vector2(0, 0)
-const DUEL_RADIUS := 15.0               # круг арены (стены — генератор карты)
+## Арена — на восточном краю карты (пользователь), не в центре; круг побольше, дуэлянты — в 24 м друг от друга.
+const DUEL_CENTER := Vector2(96, -4)
+const DUEL_RADIUS := 21.0               # круг арены (стены — генератор карты)
+const DUEL_SPOT := 12.0                 # места дуэлянтов: ± от центра по Z
 const DUEL_GOLD := 250                  # победителю: + DUEL_GOLD_MIN за минуту партии
 const DUEL_GOLD_MIN := 25
 

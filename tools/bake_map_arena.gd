@@ -201,6 +201,8 @@ func _plan_roads() -> void:
 		var a := TAU * i / 32.0
 		ring.append(Vector2(cos(a), sin(a)) * 28.0)
 	_roads.append(ring)
+	# дорога от центра к арене дуэлей на краю
+	_roads.append(PackedVector2Array([Vector2(28, 0), Vector2(55, -2), A.DUEL_CENTER - Vector2(A.DUEL_RADIUS + 1.0, 0)]))
 
 func _mirror_line(pts: Array, team: int) -> PackedVector2Array:
 	var out := PackedVector2Array()

@@ -226,6 +226,8 @@ func ev_cast_start(caster_id: int, sid: String, duration: float, channel: bool) 
 	if h == null:
 		return
 	h.casting = true
+	# полоса произнесения героя видна врагам (бой героев) — тот же список, что у кастов мобов
+	world.mobs.casts[caster_id] = {"ab": "", "sid": sid, "start": world.now(), "dur": duration, "interrupt": true}
 	Sfx.play_at("cast_start", h.global_position + Vector3(0, 1.5, 0))
 	if h == world.local_hero or h.ai:
 		h.controller.on_cast_started(sid, duration, channel)
@@ -236,6 +238,7 @@ func ev_cast_end(caster_id: int, sid: String, ok: bool) -> void:
 	if h == null:
 		return
 	h.casting = false
+	world.mobs.casts.erase(caster_id)
 	if ok and sid != "":
 		h.play_action(GameData.SPELLS[sid].get("anim", "cast"))
 	if h == world.local_hero or h.ai:
@@ -698,10 +701,11 @@ var traps: Array = []       # {id, caster, sid, pos, until, arm}
 var _next_trap := 1
 
 func _place_trap(u: Unit, sid: String, sp: Dictionary, pos: Vector3, t: float) -> void:
-	# ловушку ставят под ноги, не дальше 5 м
+	# ловушку забрасывают в точку на земле — не дальше радиуса заклинания
 	var to := Vector2(pos.x - u.pos.x, pos.z - u.pos.z)
-	if to.length() > 5.0:
-		to = to.normalized() * 5.0
+	var reach := GameData.eff_range(u, sid)
+	if to.length() > reach:
+		to = to.normalized() * reach
 	pos = Vector3(u.pos.x + to.x, 0, u.pos.z + to.y)
 	var mine: Array = traps.filter(func(tr): return tr["caster"] == u.id)
 	if mine.size() >= MAX_TRAPS:
@@ -709,6 +713,7 @@ func _place_trap(u: Unit, sid: String, sp: Dictionary, pos: Vector3, t: float) -
 	var id := _next_trap
 	_next_trap += 1
 	traps.append({"id": id, "caster": u.id, "sid": sid, "pos": pos, "until": t + float(sp["trap"]["life"]), "arm": t + 1.0})
+	fx_at("charge_trail", pos, u.pos + Vector3(0, 1.2, 0), 0.0, u.id)      # ловушка летит из рук охотника
 	ev_trap.rpc(id, str(sp["trap"]["vfx"]), pos, true)
 
 func _remove_trap(tr: Dictionary) -> void:
@@ -992,6 +997,8 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 		match e["type"]:
 			"damage":
 				var mult := 1.0 + amp + _m(caster, "dmg")
+				if caster and caster.flag("lone_wolf") > 0.0 and not caster.has_pet:
+					mult += caster.flag("lone_wolf")      # Одинокий волк: охотник без питомца
 				if sid == "auto":
 					mult += _m(caster, "auto")
 				var amount := randf_range(e["min"], e["max"]) * pw * maxf(0.1, mult) * pk

@@ -391,7 +391,10 @@ func eff_cd(u: Unit, sid: String) -> float:
 	return maxf(0.0, float(sp["cd"]) + u.mod("cd_add", sid, sp["school"]))
 
 func eff_range(u: Unit, sid: String) -> float:
-	return float(SPELLS[sid]["range"]) * (1.0 + u.mod("range"))
+	var k := u.mod("range")
+	if not u.has_pet and u.flag("lone_wolf") > 0.0:
+		k += u.flag("lone_wolf") * 0.8      # Одинокий волк: без питомца стреляет дальше
+	return float(SPELLS[sid]["range"]) * (1.0 + k)
 
 # ---------------------------------------------------------------- Предметы
 

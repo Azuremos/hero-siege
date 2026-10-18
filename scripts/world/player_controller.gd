@@ -252,12 +252,13 @@ func _process(delta: float) -> void:
 		return
 	_build_tick(delta)
 	var typing: bool = world.hud.is_typing()
-	var w := Input.is_action_pressed("move_forward") and not typing
-	var s := Input.is_action_pressed("move_back") and not typing
-	var a := Input.is_action_pressed("turn_left") and not typing
-	var d := Input.is_action_pressed("turn_right") and not typing
-	var q := Input.is_action_pressed("strafe_left") and not typing
-	var e := Input.is_action_pressed("strafe_right") and not typing
+	# клавиша движения, назначенная на ячейку панели или окно (Q, E…), героя не двигает — иначе сбивает произнесение
+	var w := Input.is_action_pressed("move_forward") and not typing and not Keys.movement_taken("move_forward")
+	var s := Input.is_action_pressed("move_back") and not typing and not Keys.movement_taken("move_back")
+	var a := Input.is_action_pressed("turn_left") and not typing and not Keys.movement_taken("turn_left")
+	var d := Input.is_action_pressed("turn_right") and not typing and not Keys.movement_taken("turn_right")
+	var q := Input.is_action_pressed("strafe_left") and not typing and not Keys.movement_taken("strafe_left")
+	var e := Input.is_action_pressed("strafe_right") and not typing and not Keys.movement_taken("strafe_right")
 	move_forward = (1.0 if w else 0.0) - (1.0 if s else 0.0)
 	if _lmb and _rmb:
 		move_forward = 1.0
@@ -852,7 +853,7 @@ func bot_tick(delta: float) -> void:
 		if sp.get("delivery", "") == "trap":
 			# ловушку — под ноги навстречу врагу, когда он в 20 м
 			if tu and _dist_to(tu) < 20.0:
-				var tp: Vector3 = hero.global_position + (tu.pos - hero.global_position).normalized() * 4.0
+				var tp: Vector3 = tu.pos if _dist_to(tu) <= GameData.eff_range(hero.unit, sid) else hero.global_position + (tu.pos - hero.global_position).normalized() * 4.0
 				_send_server("request_cast", [sid, 0, tp, 0.0])
 				return
 			continue
@@ -1044,7 +1045,7 @@ func _bot_try_interrupt() -> bool:
 			return false
 		for cid in world.mobs.casts:
 			var cu: Unit = world.get_unit(cid)
-			if cu and cu.alive and world.mobs.casts[cid]["interrupt"] and _dist_to(cu) <= float(isp["range"]) + cu.radius:
+			if cu and cu.alive and cu.kind != "hero" and hero.unit.is_enemy_of(cu) and world.mobs.casts[cid]["interrupt"] and _dist_to(cu) <= float(isp["range"]) + cu.radius:
 				if cast_spell != "":
 					_send_server("request_cancel", [])
 					return true

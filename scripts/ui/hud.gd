@@ -2186,6 +2186,8 @@ func _make_enemy_cast_bar(w: float, h: float, font: int) -> Control:
 
 func _fill_enemy_cast(bar: Control, cdata: Dictionary, t: float, with_time: bool) -> void:
 	var ab: Dictionary = GameData.MOB_ABILITIES.get(cdata["ab"], {})
+	if cdata.has("sid"):
+		ab = GameData.SPELLS.get(cdata["sid"], {})       # каст героя (бой героев)
 	var frac := clampf((t - float(cdata["start"])) / maxf(float(cdata["dur"]), 0.01), 0.0, 1.0)
 	var fill: ColorRect = bar.get_meta("fill")
 	var can: bool = cdata["interrupt"]
@@ -2202,7 +2204,8 @@ func _fill_enemy_cast(bar: Control, cdata: Dictionary, t: float, with_time: bool
 func _update_enemy_casts(tu: Unit, t: float) -> void:
 	var casts: Dictionary = world.mobs.casts
 	var tbar: Control = _target_frame["ecast"]
-	if tu and casts.has(tu.id):
+	var lu: Unit = world.local_hero.unit if world.local_hero else null
+	if tu and casts.has(tu.id) and (tu.kind != "hero" or (lu and lu.is_enemy_of(tu))):
 		_fill_enemy_cast(tbar, casts[tu.id], t, true)
 	else:
 		tbar.visible = false
@@ -2216,8 +2219,8 @@ func _update_enemy_casts(tu: Unit, t: float) -> void:
 	if cam:
 		for id in casts:
 			var u: Unit = world.get_unit(id)
-			if u == null or not u.alive:
-				continue
+			if u == null or not u.alive or (u.kind == "hero" and (lu == null or not lu.is_enemy_of(u))):
+				continue      # над головой — только касты врагов (свои и союзные — на рамках)
 			var p := u.pos
 			if u.node and is_instance_valid(u.node):
 				p = u.node.global_position

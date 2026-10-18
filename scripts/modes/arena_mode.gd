@@ -447,12 +447,13 @@ func _start_duel(t: float) -> void:
 		world.spells._interrupt(h)
 		_restore(h)
 		u.duel = 1
-		var spot := duel_center + Vector3(0, 0, (8.0 if i == 0 else -8.0))
+		var spot := duel_center + Vector3(0, 0, (A.DUEL_SPOT if i == 0 else -A.DUEL_SPOT))
 		h.ev_respawn.rpc(spot)
 		h.rotation.y = 0.0 if i == 0 else PI
 		var pet: Unit = world.mobs.pet_of(h.hero_id)
 		if pet:
 			pet.duel = 1
+			world.mobs.pet_teleport(h.hero_id, spot + Vector3(2.0, 0, 0))
 	duel_state = "fight"
 	_duel_at = t
 	world.announce_all("Дуэль: %s против %s — бой!" % [hs[0].player_name, hs[1].player_name], Color(1, 0.85, 0.3))
@@ -511,6 +512,7 @@ func _finish_duel(win_id: int, t: float) -> void:
 			if u.resource == "mana":
 				u.mana = u.max_mana * float(sv["mana"])
 			h.ev_respawn.rpc(sv["pos"])
+			world.mobs.pet_teleport(hid, sv["pos"] + Vector3(2.0, 0, 0))
 	duel_ids = []
 	_duel_saved.clear()
 	if win and goal_kind == "duels" and duel_wins[clampi(win.team, 0, 1)] >= goal_n:

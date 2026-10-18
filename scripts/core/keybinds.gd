@@ -84,6 +84,25 @@ func action_for_event(ev: InputEventKey) -> String:
 			return a
 	return ""
 
+## Клавиша движения action (W, S, A, D, Q, E) сейчас нажата как горячая клавиша действия (с теми же Shift/Ctrl/Alt) —
+## тогда она не двигает героя: игрок поставил на неё заклинание.
+func movement_taken(action: String) -> bool:
+	var sh := Input.is_key_pressed(KEY_SHIFT)
+	var ct := Input.is_key_pressed(KEY_CTRL)
+	var al := Input.is_key_pressed(KEY_ALT)
+	for ev in InputMap.action_get_events(action):
+		var k := ev as InputEventKey
+		if k == null:
+			continue
+		var code: int = k.physical_keycode if k.physical_keycode != 0 else k.keycode
+		if not Input.is_physical_key_pressed(code):
+			continue
+		for a in actions:
+			var b: Dictionary = binds.get(a, {})
+			if not b.is_empty() and int(b["key"]) == code and bool(b["shift"]) == sh and bool(b["ctrl"]) == ct and bool(b["alt"]) == al:
+				return true
+	return false
+
 ## Назначить клавишу (снимает её с других действий).
 func bind(action: String, ev: InputEventKey) -> void:
 	var nb := {"key": ev.physical_keycode, "shift": ev.shift_pressed, "ctrl": ev.ctrl_pressed, "alt": ev.alt_pressed}
