@@ -302,8 +302,8 @@ func pick_unit(screen_pos: Vector2) -> int:
 	var vp_h := get_viewport().get_visible_rect().size.y
 	var tan_half := tan(deg_to_rad(camera.fov) * 0.5)
 	for u: Unit in world.units.values():
-		if u.kind == "castle" or not u.alive:
-			continue
+		if (u.kind == "castle" and not hero.unit.is_enemy_of(u)) or not u.alive:
+			continue        # свою базу не выбрать; вражескую (Арена) — можно, её бьют заклинаниями и автоатакой
 		var h := 1.2 * (u.radius / 0.6)
 		var p := u.pos + Vector3(0, h, 0)
 		if camera.is_position_behind(p):
