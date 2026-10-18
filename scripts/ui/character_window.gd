@@ -139,7 +139,7 @@ func refresh() -> void:
 		_stats_box.add_child(l)
 	_stats_box.add_child(HSeparator.new())
 	var u: Unit = hero.unit
-	var res: String = {"rage": "Ярость", "focus": "Концентрация"}.get(u.resource, "Мана")
+	var res: String = {"rage": "Ярость", "focus": "Концентрация", "energy": "Энергия"}.get(u.resource, "Мана")
 	for line in [
 		"Здоровье: %d" % int(u.max_hp),
 		"%s: %d" % [res, int(u.max_mana)],

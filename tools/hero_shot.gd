@@ -115,6 +115,12 @@ static func outfit_bases(cid: String, hi: int) -> Array:
 		helms = ["leather_hood", "hood"]
 		chests = ["leather", "mail"]
 		pads = ["pads_mail"]
+	if cid == "rogue":        # разбойник — кожа и кинжалы в обеих руках
+		helms = ["leather_hood", "hood"]
+		chests = ["leather"]
+		pads = ["pads_mail"]
+		weapons = ["dagger"]
+		offs = ["dagger"]
 	if cid == "shaman":       # шаман — кольчуга стихий или обычная, шапка духов
 		helms = ["spirit_hat", "warhelm"]
 		chests = ["mail_caster", "mail"]

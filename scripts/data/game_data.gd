@@ -52,6 +52,7 @@ const SPELL_FILES := [
 	preload("res://scripts/data/spells/warrior.gd"),
 	preload("res://scripts/data/spells/hunter.gd"),
 	preload("res://scripts/data/spells/shaman.gd"),
+	preload("res://scripts/data/spells/rogue.gd"),
 ]
 
 const SCHOOLS := ClassData.SCHOOLS
@@ -278,6 +279,8 @@ func compute_mods(class_id: String, ranks: Dictionary, choices: Dictionary = {},
 			if c != "" and SPELLS[c].get("passive", false):
 				sources.append([SPELLS[c], 1, c])
 	sources.append_array(extra)      # бонусы сетов и эффекты легендарок (gear_sources)
+	if CLASSES.has(class_id) and CLASSES[class_id].has("flags"):
+		sources.append([{"flags": CLASSES[class_id]["flags"]}, 1, "class"])      # врождённое у класса (разбойник — два клинка)
 	for src in sources:
 		var t: Dictionary = src[0]
 		var r: int = src[1]

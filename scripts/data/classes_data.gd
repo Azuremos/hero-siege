@@ -94,6 +94,21 @@ const CLASSES := {
 		"races": ["dwarf", "draenei"],
 		"melee_trees": [1],
 	},
+	# Разбойник: энергия вместо маны (100, восполняется сама 10 в сек.), приёмы серии (до 5) — завершающие приёмы
+	# тратят их, незаметность и приёмы из неё, яды на оружии (пассивы книги), два клинка всегда (flags dual_wield).
+	# Модель — разбойник KayKit в капюшоне, тёмная перекраска; в руках — по ножу, кинжалы и мечи — по надетым вещам.
+	"rogue": {
+		"name": "Разбойник", "color": Color(1.0, 0.96, 0.41),
+		"desc": "Мастер клинков и теней. Незаметность и внезапные удары, яды, приёмы серии и сокрушительные добивания.",
+		"model": "Rogue_Hooded", "show": ["Knife", "Knife_Offhand"], "hide": [], "recolor": "rogue",
+		"resource": "energy", "energy_regen": 10.0, "base_hp": 320.0, "base_mana": 100.0, "armor": 0.12, "dmg_mult": 1.0,
+		"attrs": {"str": 10, "agi": 24, "sta": 18, "int": 6, "spi": 8}, "grow": {"str": 0.8, "agi": 2.8, "sta": 2.8, "int": 0.3, "spi": 0.5},
+		"auto": {"range": 4.0, "min": 18.0, "max": 24.0, "speed": 1.6, "school": "physical", "ranged": false},
+		"spells": ["sinister_strike", "eviscerate", "slice_and_dice", "stealth", "ambush", "cheap_shot", "kick", "sprint",
+			"mutilate", "fan_of_knives", "kidney_shot", "deadly_poison", "feint", "vanish", "adrenaline_rush", "find_weakness"],
+		"ap_attr": "agi",       # сила атаки — от ловкости
+		"flags": [["dual_wield", 1.0]],     # второй клинок в левой руке — всегда
+	},
 }
 
 ## Расы, с которыми доступен класс (поле races; без него — все).

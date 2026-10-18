@@ -128,7 +128,7 @@ static func tooltip(sid: String, u: Unit = null) -> String:
 		return GameData.item_tooltip(sid.trim_prefix("item:"))
 	var sp: Dictionary = GameData.SPELLS[sid]
 	var mana := float(sp["mana"]) if u == null else GameData.spell_cost(u, sid)
-	var res_name: String = {"rage": "Ярость", "focus": "Концентрация"}.get(u.resource if u != null else _spell_resource(sid), "Мана")
+	var res_name: String = {"rage": "Ярость", "focus": "Концентрация", "energy": "Энергия"}.get(u.resource if u != null else _spell_resource(sid), "Мана")
 	var cast := float(sp["cast"]) if u == null else GameData.eff_cast(u, sid)
 	var cd := float(sp["cd"]) if u == null else GameData.eff_cd(u, sid)
 	var rng := float(sp["range"]) if u == null else GameData.eff_range(u, sid)

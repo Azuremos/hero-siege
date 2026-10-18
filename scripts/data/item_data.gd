@@ -94,11 +94,14 @@ static func material(ilvl: int, gender: int) -> String:
 const TEMPLATES := {
 	"staff": {"name": "посох", "g": 0, "slot": "weapon", "classes": ["mage", "priest", "shaman"], "icon": "staff", "role": "caster", "stats": {"int": 4, "spi": 2, "sp": 6}, "models": ["staff_A", "staff_A", "staff_B", "staff_B", "staff_B", "staff_B"]},
 	"wand": {"name": "жезл", "g": 0, "slot": "weapon", "classes": ["mage", "priest"], "icon": "wand", "role": "caster", "stats": {"int": 3, "sp": 8}, "models": ["wand_A"]},
-	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior", "shaman"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_B", "sword_C", "sword_C"]},
+	"sword": {"name": "меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior", "shaman", "rogue"], "icon": "sword", "role": "phys", "stats": {"str": 4, "sta": 2, "ap": 6}, "models": ["sword_A", "sword_A", "sword_B", "sword_B", "sword_C", "sword_C"]},
 	# двуручный меч: сильнее одноручного, но левая рука пуста (без щита) и удары двуручные
 	"greatsword": {"name": "двуручный меч", "g": 0, "slot": "weapon", "classes": ["paladin", "warrior", "shaman"], "icon": "greatsword", "role": "phys", "stats": {"str": 7, "sta": 3, "ap": 10}, "models": ["sword_D", "sword_D", "sword_D", "sword_E", "sword_E", "sword_E"]},
 	"axe": {"name": "топор", "g": 0, "slot": "weapon", "classes": ["warrior", "shaman"], "icon": "axe", "role": "phys", "stats": {"str": 5, "agi": 2, "ap": 6}, "models": ["axe_A", "axe_A", "axe_B", "axe_B", "axe_C", "axe_C"]},
-	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest", "shaman"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
+	"mace": {"name": "булава", "g": 1, "slot": "weapon", "classes": ["paladin", "priest", "shaman", "rogue"], "icon": "mace", "role": "any", "stats": {"str": 2, "int": 3, "sp": 4, "ap": 3}, "models": ["hammer_A", "hammer_A", "hammer_B", "hammer_B", "hammer_C", "hammer_C"]},
+	# разбойник (после сессии 13): кинжал на ловкость — одноручный, второй — в левую руку
+	"dagger": {"name": "кинжал", "g": 0, "slot": "weapon", "classes": ["rogue", "warrior"], "no_affix": ["str"], "icon": "dagger", "role": "phys",
+		"stats": {"agi": 4, "sta": 2, "ap": 6}, "models": ["dagger_A", "dagger_A", "dagger_B", "dagger_B", "dagger_B", "dagger_B"]},
 	"bow": {"name": "лук", "g": 0, "slot": "weapon", "classes": ["hunter"], "no_affix": ["str"], "icon": "bow", "role": "phys", "stats": {"agi": 5, "sta": 2, "ap": 6},
 		"models": ["bow_A_withString", "bow_A_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString", "bow_B_withString"]},
 	"crossbow": {"name": "арбалет", "g": 0, "slot": "weapon", "classes": ["hunter"], "no_affix": ["str"], "icon": "crossbow", "role": "phys", "stats": {"agi": 5, "ap": 8},
@@ -638,7 +641,7 @@ static func _legend_field(d: Dictionary, key: String, fallback: String) -> Strin
 
 ## Какие роли вещей полезны классу (лавка показывает только подходящее герою): воину и охотнику — физ.,
 ## магу и жрецу — заклинателя, паладину и шаману — обе (Свет / Стихии и ближний бой).
-const CLASS_GEAR_ROLES := {"warrior": ["phys"], "hunter": ["phys"], "mage": ["caster"], "priest": ["caster"],
+const CLASS_GEAR_ROLES := {"warrior": ["phys"], "hunter": ["phys"], "rogue": ["phys"], "mage": ["caster"], "priest": ["caster"],
 	"paladin": ["phys", "caster"], "shaman": ["phys", "caster"]}
 
 ## Вещь подходит классу: её можно надеть (classes) и её роль полезна классу (role «any» — всем).

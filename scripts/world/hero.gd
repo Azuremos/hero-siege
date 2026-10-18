@@ -332,6 +332,7 @@ func _physics_process(delta: float) -> void:
 	if not world.is_server():
 		unit.pos = global_position
 	_update_anim(delta)
+	_update_stealth()
 	_shield.visible = alive_visual and (net_absorb > 0.0 or _has_buff("immune"))
 	_update_wings(delta)
 	if Net.is_server():
@@ -573,6 +574,26 @@ func _update_wings(delta: float) -> void:
 	_wings_t += delta
 	var flap := sin(_wings_t * 3.0)
 	_wings.scale = Vector3(1.0 + flap * 0.06, 1.0 + flap * 0.03, 1.0)
+
+# ---------------------------------------------------------------- незаметность разбойника
+## Свой разбойник и союзники видят его полупрозрачным, враги (бой героев) — не видят совсем: ни модели, ни имени.
+## Состояние — из снимка героев (бафф «stealth»), меняется редко — пересчёт только при смене.
+var _stealth_mode := 0        # 0 — виден, 1 — полупрозрачный (свой, союзник), 2 — скрыт (враг)
+
+func _update_stealth() -> void:
+	var mode := 0
+	if _has_buff("stealth") and alive_visual:
+		var lh = world.local_hero
+		mode = 2 if lh != null and lh != self and lh.unit.is_enemy_of(unit) else 1
+	if mode == _stealth_mode or model == null:
+		return
+	_stealth_mode = mode
+	model.visible = mode != 2
+	if _nameplate:
+		_nameplate.visible = mode != 2
+	for gi in model.find_children("*", "GeometryInstance3D", true, false):
+		(gi as GeometryInstance3D).transparency = 0.6 if mode == 1 else 0.0
+		(gi as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if mode == 1 else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 func _has_buff(key: String) -> bool:
 	for b in net_buffs:

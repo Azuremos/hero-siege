@@ -61,7 +61,7 @@ const SPELL_MULT := {
 
 ## Множитель урона класса по героям (подгонка таблицы «класс × класс»).
 ## Подбор по таблице 13-й сессии: воин в зеркале и против паладина упирался в 2 минуты.
-const CLASS_MULT := {"mage": 1.0, "paladin": 1.0, "priest": 1.0, "warrior": 1.25, "hunter": 1.0, "shaman": 1.0}
+const CLASS_MULT := {"mage": 1.0, "paladin": 1.0, "priest": 1.0, "warrior": 1.25, "hunter": 1.0, "shaman": 1.0, "rogue": 1.15}
 
 ## Устойчивость героя уровня level по настройкам режима cfg.
 static func resil(cfg: Dictionary, level: int) -> float:

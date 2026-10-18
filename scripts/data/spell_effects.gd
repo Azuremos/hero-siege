@@ -9,6 +9,7 @@ const SPELL_LEVELS := {
 	"smite": 1, "flash_heal": 1, "renew": 2, "pw_shield": 3, "pw_fortitude": 4, "sw_pain": 4, "holy_fire": 5, "divine_spirit": 6, "circle_of_healing": 7, "prayer_of_healing": 8, "light_barrier": 9, "holy_nova": 11,
 	"heroic_strike": 1, "charge": 1, "battle_shout": 2, "thunder_clap": 3, "taunt": 4, "bloodthirst": 5, "whirlwind": 6, "demoralizing_shout": 7, "execute": 8, "shield_wall": 9, "recklessness": 11,
 	"steady_shot": 1, "call_pet": 1, "mend_pet": 2, "silencing_shot": 3, "revive_pet": 4,
+	"sinister_strike": 1, "eviscerate": 1, "stealth": 2, "kick": 3, "slice_and_dice": 4, "ambush": 4, "sprint": 5, "cheap_shot": 6,
 	"lightning_bolt": 1, "healing_wave": 1, "flame_shock": 2, "wind_shear": 3, "searing_totem": 4, "lightning_shield": 6,
 }
 
@@ -34,6 +35,9 @@ const BUFF_INFO := {
 	# PvP (сессия 13): утомление боем — получаемое лечение падает в долгой схватке героев и в дуэли
 	"dampening": {"name": "Утомление боем", "color": Color(0.85, 0.35, 0.3), "icon": "mortal_strike", "debuff": true,
 		"desc": "Долгая схватка героев или дуэль: получаемое лечение снижается на 8% каждые 10 сек."},
+	# разбойник: незаметность снимается любым полученным ударом (break_on_hit); нанесённый — в spell_system
+	"stealth": {"name": "Незаметность", "color": Color(0.55, 0.5, 0.75), "icon": "stealth", "break_on_hit": true, "no_timer": true,
+		"desc": "Враги не видят разбойника. Удар, полученный урон или заклинание выводят из незаметности."},
 	"rooted": {"name": "Обездвиживание", "color": Color(0.45, 0.8, 1.0), "icon": "frost_nova", "debuff": true, "desc": "Не может сойти с места."},
 	"taunted": {"name": "Провокация", "color": Color(1.0, 0.35, 0.25), "icon": "taunt", "debuff": true, "desc": "Атакует того, кто его спровоцировал."},
 	"demoralized": {"name": "Деморализация", "color": Color(0.8, 0.5, 0.4), "icon": "demoralizing_shout", "debuff": true, "desc": "Наносит на 20% меньше урона."},

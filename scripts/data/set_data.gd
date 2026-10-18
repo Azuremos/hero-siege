@@ -23,6 +23,8 @@ const BASES := {
 	"mail": {"helm": "hood", "shoulders": "pads_mail", "chest": "mail", "boots": "boots", "ring": "ring_might", "amulet": "amulet"},
 	# шаман-заклинатель: кольчуга стихий и шапка духов (сессия 11); Совершенствование носит обычную кольчугу
 	"mail_shaman": {"helm": "spirit_hat", "shoulders": "pads_mail", "chest": "mail_caster", "boots": "boots", "ring": "ring_mind", "amulet": "amulet"},
+	# разбойник: кожа на ловкость
+	"leather": {"helm": "leather_hood", "shoulders": "pads_mail", "chest": "leather", "boots": "boots", "ring": "ring_agile", "amulet": "amulet_hunt"},
 	"mail_shaman_melee": {"helm": "spirit_hat", "shoulders": "pads_mail", "chest": "mail", "boots": "boots", "ring": "ring_might", "amulet": "amulet"},
 }
 const SLOT_NOUN := {"helm": "Венец", "shoulders": "Наплечье", "chest": "Облачение", "boots": "Поступь", "ring": "Перстень", "amulet": "Медальон"}
@@ -103,6 +105,31 @@ const SETS := {
 				"desc": "Слово Тьмы: Боль и Взрыв разума (и вариант ряда) на 15% сильнее."},
 			5: {"proc": {"on": "spell_hit", "school": "shadow", "chance": 0.12, "icd": 4.0, "spell": "shadowy_apparition"},
 				"desc": "Заклинания Тьмы с вероятностью 12% выпускают Призрачное явление: 26–32 урона тьмой цели и врагам рядом."}}},
+	# ---------------- Разбойник
+	"set_assassin": {"class": "rogue", "tree": 0, "name": "Ядовитого Шёпота", "armor": "leather", "affixes": ["agi", "crit"],
+		"look": Color(0.6, 1.0, 0.55),
+		"bonuses": {
+			2: {"stats": {"agi": 12, "crit": 0.02}, "desc": "+12 к ловкости, +2% к шансу крит. удара."},
+			3: {"mods": [["school:nature", "amount", 0.15], ["spell:mutilate", "amount", 0.1]],
+				"desc": "Яды на 15% сильнее, заклинание ряда «Ротация» (любой вариант) — на 10%."},
+			5: {"proc": {"on": "cast", "spells": ["eviscerate", "envenom", "kidney_shot", "slice_and_dice", "nightblade"], "chance": 0.35, "icd": 1.0, "combo": 2},
+				"desc": "Завершающий приём с вероятностью 35% сразу даёт 2 приёма серии."}}},
+	"set_combat_r": {"class": "rogue", "tree": 1, "name": "Кровавых Клинков", "armor": "leather", "affixes": ["agi", "sta"],
+		"look": Color(1.1, 0.55, 0.45),
+		"bonuses": {
+			2: {"stats": {"agi": 12, "ap": 12}, "desc": "+12 к ловкости, +12 к силе атаки."},
+			3: {"mods": [["spell:sinister_strike", "amount", 0.15], ["spell:eviscerate", "amount", 0.15]],
+				"desc": "Коварный удар и Потрошение на 15% сильнее."},
+			5: {"proc": {"on": "auto", "chance": 0.15, "icd": 2.0, "mana_pct": 0.2, "combo": 1},
+				"desc": "Автоатака с вероятностью 15% восполняет 20 энергии и даёт 1 приём серии."}}},
+	"set_shadow_r": {"class": "rogue", "tree": 2, "name": "Ночной Тени", "armor": "leather", "affixes": ["agi", "crit"],
+		"look": Color(0.65, 0.55, 1.1),
+		"bonuses": {
+			2: {"stats": {"agi": 12, "crit": 0.02}, "desc": "+12 к ловкости, +2% к шансу крит. удара."},
+			3: {"mods": [["spell:ambush", "amount", 0.15], ["spell:hemorrhage", "amount", 0.15]],
+				"desc": "Внезапный удар и заклинание ряда «Ротация» (любой вариант) на 15% сильнее."},
+			5: {"proc": {"on": ["auto", "spell_hit"], "school": "physical", "chance": 0.08, "icd": 15.0, "buff": "shadow_dance", "dur": 5.0},
+				"desc": "Удары оружием с вероятностью 8% дают 5 сек. Танца теней (не чаще раза в 15 сек.)."}}},
 	# ---------------- Воин
 	"set_arms": {"class": "warrior", "tree": 0, "name": "Полководца Старых Войн", "armor": "plate", "affixes": ["str", "crit"],
 		"look": Color(0.9, 0.7, 0.5),
@@ -217,6 +244,13 @@ const LEGENDARIES := {
 	"leg_ancestor_wall": {"name": "Стена Предков", "base": "shield", "class": "warrior", "icon": "shield",
 		"effect": {"mods": [["spell:shield_wall", "cd_add", -45.0], ["global", "dmg_taken", -0.05]], "stats": {"block": 0.05}},
 		"desc": "Шанс блока +5%, получаемый урон −5%, перезарядка заклинания ряда «Личная защита» −45 сек."},
+	# разбойник (после сессии 13)
+	"leg_night_fang": {"name": "Клык Ночи", "base": "dagger", "class": "rogue", "icon": "dagger",
+		"effect": {"stats": {"agi": 10}, "proc": {"on": ["auto", "spell_hit"], "school": "physical", "chance": 0.15, "icd": 2.0, "combo": 1}},
+		"desc": "Ловкость +10. Удары оружием с вероятностью 15% дают 1 приём серии."},
+	"leg_thousand_cuts": {"name": "Клинок Тысячи Порезов", "base": "sword", "class": "rogue", "icon": "sword",
+		"effect": {"mods": [["global", "crit", 0.03]], "proc": {"on": "auto_crit", "crit": true, "chance": 0.5, "icd": 5.0, "reset": "row:0"}},
+		"desc": "Шанс крита +3%. Критическая автоатака с вероятностью 50% сразу восстанавливает заклинание ряда «Ротация»."},
 	"leg_wind_bow": {"name": "Лук Северного Ветра", "base": "bow", "class": "hunter", "icon": "bow",
 		"effect": {"flags": [["extra:steady_shot", 2.0]]},
 		"desc": "Верный выстрел пробивает цель и летит ещё в 2 врагов рядом."},

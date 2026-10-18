@@ -2419,6 +2419,8 @@ func _pet_target(m: Mob, hero, st: Dictionary, owner_p: Vector2) -> Unit:
 		var best: Unit = null
 		var bd := INF
 		for e: Unit in world.enemies_near(m.unit, owner_p, PET_AGGRO):
+			if e.stealthed:
+				continue      # разбойника в незаметности питомец не видит
 			var d := Vector2(e.pos.x, e.pos.z).distance_to(m.pos2)
 			if d < bd:
 				best = e
@@ -2431,7 +2433,7 @@ func _pet_target(m: Mob, hero, st: Dictionary, owner_p: Vector2) -> Unit:
 	# в PvP: вражеский герой, который бьёт охотника или питомца
 	for la: int in [hero.unit.last_attacker, m.unit.last_attacker]:
 		var lu: Unit = world.get_unit(la)
-		if lu and lu.alive and lu.kind == "hero" and m.unit.is_enemy_of(lu) and Vector2(lu.pos.x, lu.pos.z).distance_to(owner_p) < PET_AGGRO:
+		if lu and lu.alive and lu.kind == "hero" and not lu.stealthed and m.unit.is_enemy_of(lu) and Vector2(lu.pos.x, lu.pos.z).distance_to(owner_p) < PET_AGGRO:
 			return lu
 	for e: Unit in query_radius(owner_p, PET_AGGRO):
 		var em: Mob = mobs.get(e.id, null)

@@ -14,7 +14,7 @@ var _regen_accum := 0.0
 func _ready() -> void:
 	world = get_parent()
 
-const RES_SHORTAGE := {"rage": "Недостаточно ярости", "focus": "Недостаточно концентрации", "mana": "Недостаточно маны"}
+const RES_SHORTAGE := {"rage": "Недостаточно ярости", "focus": "Недостаточно концентрации", "energy": "Недостаточно энергии", "mana": "Недостаточно маны"}
 ## Концентрация охотника восполняется сама: столько единиц в секунду (скорость — от haste).
 const FOCUS_REGEN := 6.0
 
@@ -99,6 +99,13 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 		return _feedback(peer, sid, "Сейчас нельзя")
 	if t < u.silence_until or t < u.fear_until:
 		return _feedback(peer, sid, "Сейчас нельзя: вы под контролем")
+	# разбойник: незаметность — только вне боя, приёмы из незаметности, завершающие — с очками серии
+	if sp.get("out_of_combat", false) and t < u.combat_until:
+		return _feedback(peer, sid, "Нельзя в бою")
+	if sp.get("requires_stealth", false) and not (u.has_buff("stealth") or u.has_buff("shadow_dance")):
+		return _feedback(peer, sid, "Только из незаметности")
+	if sp.get("finisher", false) and u.combo <= 0:
+		return _feedback(peer, sid, "Нет приёмов серии")
 	if t < float(st.get("locked", {}).get(sp["school"], 0.0)):
 		return _feedback(peer, sid, "Школа «%s» заблокирована: %d сек." % [GameData.SCHOOLS[sp["school"]]["name"], int(ceil(float(st["locked"][sp["school"]]) - t))])
 	# во льду Ледяной гробницы можно бить только саму гробницу (иначе одиночке не выбраться)
@@ -128,6 +135,8 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 			var tu: Unit = world.get_unit(target_id)
 			if tu == null or not tu.alive or not u.is_enemy_of(tu):
 				return _feedback(peer, sid, "Неверная цель")
+			if tu.stealthed and tu.kind == "hero":
+				return _feedback(peer, sid, "Цель не видна")
 			if _dist(u, tu) > max_range + tu.radius + 1.5:
 				return _feedback(peer, sid, "Цель слишком далеко")
 			if sp.has("min_range") and _dist(u, tu) < float(sp["min_range"]):
@@ -258,6 +267,9 @@ func _cast_target_lost(u: Unit, c: Dictionary) -> bool:
 	if not tu.alive:
 		_cast_lost_reason = "Цель мертва"
 		return true
+	if _unseen_by(u, tu):
+		_cast_lost_reason = "Цель не видна"
+		return true
 	if _dist(u, tu) > GameData.eff_range(u, c["sid"]) + tu.radius + 3.0:
 		_cast_lost_reason = "Цель слишком далеко"
 		return true
@@ -310,8 +322,16 @@ func server_tick(delta: float, t: float) -> void:
 			var u: Unit = hero.unit
 			if not u.alive:
 				continue
+			# незаметность: враги не видят и не выбирают целью, пока есть бафф
+			u.stealthed = u.has_buff("stealth")
+			if u.stealthed:
+				u.unseen_until = maxf(u.unseen_until, t + 0.8)
 			if u.resource == "focus":
 				u.mana = minf(u.max_mana, u.mana + FOCUS_REGEN * 0.5 * (1.0 + u.mod("haste")))
+			elif u.resource == "energy":
+				# энергия разбойника: своя скорость класса, быстрее со скоростью атак и Выбросом адреналина
+				var er := float(GameData.CLASSES.get(hero.class_id, {}).get("energy_regen", 10.0))
+				u.mana = minf(u.max_mana, u.mana + er * 0.5 * (1.0 + u.mod("haste") + u.mod("energy_regen")))
 			elif u.resource == "rage":
 				# ярость не восполняется сама и угасает вне боя
 				if t > u.combat_until:
@@ -349,7 +369,7 @@ func _auto_attack(hero, st: Dictionary, t: float) -> void:
 	if tid == 0 or not st["cast"].is_empty() or t < st["auto_ready"]:
 		return
 	var tu: Unit = world.get_unit(tid)
-	if tu == null or not tu.alive:
+	if tu == null or not tu.alive or _unseen_by(hero.unit, tu):
 		st["auto_target"] = 0
 		return
 	var auto: Dictionary = GameData.CLASSES[hero.class_id]["auto"]
@@ -405,7 +425,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 	var t: float = world.now()
 	var st := _hstate(hero.hero_id)
 	var tu: Unit = world.get_unit(target_id)
-	if sp["target"] == "enemy" and (tu == null or not tu.alive):
+	if sp["target"] == "enemy" and (tu == null or not tu.alive or _unseen_by(u, tu)):
 		ev_cast_end.rpc(u.id, "", false)
 		return
 	if world.mobs.pet_spell_error(hero, sp) != "":
@@ -448,6 +468,20 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			sp = _amplified(sp, 1.0 + amp)
 	if sp.has("rage_gain"):
 		gain_rage(u, float(sp["rage_gain"]), t)
+	# разбойник: приём из незаметности сильнее (stealth_amp, «Поиск слабости»), завершающий — по очкам серии;
+	# любое заклинание, кроме keeps_stealth, выводит из незаметности (нанесённый и полученный урон — тоже)
+	var from_stealth := u.has_buff("stealth") or u.has_buff("shadow_dance")
+	if from_stealth and (sp.has("stealth_amp") or sp.get("requires_stealth", false)):
+		var samp := float(sp.get("stealth_amp", 0.0)) + u.mod("stealth_amp")
+		if samp > 0.0:
+			sp = _amplified(sp, 1.0 + samp)
+	var used_combo := 0
+	if sp.get("finisher", false):
+		used_combo = u.combo
+		sp = _finisher(sp, used_combo)
+		u.combo = 0
+	if u.has_buff("stealth") and not sp.get("keeps_stealth", false):
+		_break_stealth(u)
 	_trigger_procs(u, tu, "cast", sid, school, false, t)
 	# Ясность мысли: следующее заклинание бесплатно
 	if float(sp["mana"]) > 0.0 and u.flag("clearcasting") > 0.0 and randf() < u.flag("clearcasting"):
@@ -686,6 +720,14 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 		if mypet:
 			apply_effects(u, mypet, sp["pet_fx"], sid, school)
 			fx_at("heal_small" if sid == "mend_pet" else "proc", mypet.pos, u.pos, 0.0, mypet.id)
+	# приёмы серии: +combo (с шансом ещё одного — combo_chance и «Печать судьбы»), не больше 5
+	if sp.has("combo"):
+		var n := int(sp["combo"])
+		if randf() < float(sp.get("combo_chance", 0.0)):
+			n += 1
+		if randf() < u.flag("seal_fate"):
+			n += 1
+		u.combo = mini(5, u.combo + n)
 	# Молот Рассвета: Правосудие оставляет под целью освящённую землю (как Освящение паладина)
 	if sid == "judgement" and tu and u.flag("judgement_ground") > 0.0:
 		var cs: Dictionary = GameData.SPELLS["consecration"]
@@ -855,7 +897,7 @@ func _update_projectiles(t: float) -> void:
 			projectiles.remove_at(i)
 			var tu: Unit = world.get_unit(p["target"])
 			var cu: Unit = world.get_unit(p["caster"])
-			if tu and tu.alive and cu:
+			if tu and tu.alive and cu and not _unseen_by(cu, tu):      # ушёл в незаметность — снаряд промахивается
 				apply_effects(cu, tu, p["effects"], p["sid"], p["school"])
 		else:
 			i += 1
@@ -1017,10 +1059,11 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					amount *= crit_k
 				deal_damage(caster, target, amount, school, crit, sid)
 				# Рассекающий удар: удары воина задевают ещё двух врагов рядом
-				if caster and caster.kind == "hero" and caster.has_buff("sweeping") and school == "physical" and not sid.begins_with("sweep"):
+				if caster and caster.kind == "hero" and (caster.has_buff("sweeping") or caster.mod("cleave_hits") > 0.0) and school == "physical" and not sid.begins_with("sweep"):
 					var extra := 0
+					var max_extra := maxi(2 if caster.has_buff("sweeping") else 0, int(caster.mod("cleave_hits")))      # Шквал клинков разбойника
 					for m in world.enemies_near(caster, Vector2(target.pos.x, target.pos.z), 5.0):
-						if m != target and extra < 2:
+						if m != target and extra < max_extra:
 							extra += 1
 							deal_damage(caster, m, amount * 0.6, school, false, "sweep:" + sid)
 				if caster and caster.kind == "hero":
@@ -1155,6 +1198,9 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				# снять замедление и обездвиживание
 				target.slow_until = 0.0
 				target.root_until = 0.0
+			"purge_dots":
+				# снять периодический урон (Плащ теней)
+				target.auras = target.auras.filter(func(a): return a["kind"] != "dot")
 			"rage":
 				gain_rage(target, float(e["amount"]), t)
 			"reset_cds":
@@ -1408,6 +1454,12 @@ func apply_item_effect(u: Unit, p: Dictionary, target: Unit, t: float) -> void:
 		u.mana = minf(u.max_mana, u.mana + u.max_mana * float(p["mana_pct"]))
 		if not shown:
 			fx_at("proc", u.pos, u.pos, 0.0, u.id)
+	if p.has("fx") and target and target.alive:
+		# яды разбойника и т.п.: эффекты прока — на цель удара
+		apply_effects(u, target, p["fx"], "proc:" + str(p.get("id", "")), str(p.get("fx_school", "physical")))
+	if p.has("combo"):
+		u.combo = mini(5, u.combo + int(p["combo"]))
+		shown = true
 	if p.has("spell"):
 		var a: Dictionary = GameData.AUTO_SPELLS[p["spell"]]
 		if target or a.get("around_caster", false):
@@ -1442,6 +1494,32 @@ func _update_bursts(t: float) -> void:
 			for h in world.ally_heroes(caster):
 				if h.unit.alive and Vector2(h.unit.pos.x - c.x, h.unit.pos.z - c.z).length() <= float(a["radius"]):
 					apply_effects(caster, h.unit, a["ally_fx"], b["aid"], a["school"])
+
+## Завершающий приём: эффекты с per_combo — сила × число очков серии, с dur_per_combo — длительность + за очко.
+func _finisher(sp: Dictionary, cp: int) -> Dictionary:
+	var c := sp.duplicate(true)
+	for key in ["effects", "enemy_fx", "ally_fx", "self_fx"]:
+		for e in c.get(key, []):
+			if e.get("per_combo", false):
+				for f in ["min", "max", "total", "amount"]:
+					if e.has(f):
+						e[f] = float(e[f]) * float(cp)
+			if e.has("dur_per_combo"):
+				e["dur"] = float(e["dur"]) + float(e["dur_per_combo"]) * float(cp)
+	return c
+
+## Вражеский разбойник в незаметности для u невидим: каст по нему сбивается, снаряды промахиваются, автоатака прекращается.
+func _unseen_by(u: Unit, tu: Unit) -> bool:
+	return tu != null and tu.stealthed and tu.kind == "hero" and u != null and u.is_enemy_of(tu)
+
+## Выйти из незаметности (разбойник ударил, получил урон или произнёс заклинание).
+func _break_stealth(u: Unit) -> void:
+	if not u.has_buff("stealth"):
+		return
+	u.remove_buff("stealth")
+	u.stealthed = false
+	u.unseen_until = minf(u.unseen_until, world.now())
+	_refresh_stats(u)
 
 ## Копия заклинания с усиленными эффектами (для проков с усилением).
 func _amplified(sp: Dictionary, mult: float) -> Dictionary:
@@ -1500,6 +1578,8 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 				if ph.unit.alive and ph.unit.flag("ret_aura") > 0.0 and ph.unit.pos.distance_to(dst.pos) <= 15.0:
 					deal_damage(ph.unit, src, amount * ph.unit.flag("ret_aura"), "holy", false, "retribution_aura")
 					break
+	if src and src.has_buff("stealth"):
+		_break_stealth(src)
 	amount *= dst.damage_taken_mult
 	amount *= maxf(0.1, 1.0 + dst.mod("dmg_taken"))
 	# бой героев: встроенная устойчивость цели по уровню; схватка героев продолжается (утомление боем)

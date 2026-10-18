@@ -707,7 +707,7 @@ func _bot_post_calc(hero) -> Vector3:
 	var foe: Unit = null
 	var fd := 30.0 if u.duel == 0 else 999.0
 	for h in world.enemy_heroes(u):
-		if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(hp2) < fd:
+		if h.unit.alive and not h.unit.stealthed and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(hp2) < fd:
 			fd = Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(hp2)
 			foe = h.unit
 	if foe and (u.duel != 0 or u.hp_frac() > 0.45):

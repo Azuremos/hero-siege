@@ -240,7 +240,7 @@ func _build_hero_snapshot(t: float) -> Array:
 			buffs.append([b["key"], maxf(0.0, b["until"] - t)])
 		out.append([hid, u.hp, u.max_hp, u.mana, u.max_mana, u.level, h.xp, h.xp_next, h.gold,
 			u.absorb if t < u.absorb_until else 0.0, u.alive, maxf(0.0, u.stun_until - t), buffs,
-			h.respawn_at - t if not u.alive else 0.0, u.speed_mult(t)])
+			h.respawn_at - t if not u.alive else 0.0, u.speed_mult(t), u.combo])
 	return out
 
 @rpc("authority", "call_local", "unreliable_ordered")
@@ -265,6 +265,14 @@ func ev_hero_snapshot(snap: Array) -> void:
 		h.net_respawn_left = e[13]
 		if e.size() > 14:
 			h.net_speed = e[14]
+		if e.size() > 15:
+			u.combo = int(e[15])
+		var stl := false
+		for b in h.net_buffs:
+			if b[0] == "stealth":
+				stl = true
+		if not is_server():
+			u.stealthed = stl
 
 @rpc("authority", "call_local", "unreliable_ordered")
 func ev_mode_state(snap: Array, alive_mobs: int) -> void:

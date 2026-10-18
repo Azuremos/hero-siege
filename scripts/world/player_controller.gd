@@ -290,21 +290,25 @@ func _process(delta: float) -> void:
 		_send_server("request_cancel", [])
 
 	var tu: Unit = world.get_unit(target_id)
-	if tu and not tu.alive and tu.kind == "mob":
-		target_id = 0
+	if tu and ((not tu.alive and tu.kind == "mob") or _hidden(tu)):
+		target_id = 0         # враг ушёл в незаметность — цель теряется
 	_update_aim()
 
 # ---------------------------------------------------------------- выбор целей
 
 ## Ищет существо под курсором (без физики — проекция на экран, дёшево).
+## Вражеский разбойник в незаметности: его не видно, выбрать и атаковать нельзя.
+func _hidden(u: Unit) -> bool:
+	return u != null and u.stealthed and u.kind == "hero" and hero.unit.is_enemy_of(u)
+
 func pick_unit(screen_pos: Vector2) -> int:
 	var best := 0
 	var best_score := 1e9
 	var vp_h := get_viewport().get_visible_rect().size.y
 	var tan_half := tan(deg_to_rad(camera.fov) * 0.5)
 	for u: Unit in world.units.values():
-		if (u.kind == "castle" and not hero.unit.is_enemy_of(u)) or not u.alive:
-			continue        # свою базу не выбрать; вражескую (Арена) — можно, её бьют заклинаниями и автоатакой
+		if (u.kind == "castle" and not hero.unit.is_enemy_of(u)) or not u.alive or _hidden(u):
+			continue        # свою базу не выбрать; вражескую (Арена) — можно; разбойника в незаметности — нельзя
 		var h := 1.2 * (u.radius / 0.6)
 		var p := u.pos + Vector3(0, h, 0)
 		if camera.is_position_behind(p):
@@ -321,7 +325,7 @@ func target_next_enemy() -> void:
 	var fwd := -hero.global_transform.basis.z
 	var cands: Array = []
 	for u: Unit in world.units.values():
-		if not hero.unit.is_enemy_of(u) or not u.alive:
+		if not hero.unit.is_enemy_of(u) or not u.alive or _hidden(u):
 			continue
 		var to := u.pos - hero.global_position
 		var dist := to.length()
@@ -803,11 +807,11 @@ func bot_tick(delta: float) -> void:
 	if eh and first == null and (tu == null or tu.kind != "hero" or not tu.alive):
 		target_id = eh.hero_id
 		tu = eh.unit
-	if tu == null or not tu.alive or not hero.unit.is_enemy_of(tu) or _dist_to(tu) > 32.0 or not _target_ok(tu):
+	if tu == null or not tu.alive or not hero.unit.is_enemy_of(tu) or _dist_to(tu) > 32.0 or not _target_ok(tu) or _hidden(tu):
 		target_id = 0
 		var best := 1e9
 		for u: Unit in world.units.values():
-			if hero.unit.is_enemy_of(u) and u.alive and _dist_to(u) < minf(best, 32.0) and _target_ok(u):
+			if hero.unit.is_enemy_of(u) and u.alive and _dist_to(u) < minf(best, 32.0) and _target_ok(u) and not _hidden(u):
 				best = _dist_to(u)
 				target_id = u.id
 		tu = world.get_unit(target_id)
@@ -842,6 +846,8 @@ func bot_tick(delta: float) -> void:
 			continue
 		if sp.get("delivery", "") in ["pet_call", "pet_revive"] or (sp.has("pet_fx") and sp.get("effects", []).is_empty()):
 			continue      # питомцем бот занимается отдельно (_bot_hunter_pet)
+		if not _bot_rogue_ok(sid, sp, tu):
+			continue
 		if now() < float(cd_until.get(sid, 0.0)) or hero.unit.mana < GameData.eff_mana(hero.unit, sid):
 			continue
 		if sp.get("delivery", "") == "totem":
@@ -926,6 +932,29 @@ func bot_tick(delta: float) -> void:
 					_face(p)
 					_send_server("request_cast", [sid, 0, p, _wall_yaw(p)])
 					return
+
+## Разбойник: незаметность — вне боя, когда врагов рядом нет; приёмы из незаметности — только в ней (или в Танце
+## теней); завершающие — с 4–5 очков серии (или с любого, если цель почти мертва), Мясорубка — если её нет, с 2 очков.
+func _bot_buff(key: String) -> bool:
+	return hero.unit.has_buff(key) or hero._has_buff(key)
+
+func _bot_rogue_ok(sid: String, sp: Dictionary, tu: Unit) -> bool:
+	if sp.get("out_of_combat", false):
+		if _bot_buff("stealth") or (Net.is_server() and now() < hero.unit.combat_until):
+			return false
+		for u: Unit in world.units.values():
+			if u.alive and hero.unit.is_enemy_of(u) and _dist_to(u) < 22.0:
+				return false
+		_send_server("request_cast", [sid, hero.hero_id, Vector3.ZERO, 0.0])
+		return false      # отправлено отдельно (обычное правило «self» требует врагов рядом)
+	if sp.get("requires_stealth", false) and not (_bot_buff("stealth") or _bot_buff("shadow_dance")):
+		return false
+	if sp.get("finisher", false):
+		var cp: int = hero.unit.combo
+		if sp["target"] == "self":
+			return cp >= 2 and not _bot_buff(str(sp["effects"][0].get("key", "")))
+		return cp >= 4 or (cp >= 1 and tu != null and tu.hp_frac() < 0.25)
+	return true
 
 ## Периодический урон заклинания (первый dot в эффектах) или {}.
 var _dot_until: Dictionary = {}      # "id цели:ключ" -> до какого времени не обновлять
@@ -1043,6 +1072,13 @@ func _bot_priority() -> Array:
 func _bot_rank(sid: String) -> float:
 	var sp: Dictionary = GameData.SPELLS[sid]
 	var cd := float(sp.get("cd", 0.0))
+	# разбойник: приём из незаметности — первым, завершающий (когда очков хватает) — раньше наработки
+	if sp.get("requires_stealth", false):
+		return 3000.0
+	if sp.get("finisher", false):
+		return 2000.0 + cd
+	if sp.has("combo") and cd <= 0.0:
+		return 150.0 + float(sp["combo"]) * 20.0      # наработка: больше очков серии — раньше (Расправа раньше Коварного удара)
 	if cd <= 0.0 and _dot_of(sp) != {}:
 		return 1050.0      # свои периодические эффекты (Слово Тьмы: Боль) — держать на цели
 	if cd > 0.0:
@@ -1071,7 +1107,7 @@ func _bot_try_interrupt() -> bool:
 				return true
 		# бой героев: сбить произнесение вражеского героя
 		for eh in world.enemy_heroes(hero.unit):
-			if eh.casting and eh.unit.alive and _dist_to(eh.unit) <= float(isp["range"]) + eh.unit.radius:
+			if eh.casting and eh.unit.alive and not eh.unit.stealthed and _dist_to(eh.unit) <= float(isp["range"]) + eh.unit.radius:
 				_face(eh.unit.pos)
 				_send_server("request_cast", [isid, eh.hero_id, Vector3.ZERO, 0.0])
 				return true
@@ -1083,7 +1119,7 @@ func _bot_enemy_hero(r: float):
 	var best = null
 	var bd := r
 	for eh in world.enemy_heroes(hero.unit):
-		if eh.unit.alive and not eh.offline and _dist_to(eh.unit) < bd:
+		if eh.unit.alive and not eh.offline and not eh.unit.stealthed and _dist_to(eh.unit) < bd:
 			bd = _dist_to(eh.unit)
 			best = eh
 	return best
@@ -1276,7 +1312,7 @@ func _bot_tome_pick(n: int) -> String:
 	var caster: bool = hero.class_id in ["mage", "priest"] or (hero.class_id in ["shaman", "paladin"] and _bot_main_tree() != 1)
 	if caster:
 		return "tome_int"
-	return "tome_agi" if hero.class_id == "hunter" else "tome_str"
+	return "tome_agi" if hero.class_id in ["hunter", "rogue"] else "tome_str"
 
 ## Собрать всё, на что хватает компонентов и золота (рецепты по порядку, по одной сборке за поход на рецепт).
 func _bot_craft(vid: String) -> void:

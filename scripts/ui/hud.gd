@@ -1874,6 +1874,8 @@ func _fill_frame(f: Dictionary, u: Unit, title: String, absorb: float) -> void:
 	f["mp"].max_value = maxf(1.0, u.max_mana)
 	f["mp"].value = u.mana
 	f["mp_l"].text = "%d / %d" % [int(u.mana), int(u.max_mana)]
+	if u.resource == "energy":
+		f["mp_l"].text += "     " + "●".repeat(u.combo) + "○".repeat(maxi(0, 5 - u.combo))      # приёмы серии разбойника
 	_bar_color(f["mp"], res_color(u.resource))
 
 func _update_buff_icons(box: HBoxContainer, buffs: Array) -> void:
@@ -1936,13 +1938,14 @@ func _update_buff_row(buffs: Array) -> void:
 			continue
 		var left: float = list[i][1]
 		var tl: Label = c.get_child(1)
-		if left <= 0.0 or left > 3600.0:
+		if left <= 0.0 or left > 3600.0 or GameData.BUFF_INFO[list[i][0]].get("no_timer", false):     # незаметность — до первого удара
 			tl.text = ""
 		elif left >= 60.0:
 			tl.text = "%dм" % int(ceil(left / 60.0))
 		else:
 			tl.text = "%dс" % int(ceil(left))
-		c.tooltip_text = "%s\nОсталось: %s" % [GameData.BUFF_INFO[list[i][0]]["name"], tl.text if tl.text != "" else "пока внутри"]
+		var binfo: Dictionary = GameData.BUFF_INFO[list[i][0]]
+		c.tooltip_text = "%s\n%s" % [binfo["name"], str(binfo.get("desc", "")) if binfo.get("no_timer", false) else "Осталось: %s" % (tl.text if tl.text != "" else "пока внутри")]
 		i += 1
 
 ## Полоски здоровья над врагами и всплывающие цифры — одним проходом рисования.
@@ -2374,6 +2377,7 @@ static func res_color(res: String) -> Color:
 	match res:
 		"rage": return Color(0.85, 0.15, 0.12)
 		"focus": return Color(0.95, 0.6, 0.15)
+		"energy": return Color(0.95, 0.85, 0.2)
 	return Color(0.2, 0.4, 0.95)
 
 var _pet_frame: Dictionary = {}

@@ -72,6 +72,8 @@ var _wall_check_until := 0.0
 var _wall_log_t := 0.0
 var _leap_done := false
 var _cc_casts := 0
+var _stealth_until := 0.0
+var _stealth_log := 0.0
 var _cc_log_t := 0.0
 
 func server_tick(_delta: float, t: float) -> void:
@@ -103,6 +105,14 @@ func server_tick(_delta: float, t: float) -> void:
 			var mu: Unit = me.unit
 			print("PVPCC t=%.2f pos=(%.1f,%.1f) stun=%.2f net_stun=%.2f root=%.2f fear=%.2f incap=%s cast=%s" % [since, me.global_position.x, me.global_position.z,
 				maxf(0.0, mu.stun_until - t), me.net_stun_left, maxf(0.0, mu.root_until - t), maxf(0.0, mu.fear_until - t), mu.incap, me.controller.cast_spell])
+	if t < _stealth_until and t - _stealth_log >= 0.5:
+		_stealth_log = t
+		var me = world.local_hero
+		for h in world.heroes.values():
+			if h.class_id == "rogue":
+				var d: float = h.unit.pos.distance_to(me.unit.pos) if me else 0.0
+				print("STEALTH t=%.1f разбойник: незаметен=%s модель видна у соперника=%s цель соперника=%s дистанция=%.1f" % [t - _round_start,
+					h.unit.stealthed, h.model.visible if h != me else "-", "разбойник" if me and me.controller.target_id == h.hero_id else str(me.controller.target_id if me else 0), d])
 	if t < _wall_check_until and t - _wall_log_t >= 1.0:
 		_wall_log_t = t
 		for h in world.heroes.values():
@@ -146,6 +156,12 @@ func _start_round(t: float) -> void:
 	for h in world.heroes.values():
 		_restore(h)
 	world.announce_all("Раунд %d: бой!" % _round)
+	# --pvpstealthtest: разбойник уходит в незаметность в начале раунда (лог STEALTH раз в 0,5 сек.)
+	if Net.cli.has("pvpstealthtest"):
+		for h in world.heroes.values():
+			if h.class_id == "rogue":
+				world.spells.apply_effects(h.unit, h.unit, GameData.SPELLS["stealth"]["effects"], "stealth", "physical")
+				_stealth_until = t + 8.0
 	# --pvpwalltest: маг сразу ставит Ледяную стену между героями — соперник не должен пройти сквозь неё
 	if Net.cli.has("pvpwalltest"):
 		for h in world.heroes.values():
