@@ -681,6 +681,25 @@ func _process(delta: float) -> void:
 		spells.cast_auto_spell(local_hero.unit, Net.cli["autotest"], local_hero.global_position + fwd * 9.0, now())
 	if Net.cli.has("giveproc") and is_server() and _test_t >= 3.0 and _test_t - delta < 3.0:
 		local_hero.unit.add_buff(Net.cli["giveproc"], now() + 30.0, {})
+	# --castrun=sid: на 9-й сек. произнести sid по ближайшему врагу, через 0,4 сек. унести его на 60 м —
+	# каст должен прерваться с «Цель слишком далеко» (та же проверка, что для лечения союзника)
+	if Net.cli.has("castrun") and is_server() and _test_t >= 9.0 and _test_t - delta < 9.0:
+		var near_m = null
+		for cm in mobs.mobs.values():
+			if near_m == null or cm.pos2.distance_to(Vector2(local_hero.unit.pos.x, local_hero.unit.pos.z)) < near_m.pos2.distance_to(Vector2(local_hero.unit.pos.x, local_hero.unit.pos.z)):
+				near_m = cm
+		if near_m:
+			local_hero.controller.target_id = near_m.unit.id
+			local_hero.controller.try_cast(str(Net.cli["castrun"]))
+			get_tree().create_timer(0.4).timeout.connect(func():
+				near_m.pos2 += Vector2(60, 0)
+				near_m.unit.pos += Vector3(60, 0, 0)
+				print("CASTRUN враг унесён на 60 м"))
+	# --healtest=sid (вместе с --targetally): на 9-й сек. лечить выбранного союзника (проверка цели лечения)
+	if Net.cli.has("healtest") and is_server() and _test_t >= 9.0 and _test_t - delta < 9.0:
+		var ht: Unit = get_unit(local_hero.controller.target_id)
+		print("HEALTEST me=%d target=%d dist=%.1f" % [local_hero.unit.id, local_hero.controller.target_id, local_hero.unit.pos.distance_to(ht.pos) if ht else -1.0])
+		local_hero.controller.try_cast(str(Net.cli["healtest"]))
 	if Net.cli.has("targetally") and _test_t >= 8.0 and _test_t - delta < 8.0:
 		for th in heroes.values():
 			if th != local_hero:

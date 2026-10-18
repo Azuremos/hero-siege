@@ -134,6 +134,8 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 				return _feedback(peer, sid, "Казнь — только по врагам с запасом здоровья ниже 25%")
 		"ally":
 			var tu: Unit = world.get_unit(target_id)
+			if tu != null and not tu.alive and tu.team == u.team and (tu.kind == "hero" or tu.kind == "pet"):
+				return _feedback(peer, sid, "Цель мертва")      # выбран погибший союзник — не лечить себя молча
 			if tu == null or not tu.alive or tu.team != u.team or not (tu.kind == "hero" or tu.kind == "pet"):
 				target_id = u.id
 			elif _dist(u, tu) > max_range + 2.0:
@@ -236,6 +238,25 @@ func ev_cast_end(caster_id: int, sid: String, ok: bool) -> void:
 	if h == world.local_hero or h.ai:
 		h.controller.on_cast_ended(ok)
 
+var _cast_lost_reason := ""
+
+## Цель произносимого заклинания потеряна: союзник или враг дальше радиуса (+3 м запаса) или погиб.
+## Для заклинаний на себя, на землю и стен — никогда.
+func _cast_target_lost(u: Unit, c: Dictionary) -> bool:
+	var sp: Dictionary = GameData.SPELLS[c["sid"]]
+	if not sp["target"] in ["ally", "enemy", "any"]:
+		return false
+	var tu: Unit = world.get_unit(int(c["target"]))
+	if tu == null or tu == u:
+		return false
+	if not tu.alive:
+		_cast_lost_reason = "Цель мертва"
+		return true
+	if _dist(u, tu) > GameData.eff_range(u, c["sid"]) + tu.radius + 3.0:
+		_cast_lost_reason = "Цель слишком далеко"
+		return true
+	return false
+
 func _interrupt(hero) -> void:
 	var st := _hstate(hero.hero_id)
 	if st["cast"].is_empty():
@@ -259,6 +280,10 @@ func server_tick(delta: float, t: float) -> void:
 			var c: Dictionary = st["cast"]
 			if u.is_stunned(t) or (u.pos.distance_to(c["start_pos"]) > 0.8 and not can_cast_moving(u)):
 				_interrupt(hero)
+			elif _cast_target_lost(u, c):
+				# цель (союзник или враг) ушла за радиус или погибла — прервать сразу, с подсказкой
+				_interrupt(hero)
+				_feedback(hero.peer_id, c["sid"], _cast_lost_reason)
 			elif c.get("channel", false):
 				_channel_tick(hero, st, c, t)
 			elif t >= c["end"]:
@@ -378,6 +403,15 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 	if world.mobs.pet_spell_error(hero, sp) != "":
 		ev_cast_end.rpc(u.id, "", false)
 		return
+	# лечение союзника: если он к концу произнесения ушёл за радиус или погиб — прервать с подсказкой,
+	# а не лечить себя
+	if sp["target"] == "ally" and tu != null and tu != u:
+		if not tu.alive:
+			ev_cast_end.rpc(u.id, "", false)
+			return _feedback(hero.peer_id, sid, "Цель мертва")
+		if _dist(u, tu) > GameData.eff_range(u, sid) + 3.0:
+			ev_cast_end.rpc(u.id, "", false)
+			return _feedback(hero.peer_id, sid, "Цель слишком далеко")
 	var mana_cost := GameData.eff_mana(u, sid)
 	if u.has_buff("clearcasting") and float(sp["mana"]) > 0.0 and u.resource == "mana":
 		u.remove_buff("clearcasting")
@@ -1480,6 +1514,8 @@ func _heal_on_hit(dst: Unit, t: float) -> void:
 		fx_at("heal_small", dst.pos, dst.pos, 0.0, dst.id)
 
 func heal(src: Unit, dst: Unit, amount: float, crit: bool, sid: String = "") -> void:
+	if Net.cli.has("healtest") and src and dst:
+		print("HEAL %s -> %s (%s)" % [src.id, dst.id, sid])
 	if dst == null or not dst.alive:
 		return
 	join_combat(src, dst, world.now())

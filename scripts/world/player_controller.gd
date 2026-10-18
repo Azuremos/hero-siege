@@ -522,19 +522,19 @@ func try_cast(sid: String) -> void:
 		"ground", "wall":
 			aim_spell = sid
 
+## Кому уйдёт лечение: рамка группы под курсором → выбранная цель → союзник под курсором в мире
+## (питомец, другой герой; не сам герой — камера за спиной, курсор почти всегда на нём) → себе.
+## Раньше «под курсором в мире» шло первым и перехватывало выбранную цель — лечение молча уходило на себя.
 func _ally_target() -> Unit:
-	var hover_id: int = world.hud.hover_unit_id
-	if hover_id == 0:
-		var mp := get_viewport().get_mouse_position()
-		var under := pick_unit(mp)
-		if _is_ally(world.get_unit(under)):
-			hover_id = under
-	var u: Unit = world.get_unit(hover_id)
+	var u: Unit = world.get_unit(world.hud.hover_unit_id)
 	if _is_ally(u):
 		return u
 	u = world.get_unit(target_id)
 	if _is_ally(u):
 		return u
+	var under: Unit = world.get_unit(pick_unit(get_viewport().get_mouse_position()))
+	if _is_ally(under) and under != hero.unit:
+		return under
 	return hero.unit
 
 ## Союзник для лечения и щитов: герой или питомец охотника (сервер принимает обоих).
