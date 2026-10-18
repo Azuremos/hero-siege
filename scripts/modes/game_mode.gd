@@ -35,6 +35,14 @@ func dampen_since(_hero) -> float:
 func on_hero_killed(_victim, _killer) -> void:
 	pass
 
+## Засчитывать ли убийство героя (в дуэли Арены — нет: это победа в дуэли, а не убийство).
+func counts_kill(_victim, _killer) -> bool:
+	return true
+
+## Сервер, бой героев: урон src по dst (итоги режима — урон по героям и по монстрам).
+func on_damage(_src: Unit, _dst: Unit, _amount: float) -> void:
+	pass
+
 ## Враги ли a и b (для кода режима и интерфейса; бой зовёт Unit.is_enemy_of напрямую — то же правило).
 func are_enemies(a: Unit, b: Unit) -> bool:
 	return a != null and a.is_enemy_of(b)
@@ -127,6 +135,14 @@ func mob_resume(_m) -> void:
 ## Насколько моб отошёл от своего пути (для поводка). INF — поводка нет.
 func mob_leash_dist(_m) -> float:
 	return 0.0
+
+## Дальше этого (м) от пути моб бросает погоню (у лагерей Арены — ближе, чем у полос осады).
+func leash_range() -> float:
+	return 32.0
+
+## Показывать ли полосу босса u игроку (у «Линий» — только своей линии, у Арены — только рядом).
+func show_boss_bar(_me, _u: Unit) -> bool:
+	return true
 
 # ---------------------------------------------------------------- сеть
 

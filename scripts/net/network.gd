@@ -216,7 +216,7 @@ func host_game(is_solo: bool = false) -> Error:
 	lobby_notice = ""
 	players[1] = local_info.duplicate()
 	players[1]["version"] = game_version()
-	if str(settings.get("mode", "siege")) == "lines":
+	if str(settings.get("mode", "siege")) in ["lines", "arena"]:
 		players[1]["team"] = 0
 	players_changed.emit()
 	return OK
@@ -294,8 +294,8 @@ func _register_player(info: Dictionary) -> void:
 			rec["class"] = players[pid]["class"]
 			rec["race"] = players[pid]["race"]
 			players.erase(pid)
-	if str(settings.get("mode", "siege")) == "lines":
-		rec["team"] = 0 if team_size(0) <= team_size(1) else 1      # «Линии»: новичок — в меньшую команду
+	if str(settings.get("mode", "siege")) in ["lines", "arena"]:
+		rec["team"] = 0 if team_size(0) <= team_size(1) else 1      # «Линии», Арена: новичок — в меньшую команду
 	players[id] = rec
 	players_changed.emit()
 	_sync_players.rpc(players)
@@ -324,7 +324,7 @@ func _sync_players(p: Dictionary) -> void:
 func start_game() -> void:
 	if not is_server():
 		return
-	if str(settings.get("mode", "siege")) == "lines":
+	if str(settings.get("mode", "siege")) in ["lines", "arena"]:
 		fill_teams()
 		if int(settings.get("teams_n", 0)) > 0:
 			fill_bots(int(settings["teams_n"]))      # пустые места в командах — боты

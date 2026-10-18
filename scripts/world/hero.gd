@@ -109,6 +109,8 @@ var potion_ready_at := 0.0        # сервер: общее восстанов�
 ## Перезарядки используемых аксессуаров: id эффекта (ITEM_PROCS, on == "use") -> время готовности (сервер — истина,
 ## владелец получает копию). Только строки и числа — сохраняется вместе с героем (сессия 07).
 var use_ready: Dictionary = {}
+## Арена: прибавки от томиков Книжника {стат: число} — до конца партии (сервер — истина, клиентам — снимок режима).
+var tome_stats: Dictionary = {}
 
 func gear_stats() -> Dictionary:
 	var s := {}
@@ -121,6 +123,8 @@ func gear_stats() -> Dictionary:
 	var bonus := GameData.set_stats(equip)      # бонусы сетов за число надетых частей
 	for k in bonus:
 		s[k] = float(s.get(k, 0.0)) + float(bonus[k])
+	for k in tome_stats:                        # томики Книжника (Арена): прибавка навсегда
+		s[k] = float(s.get(k, 0.0)) + float(tome_stats[k])
 	return s
 
 ## Проки надетых вещей (фиолетовые и легендарные) — в общий список проков героя, рядом с талантами.

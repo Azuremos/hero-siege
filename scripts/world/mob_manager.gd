@@ -476,7 +476,7 @@ func _sim(m: Mob, dt: float, t: float) -> void:
 			m.state = S.OBJECTIVE
 		else:
 			goal = world.mode.mob_goal(m)
-			moving = true
+			moving = goal.distance_squared_to(m.pos2) > 0.09      # дошёл (лагерь Арены) — стоит, а не бежит на месте
 
 	if moving and not u.is_rooted(t):
 		# движение — пачкой после решений всех мобов (_apply_moves): одинаково на путях GDScript и C++
@@ -493,7 +493,7 @@ func _think(m: Mob) -> void:
 			return
 		if tu == null or not tu.alive:
 			_drop_chase(m, false)
-		elif Vector2(tu.pos.x, tu.pos.z).distance_to(m.pos2) > CHASE_DROP_RANGE or world.mode.mob_leash_dist(m) > LEASH_RANGE:
+		elif Vector2(tu.pos.x, tu.pos.z).distance_to(m.pos2) > CHASE_DROP_RANGE or world.mode.mob_leash_dist(m) > world.mode.leash_range():
 			_drop_chase(m, true)
 		return
 	if m.state == S.MOVE and world.now() < m.reaggro_at:
@@ -2232,6 +2232,7 @@ func _pet_refresh(m: Mob, hero) -> void:
 	var hu: Unit = hero.unit
 	var frac := u.hp_frac() if u.max_hp > 0.0 else 1.0
 	u.level = hu.level
+	u.duel = hu.duel            # дуэль Арены: питомец — вместе с хозяином
 	u.max_hp = float(m.def["hp"]) * (1.0 + 0.16 * float(hu.level - 1)) * (1.0 + hu.flag("pet_hp"))
 	u.hp = u.max_hp * frac
 	u.power = hu.phys_power * (1.0 + hu.flag("pet_dmg")) * 0.85

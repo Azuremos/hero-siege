@@ -1474,6 +1474,9 @@ func fill_summary() -> void:
 	for c in _summary_box.get_children():
 		c.queue_free()
 	var first: Array = world.summary[0]
+	if first.size() > 8 and (first[8] as Dictionary).has("arena"):
+		_fill_summary_arena()
+		return
 	if first.size() > 8 and (first[8] as Dictionary).has("team"):
 		_fill_summary_lines()
 		return
@@ -1523,6 +1526,33 @@ func _fill_summary_lines() -> void:
 		sl.mouse_filter = Control.MOUSE_FILTER_PASS
 		_summary_box.add_child(sl)
 		_summary_box.add_child(_label(str(int(ex["leaked"])), 14))
+
+## Итоги Арены: по командам — убийства героев и смерти, урон по героям и по монстрам, лечение, дуэли,
+## собранные вещи, томики, уровень, золото.
+func _fill_summary_arena() -> void:
+	var A := preload("res://scripts/data/arena_data.gd")
+	_summary_box.columns = 11
+	for head in ["Герой", "Убийства", "Смерти", "Урон по героям", "Урон по монстрам", "Лечение", "Дуэли", "Собрано", "Томики", "Уровень", "Золото +"]:
+		_summary_box.add_child(_label(head, 13, GOLD))
+	var rows: Array = world.summary.duplicate()
+	rows.sort_custom(func(a, b): return int(a[8]["team"]) < int(b[8]["team"]))
+	for row in rows:
+		var ex: Dictionary = row[8]
+		var team := clampi(int(ex["team"]), 0, 1)
+		var nl := _label("%s%s" % ["★ " if int(ex.get("winner", -1)) == team else "", str(row[0])], 14, A.TEAMS[team]["color"])
+		nl.tooltip_text = "%s, %s" % [A.TEAMS[team]["full"], GameData.CLASSES.get(str(row[1]), {}).get("name", "")]
+		nl.mouse_filter = Control.MOUSE_FILTER_PASS
+		_summary_box.add_child(nl)
+		_summary_box.add_child(_label(str(int(ex["hero_kills"])), 14))
+		_summary_box.add_child(_label(str(int(ex["deaths"])), 14))
+		_summary_box.add_child(_label(MeterWindowScript.fmt(float(ex["hero_dmg"])), 14))
+		_summary_box.add_child(_label(MeterWindowScript.fmt(float(ex["mob_dmg"])), 14))
+		_summary_box.add_child(_label(MeterWindowScript.fmt(float(row[3])), 14))
+		_summary_box.add_child(_label(str(int(ex["duels"])), 14))
+		_summary_box.add_child(_label(str(int(ex["crafted"])), 14))
+		_summary_box.add_child(_label(str(int(ex["tomes"])), 14))
+		_summary_box.add_child(_label(str(row[6]), 14))
+		_summary_box.add_child(_label(str(int(ex["gold_in"])), 14, GOLD))
 
 func floating_number(u: Unit, amount: float, kind: String, school: String, crit: bool, on_me: bool) -> void:
 	var text := str(int(round(amount)))
@@ -2289,11 +2319,10 @@ func _build_boss_bar() -> void:
 
 func _update_boss_bar() -> void:
 	var bm = null
-	var lm := world.mode as LinesMode
 	for m in world.mobs.mobs.values():
 		if GameData.BOSSES.has(m.unit.type_id) and m.unit.alive:
-			if lm and world.local_hero and not lm.on_my_lane(world.local_hero, m.unit.pos):
-				continue      # «Линии»: полоса босса — только своей линии
+			if not world.mode.show_boss_bar(world.local_hero, m.unit):
+				continue      # «Линии» — только своей линии, Арена — только рядом
 			bm = m
 			break
 	_boss_panel.visible = bm != null

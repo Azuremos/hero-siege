@@ -544,6 +544,9 @@ func vendor_allowed(hero, vid: String) -> bool:
 func mob_players() -> int:
 	return 1       # на линии один герой — враги и механики боссов считаются как в одиночке
 
+func show_boss_bar(me, u: Unit) -> bool:
+	return me == null or on_my_lane(me, u.pos)
+
 func party_visible(me, other) -> bool:
 	return me == null or other.team == me.team
 

@@ -1484,6 +1484,8 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		amount *= 1.0 - GameData.PvpData.resil(pvp_cfg(), dst.level)
 		_pvp_touch(src, t)
 		_pvp_touch(dst, t)
+	if Unit.pvp and src:
+		world.mode.on_damage(src, dst, minf(amount, maxf(dst.hp, 0.0)))
 	# блок щитом: физический удар с шансом теряет половину урона
 	if school == "physical" and dst.kind == "hero" and src and dst.mod("block") > 0.0 and randf() < dst.mod("block"):
 		var blocked: float = amount * GameData.ItemData.BLOCK_REDUCE
@@ -1620,7 +1622,9 @@ func _on_death(dst: Unit, src: Unit) -> void:
 					kid = src.owner_id if src.kind == "pet" else src.id
 				dst.killer_id = kid
 				var kh = world.heroes.get(kid, null)
-				if kh:
+				if kh and not world.mode.counts_kill(h, kh):
+					world.announce_all("%s побеждает %s в дуэли!" % [kh.player_name, h.player_name], GameData.CLASSES[kh.class_id]["color"])
+				elif kh:
 					world.announce_all("%s убивает %s!" % [kh.player_name, h.player_name], GameData.CLASSES[kh.class_id]["color"])
 					world.hero_kills[kid] = int(world.hero_kills.get(kid, 0)) + 1
 					world.mode.on_hero_killed(h, kh)
@@ -1699,7 +1703,7 @@ func _interrupt_hero(target: Unit, lock: float, t: float) -> bool:
 	var school: String = GameData.SPELLS[st["cast"]["sid"]]["school"]
 	if not st.has("locked"):
 		st["locked"] = {}
-	st["locked"][school] = t + lock * float(pvp_cfg()["cc_mult"]) * 1.5
+	st["locked"][school] = t + lock * float(pvp_cfg()["cc_mult"])
 	_interrupt(th)
 	_feedback(th.peer_id, "", "Прервано: школа «%s» заблокирована" % GameData.SCHOOLS[school]["name"])
 	return true

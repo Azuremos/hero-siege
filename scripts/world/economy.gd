@@ -192,6 +192,11 @@ func request_buy(vid: String, item_id: String) -> void:
 	var hero = _sender_hero()
 	if hero == null or not vendor_pos.has(vid) or VENDORS[vkind(vid)]["kind"] == "sends" or not world.mode.vendor_allowed(hero, vid):
 		return
+	if VENDORS[vkind(vid)]["kind"] == "tomes":
+		if world.mode.has_method("buy_tome"):
+			world.mode.buy_tome(hero, vid, item_id)
+			_sync(hero)
+		return
 	# покупать можно только то, что сейчас лежит в лавке у этого героя (ассортимент сервер считает сам)
 	if not vendor_items(vid, hero.unit.level).has(item_id):
 		return _say(hero, "Этого товара уже нет — откройте лавку заново")

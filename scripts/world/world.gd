@@ -29,7 +29,8 @@ var local_hero: CharacterBody3D = null
 
 ## Режимы игры. Выбор режима — Net.settings["mode"]: осада и предпросмотр интерфейса из главного меню.
 const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd"), "preview": preload("res://scripts/modes/preview_mode.gd"),
-	"arena": preload("res://scripts/modes/arena_mode.gd"), "lines": preload("res://scripts/modes/lines_mode.gd"),
+	"bossarena": preload("res://scripts/modes/boss_arena_mode.gd"), "lines": preload("res://scripts/modes/lines_mode.gd"),
+	"arena": preload("res://scripts/modes/arena_mode.gd"),
 	"pvptest": preload("res://scripts/modes/pvptest_mode.gd")}
 
 ## Сервер: герой-бот («Добавить бота в команду»), от чьего имени сейчас идёт запрос (spells, economy, режим).
@@ -59,7 +60,7 @@ func _ready() -> void:
 	spells = SpellSystemScript.new()
 	spells.name = "Spells"
 	add_child(spells)
-	var mode_name := "arena" if Net.cli.has("bossarena") else str(Net.settings.get("mode", "siege"))    # --bossarena: босс без осады
+	var mode_name := "bossarena" if Net.cli.has("bossarena") else str(Net.settings.get("mode", "siege"))    # --bossarena: босс без осады
 	var mode_script: GDScript = MODES.get(mode_name, MODES["siege"])
 	mode = mode_script.new()
 	mode.name = "Mode"

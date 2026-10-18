@@ -715,6 +715,8 @@ func bot_active() -> bool:
 func bot_tick(delta: float) -> void:
 	var post: Vector3 = world.mode.bot_post_for(hero) if world.mode.has_method("bot_post_for") else world.mode.bot_post()
 	var lines_post: Variant = _bot_lines(delta)
+	if lines_post == null:
+		lines_post = _bot_arena(delta)
 	if lines_post != null:
 		post = lines_post
 	elif Net.cli.has("post") and not ai:
@@ -757,7 +759,7 @@ func bot_tick(delta: float) -> void:
 				hero.rotation.y = atan2(-away.x, -away.z)
 				cam_yaw = hero.rotation.y
 				move_forward = 1.0
-	if lines_post != null and _shop_phase > 0:
+	if lines_post != null and (_shop_phase > 0 or _arena_phase > 0):
 		return      # «Линии»: идёт за покупками — не колдует, иначе лекарь не дойдёт до базы
 	_bot_t -= delta
 	if _bot_t <= 0.0 and hero.unit.alive and _bot_try_interrupt():
@@ -1166,6 +1168,102 @@ func _bot_buy_sends(budget: int) -> void:
 			world.acting_hero = null
 		else:
 			lm.send(sid, -1, "")
+
+## Арена: раз в BOT_SHOP_EVERY сек. (или когда золота много, или после смерти) бот идёт на базу —
+## у Книжника тратит долю BOT_TOME_SHARE на томики, у кузнеца — на вещи, у Мастера сборки собирает что может,
+## у алхимика берёт зелья лечения; в дуэли и во время похода не отвлекается. null — фармить (пост режима).
+var _arena_phase := 0
+var _arena_t := 45.0
+const ARENA_ROUTE := ["bookseller", "smith", "crafter", "alchemist"]
+
+func _bot_arena(delta: float) -> Variant:
+	var am := world.mode as ArenaMode
+	if am == null or am.is_over() or not hero.unit.alive or hero.unit.duel != 0:
+		return null
+	var A := preload("res://scripts/data/arena_data.gd")
+	_arena_t -= delta
+	_equip_t -= delta
+	if _equip_t <= 0.0:
+		_equip_t = 1.5
+		_bot_equip_upgrades()
+	if _arena_phase == 0:
+		if (_arena_t <= 0.0 and hero.gold >= A.tome_price(am.tome_count(hero))) or hero.gold >= 1500:
+			_arena_phase = 1
+		else:
+			return null
+	var kind: String = ARENA_ROUTE[_arena_phase - 1]
+	var vid := "%s#%d" % [kind, hero.team]
+	var vp: Vector3 = world.economy.vendor_pos.get(vid, hero.global_position)
+	if _dist_to_point(vp) > 5.0:
+		return vp
+	match kind:
+		"bookseller":
+			var budget := int(hero.gold * A.BOT_TOME_SHARE)
+			var n := 0
+			while n < 6:
+				var price := A.tome_price(am.tome_count(hero) + n)
+				if price > budget:
+					break
+				budget -= price
+				_eco("request_buy", [vid, _bot_tome_pick(am.tome_count(hero) + n)])
+				n += 1
+		"smith":
+			_bot_buy_gear(hero.gold)
+		"crafter":
+			_bot_craft(vid)
+		"alchemist":
+			var pot := "potion_heal_1"
+			for pid in ["potion_heal_2", "potion_heal_3", "potion_heal_4"]:
+				if hero.unit.level >= int(GameData.ItemData.CONSUMABLES[pid]["level"]):
+					pot = pid
+			for k in maxi(0, 3 - hero.bag_count(pot)):
+				if hero.gold >= GameData.shop_price(pot) + 50:
+					_eco("request_buy", [vid, pot])
+	_arena_phase += 1
+	if _arena_phase > ARENA_ROUTE.size():
+		_arena_phase = 0
+		_arena_t = A.BOT_SHOP_EVERY
+		_bot_equip_upgrades()
+	return vp
+
+## Какой томик брать: главная характеристика роли, каждый третий — выносливость.
+func _bot_tome_pick(n: int) -> String:
+	if n % 3 == 2:
+		return "tome_sta"
+	var caster: bool = hero.class_id in ["mage", "priest"] or (hero.class_id in ["shaman", "paladin"] and _bot_main_tree() != 1)
+	if caster:
+		return "tome_int"
+	return "tome_agi" if hero.class_id == "hunter" else "tome_str"
+
+## Собрать всё, на что хватает компонентов и золота (рецепты по порядку, по одной сборке за поход на рецепт).
+func _bot_craft(vid: String) -> void:
+	var R := GameData.Recipes
+	var gold: int = hero.gold
+	var used := {}
+	for rid in R.ORDER:
+		var bag: Array = []
+		for i in hero.bag.size():
+			if hero.bag[i] != null and not used.has(i):
+				bag.append([i, GameData.item(hero.bag[i]["id"])])
+		var fill: Array = R.auto_fill(rid, bag)
+		if fill.has(-1):
+			continue
+		var items: Array = fill.map(func(i): return GameData.item(hero.bag[int(i)]["id"]))
+		if R.check(rid, items, hero.bag_count(R.SCROLL)) != "":
+			continue
+		var price: int = world.economy.craft_price(rid, items)
+		if price > gold * 0.5:
+			continue
+		# сливать имеет смысл только то, что не хуже надетого
+		if rid == "merge" or rid == "scroll":
+			if _item_value(hero.bag[int(fill[0])]["id"]) < _slot_value(items[0]["slot"]) * 0.8:
+				continue
+		gold -= price
+		for i in fill:
+			used[int(i)] = true
+		_eco("request_craft", [rid, fill])
+	if Net.cli.has("craftlog"):
+		print("BOTCRAFT %s у %s: золото %d" % [hero.player_name, vid, hero.gold])
 
 ## Ценность вещи для героя: характеристики с весами по роли (заклинатель — интеллект и сила заклинаний,
 ## боец — сила, ловкость и сила атаки), выносливость и броня — всем.

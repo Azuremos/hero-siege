@@ -26,7 +26,7 @@ func read_map(map: Node3D) -> void:
 	round_time = float(Net.cli.get("pvptime", 120.0))
 
 func begin() -> void:
-	state = "running"
+	state = "prep"          # между раундами — «вне боя»: боты выбирают книгу заклинаний
 	_between_until = world.now() + 4.0      # таланты, уровень и вещи — тестовыми флагами за первые секунды
 
 func is_combat() -> bool:
@@ -71,6 +71,8 @@ func _foe(hero):
 var _wall_check_until := 0.0
 var _wall_log_t := 0.0
 var _leap_done := false
+var _cc_casts := 0
+var _cc_log_t := 0.0
 
 func server_tick(_delta: float, t: float) -> void:
 	if is_over():
@@ -83,6 +85,24 @@ func server_tick(_delta: float, t: float) -> void:
 			if h.class_id == "warrior" and f:
 				print("PVPWALL прыжок воина к магу")
 				world.spells._complete_cast(h, "heroic_leap", 0, f.unit.pos + Vector3(0, 0, 3.0 if f.unit.pos.z < h.unit.pos.z else -3.0), 0.0, 0.0)
+	# --pvpcctest=<заклинание>: через 2 сек. раунда соперник накладывает контроль заклинания на своего героя
+	# (дважды, чтобы видеть убывание); 5 сек. лог: место, оглушён ли (на сервере и в снимке), обездвижен.
+	if Net.cli.has("pvpcctest") and _round_start > 0.0:
+		var since := t - _round_start
+		var me = world.local_hero
+		var foe = _foe(me) if me else null
+		if foe and since >= 2.0 and _cc_casts == 0 or foe and since >= 6.0 and _cc_casts == 1:
+			_cc_casts += 1
+			var csid := str(Net.cli["pvpcctest"])
+			var csp: Dictionary = GameData.SPELLS[csid]
+			var fx: Array = csp.get("effects", []) + csp.get("enemy_fx", []) + csp.get("impact_fx", [])
+			world.spells.apply_effects(foe.unit, me.unit, fx.filter(func(e): return e["type"] != "damage"), csid, csp["school"])
+			print("PVPCC %s №%d по %s (база %s)" % [csid, _cc_casts, me.class_id, str(fx.filter(func(e): return e.has("dur")).map(func(e): return "%s %.1f" % [e["type"], float(e["dur"])]))])
+		if foe and since >= 2.0 and since < 10.0 and t - _cc_log_t >= 0.25:
+			_cc_log_t = t
+			var mu: Unit = me.unit
+			print("PVPCC t=%.2f pos=(%.1f,%.1f) stun=%.2f net_stun=%.2f root=%.2f fear=%.2f incap=%s cast=%s" % [since, me.global_position.x, me.global_position.z,
+				maxf(0.0, mu.stun_until - t), me.net_stun_left, maxf(0.0, mu.root_until - t), maxf(0.0, mu.fear_until - t), mu.incap, me.controller.cast_spell])
 	if t < _wall_check_until and t - _wall_log_t >= 1.0:
 		_wall_log_t = t
 		for h in world.heroes.values():
@@ -113,6 +133,7 @@ func server_tick(_delta: float, t: float) -> void:
 		lose.player_name, lose.class_id, dur, int(win.unit.hp_frac() * 100.0), " (по времени)" if timeout else ""])
 	world.announce_all("Раунд %d: победил %s за %d сек." % [_round, win.player_name, int(dur)], Color(1, 0.85, 0.3))
 	_round_start = 0.0
+	state = "prep"
 	if _round >= rounds:
 		_summary()
 		return
@@ -121,6 +142,7 @@ func server_tick(_delta: float, t: float) -> void:
 func _start_round(t: float) -> void:
 	_round += 1
 	_round_start = t
+	state = "running"
 	for h in world.heroes.values():
 		_restore(h)
 	world.announce_all("Раунд %d: бой!" % _round)

@@ -73,12 +73,24 @@ func setup(w: Node3D) -> void:
 	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	v.add_child(hint)
 
+var _tomes_wait := 0.0
+
+## Томики: цена и прибавки приходят снимком режима — окно Книжника обновляется само раз в полсекунды.
+func _process(delta: float) -> void:
+	if not visible or vendor == "" or world.economy.VENDORS[world.economy.vkind(vendor)]["kind"] != "tomes":
+		return
+	_tomes_wait -= delta
+	if _tomes_wait <= 0.0:
+		_tomes_wait = 0.5
+		refresh()
+
 func open(vid: String) -> void:
 	vendor = vid
 	var v: Dictionary = world.economy.VENDORS[world.economy.vkind(vid)]   # в «Войне линий» id вида smith#a
 	_title.text = "%s — %s" % [v["name"], v["desc"]]
 	_only_mine.visible = v["kind"] == "gear"
 	_sort.visible = v["kind"] == "gear"
+	_tomes_wait = 0.0
 	visible = true
 	refresh()
 
@@ -90,6 +102,9 @@ func refresh() -> void:
 	_gold.text = "Золото: %d" % hero.gold
 	for c in _list.get_children():
 		c.queue_free()
+	if world.economy.VENDORS[world.economy.vkind(vendor)]["kind"] == "tomes":
+		_refresh_tomes(hero)
+		return
 	var ids: Array = world.economy.vendor_items(vendor, hero.unit.level).filter(func(id):
 		return not (_only_mine.visible and _only_mine.button_pressed) or GameData.ItemData.fits_class(GameData.item(id), hero.class_id))
 	var mode: String = SORTS[_sort.selected][0] if _sort.visible else ""
@@ -145,6 +160,54 @@ func refresh() -> void:
 			buy.tooltip_text = "Нужен %d уровень — у вас %d" % [it["level"], hero.unit.level]
 		var item_id: String = id
 		buy.pressed.connect(func(): world.economy.send("request_buy", [vendor, item_id]))
+		row.add_child(buy)
+		_list.add_child(row)
+
+## Книжник (Арена): томики характеристик — прибавка навсегда, цена растёт с каждой покупкой.
+func _refresh_tomes(hero) -> void:
+	var A := preload("res://scripts/data/arena_data.gd")
+	var price: int = world.mode.tome_price(hero) if world.mode.has_method("tome_price") else A.TOME_PRICE
+	var bought: int = world.mode.tome_count(hero) if world.mode.has_method("tome_count") else 0
+	var head := Label.new()
+	head.text = "Куплено томиков: %d.  Каждая покупка дороже на %d золота.  Ваши прибавки: %s" % [bought, A.TOME_STEP,
+		", ".join(hero.tome_stats.keys().map(func(k): return "+%d %s" % [int(hero.tome_stats[k]), SHORT.get(k, k)])) if not hero.tome_stats.is_empty() else "нет"]
+	head.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	head.custom_minimum_size = Vector2(540, 0)
+	head.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	_list.add_child(head)
+	var desc := {"str": "урон оружием", "agi": "крит и броня", "sta": "+10 здоровья за единицу", "int": "мана и сила заклинаний", "spi": "восполнение маны и здоровья"}
+	for tid in A.TOME_ORDER:
+		var td: Dictionary = A.TOMES[tid]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var icon_holder := Control.new()
+		icon_holder.custom_minimum_size = Vector2(42, 42)
+		var tcol: Color = {"str": Color(1.0, 0.45, 0.35), "agi": Color(0.5, 1.0, 0.45), "sta": Color(1.0, 0.8, 0.35),
+			"int": Color(0.5, 0.65, 1.0), "spi": Color(0.85, 0.6, 1.0)}.get(td["stat"], Color(0.9, 0.8, 0.5))
+		icon_holder.add_child(SpellIcon.make_icon("res://assets/icons/items/tome.svg", "Т", tcol, "item_q3", 42))
+		row.add_child(icon_holder)
+		var text := VBoxContainer.new()
+		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(text)
+		var n := Label.new()
+		n.text = td["name"]
+		n.add_theme_color_override("font_color", Color(0.75, 0.55, 1.0))
+		text.add_child(n)
+		var sub := Label.new()
+		sub.add_theme_font_size_override("font_size", 12)
+		sub.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+		sub.text = "+%d %s навсегда  •  %s" % [int(td["amount"]), SHORT.get(td["stat"], td["stat"]), desc.get(td["stat"], "")]
+		text.add_child(sub)
+		var pl := Label.new()
+		pl.text = "%d з." % price
+		pl.custom_minimum_size = Vector2(60, 0)
+		pl.add_theme_color_override("font_color", GOLD if hero.gold >= price else Color(1, 0.4, 0.35))
+		row.add_child(pl)
+		var buy := Button.new()
+		buy.text = "Купить"
+		buy.disabled = hero.gold < price
+		var t: String = tid
+		buy.pressed.connect(func(): world.economy.send("request_buy", [vendor, t]))
 		row.add_child(buy)
 		_list.add_child(row)
 

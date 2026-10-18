@@ -32,8 +32,14 @@ var _mode_option: OptionButton           # Осада / Война линий
 var _teams_option: OptionButton          # «Линии»: 1×1, 2×2, 3×3 (пустые места — боты)
 var _siege_rows: Array = []              # строки настроек, которые нужны только осаде
 var _teams_row: Array = []
+var _goal_row: Array = []
 var _solo_start: Button
-const MODE_CHOICES := [["siege", "Осада замка"], ["lines", "Война линий (команда на команду)"]]
+const MODE_CHOICES := [["siege", "Осада замка"], ["lines", "Война линий (команда на команду)"], ["arena", "Арена (лагеря, томики, дуэли)"]]
+## Режимы «команда на команду»: размер команд и лобби с командами.
+const TEAM_MODES := ["lines", "arena"]
+## Цель Арены (выбирает хост).
+const ARENA_GOALS := [["kills", "Убийства героев"], ["duels", "Победы в дуэлях"], ["base", "Разрушить базу"]]
+var _goal_option: OptionButton
 ## Фракции: [режим, подпись, фракция для «одной везде»]
 const FACTION_CHOICES := [["sides", "По сторонам света", ""], ["random", "Случайно по сторонам", ""],
 	["single", "Только нежить", "undead"], ["single", "Только орки", "orcs"], ["single", "Только демоны", "demons"],
@@ -260,7 +266,7 @@ func _build_ui() -> void:
 	_mode_option = OptionButton.new()
 	for mc in MODE_CHOICES:
 		_mode_option.add_item(mc[1])
-	_mode_option.tooltip_text = "Война линий — по мотивам Hero Line Wars: у каждого своя линия, враги за золото уходят на линию соперника"
+	_mode_option.tooltip_text = "Война линий — по мотивам Hero Line Wars: у каждого своя линия, враги за золото уходят на линию соперника.\nАрена — по мотивам Angel Arena: лагеря монстров, томики характеристик, сборка вещей, бой героев и дуэли."
 	_mode_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_mode_option.item_selected.connect(func(_i): _update_mode_rows())
 	opts.add_child(_mode_option)
@@ -273,6 +279,16 @@ func _build_ui() -> void:
 	_teams_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	opts.add_child(_teams_option)
 	_teams_row = [l_t, _teams_option]
+	var l_g := _label("Цель", 14, GOLD)
+	l_g.autowrap_mode = TextServer.AUTOWRAP_OFF
+	opts.add_child(l_g)
+	_goal_option = OptionButton.new()
+	for gc in ARENA_GOALS:
+		_goal_option.add_item(gc[1])
+	_goal_option.tooltip_text = "Цель партии Арены: 20 убийств на 1×1 (30 на 2×2, 40 на 3×3), 5 побед в дуэлях или разрушить базу.\nРазрушенная база — победа при любой цели. Через 60 минут побеждает команда с большим счётом."
+	_goal_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opts.add_child(_goal_option)
+	_goal_row = [l_g, _goal_option]
 	var l_w := _label("Длительность", 14, GOLD)
 	l_w.autowrap_mode = TextServer.AUTOWRAP_OFF
 	opts.add_child(l_w)
@@ -538,8 +554,10 @@ func _apply_local_info() -> void:
 		"factions": FACTION_CHOICES[_faction_option.selected][0], "faction": FACTION_CHOICES[_faction_option.selected][2],
 		"seed": randi(), "siege_id": Net.new_uid().substr(0, 12), "late_join": _late_check.button_pressed,
 		"mode": MODE_CHOICES[_mode_option.selected][0]}
-	if Net.settings["mode"] == "lines":
+	if TEAM_MODES.has(Net.settings["mode"]):
 		Net.settings["teams_n"] = _teams_option.selected + 1      # пустые места в командах займут боты
+	if Net.settings["mode"] == "arena":
+		Net.settings["arena_goal"] = str(_cli.get("arenagoal", ARENA_GOALS[_goal_option.selected][0]))
 	if _cli.has("pvptest"):
 		Net.settings["mode"] = "pvptest"       # проверка боя героев: соперник-бот рядом
 	Net.pending_siege = {}
@@ -597,7 +615,7 @@ func _on_fail(reason: String) -> void:
 ## Лобби «Войны линий»: две команды. Хост переставляет игроков кнопками, добавляет и убирает ботов,
 ## может раздать команды случайно. Игроки без команды при старте уходят в меньшую.
 func _refresh_lobby_teams() -> void:
-	var L := GameData.LinesData
+	var L = GameData.LinesData if str(Net.settings.get("mode", "lines")) == "lines" else preload("res://scripts/data/arena_data.gd")
 	var host := Net.is_server()
 	if host:
 		Net.fill_teams()
@@ -651,8 +669,10 @@ func _refresh_lobby_teams() -> void:
 		_lobby_list.add_child(_label(Net.lobby_notice, 14, Color(1, 0.6, 0.5)))
 	if host:
 		var addrs := Net.local_addresses()
-		_lobby_info.text = "Вы хост. Друзья подключаются по одному из адресов:\n%s\n(в Radmin VPN это адрес 26.x.x.x, порт %d)\n%s: команды до 3 человек, линий — по большей команде. Меньшей команде — прибавка к доходу." % [
-			", ".join(addrs), Net.port(), L.MODE_NAME]
+		var extra := "команды до 3 человек, линий — по большей команде. Меньшей команде — прибавка к доходу." if L == GameData.LinesData \
+			else "команды до 3 человек; на 1×1 часть лагерей у краёв закрыта. Пустые места займут боты."
+		_lobby_info.text = "Вы хост. Друзья подключаются по одному из адресов:\n%s\n(в Radmin VPN это адрес 26.x.x.x, порт %d)\n%s: %s" % [
+			", ".join(addrs), Net.port(), L.MODE_NAME, extra]
 		_start_btn.visible = true
 		_check_autostart()
 	else:
@@ -661,11 +681,14 @@ func _refresh_lobby_teams() -> void:
 
 ## Режим на экране героя: осаде нужны длительность, направления и передышка, «Линиям» — размер команд.
 func _update_mode_rows() -> void:
-	var lines: bool = MODE_CHOICES[_mode_option.selected][0] == "lines"
+	var mid: String = MODE_CHOICES[_mode_option.selected][0]
+	var lines: bool = TEAM_MODES.has(mid)
 	for c in _siege_rows:
 		c.visible = not lines
 	for c in _teams_row:
 		c.visible = lines
+	for c in _goal_row:
+		c.visible = mid == "arena"
 	if _solo_start:
 		_solo_start.text = "Начать бой (соперник — бот)" if lines else "Начать осаду"
 
@@ -674,7 +697,7 @@ func _refresh_lobby() -> void:
 		return
 	for c in _lobby_list.get_children():
 		c.queue_free()
-	var lines: bool = str(Net.settings.get("mode", "siege")) == "lines"
+	var lines: bool = TEAM_MODES.has(str(Net.settings.get("mode", "siege")))
 	_start_btn.text = "Начать битву!" if lines else "Начать осаду!"
 	(_screens["lobby"] as Control).custom_minimum_size.x = 680.0 if lines else 460.0
 	if lines:
@@ -724,6 +747,7 @@ func _load_settings() -> void:
 			_break_option.select(bi)
 		_mode_option.select(maxi(0, MODE_CHOICES.map(func(mc): return mc[0]).find(str(cfg.get_value("game", "mode", "siege")))))
 		_teams_option.select(clampi(int(cfg.get_value("game", "teams", 1)), 1, 3) - 1)
+		_goal_option.select(clampi(int(cfg.get_value("game", "arena_goal", 0)), 0, ARENA_GOALS.size() - 1))
 		var rid: String = cfg.get_value("player", "race", "human")
 		for i in _race_option.item_count:
 			if _race_option.get_item_metadata(i) == rid:
@@ -745,6 +769,7 @@ func _save_settings() -> void:
 	cfg.set_value("game", "break", Net.settings.get("break", 60))
 	cfg.set_value("game", "mode", Net.settings.get("mode", "siege"))
 	cfg.set_value("game", "teams", _teams_option.selected + 1)
+	cfg.set_value("game", "arena_goal", _goal_option.selected)
 	cfg.save(SETTINGS_PATH)
 
 func _parse_cli() -> void:
@@ -794,6 +819,10 @@ func _run_cli() -> void:
 			_break_option.select(bi)
 	if _cli.get("mode", "") == "lines":
 		_mode_option.select(1)
+	if _cli.get("mode", "") == "arena":
+		_mode_option.select(2)
+	if _cli.has("arenagoal"):
+		_goal_option.select(maxi(0, ARENA_GOALS.map(func(g): return g[0]).find(str(_cli["arenagoal"]).get_slice(":", 0))))
 	if _cli.has("teams"):
 		_teams_option.select(clampi(int(str(_cli["teams"]).get_slice("v", 0)), 1, 3) - 1)
 	_update_mode_rows()

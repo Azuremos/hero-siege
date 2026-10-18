@@ -9,6 +9,9 @@ const SIDE_MOBS := 100
 
 var id: int = 0
 var side: int = 0
+## Дуэль (Арена): участники дуэли (и их питомцы) — в своём «круге» (duel != 0): с остальными не взаимодействуют
+## ни как враги, ни как союзники — зрители не помогают и не мешают.
+var duel: int = 0
 var kind: String = "mob"        # hero | mob | pet | castle
 var owner_id: int = 0           # питомец: id героя-хозяина (урон в счётчик, лечение, рамки)
 var type_id: String = ""        # класс героя или тип моба
@@ -130,13 +133,13 @@ func remove_buff(key: String) -> void:
 static var pvp := false
 
 func is_enemy_of(other: Unit) -> bool:
-	if other == null or side == other.side:
+	if other == null or side == other.side or duel != other.duel:
 		return false
 	return pvp or side == SIDE_MOBS or other.side == SIDE_MOBS
 
 ## Союзник — та же сторона (лечение, баффы, ауры). В «Линиях» герои другой команды — не враги и не союзники.
 func is_ally_of(other: Unit) -> bool:
-	return other != null and side == other.side
+	return other != null and side == other.side and duel == other.duel
 
 func is_stunned(now: float) -> bool:
 	return now < stun_until or now < freeze_until
