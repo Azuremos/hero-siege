@@ -1641,12 +1641,27 @@ func _tell(hero_unit: Unit, text: String) -> void:
 	else:
 		world.ev_announce.rpc_id(h.peer_id, text, Color(1.0, 0.4, 0.3))
 
+## Реплика и предупреждение босса: всем (осада, «Линии») или героям рядом (режим задаёт радиус — Арена:
+## там четыре логова и боссы возрождаются, иначе вся карта слушала бы их речи).
+func _boss_say(bu: Unit, text: String, col: Color) -> void:
+	var r: float = world.mode.boss_voice_radius()
+	if r <= 0.0:
+		world.announce_all(text, col)
+		return
+	for h in world.heroes.values():
+		if h.offline or Net.is_bot_peer(h.peer_id) or h.unit.pos.distance_to(bu.pos) > r:
+			continue
+		if h.peer_id == multiplayer.get_unique_id():
+			world.ev_announce(text, col)
+		else:
+			world.ev_announce.rpc_id(h.peer_id, text, col)
+
 func _boss_init(m: Mob, wave: int, players: int, hp_scale: float, t: float) -> void:
 	var bd: Dictionary = GameData.BOSSES[m.unit.type_id]
 	m.boss = {"phase": -1, "busy_until": 0.0, "hard_ready": 0.0, "rot": 0, "rot_at": 0.0, "pulse_at": 0.0, "aura_at": 0.0,
 		"start": t, "enraged": false, "shield": false, "wave": wave, "players": players, "hp_scale": hp_scale}
 	if str(bd.get("intro", "")) != "":
-		world.announce_all(bd["intro"], BOSS_COLOR)
+		_boss_say(m.unit, bd["intro"], BOSS_COLOR)
 	_boss_enter(m, 0, t)
 
 func _boss_enter(m: Mob, idx: int, t: float) -> void:
@@ -1655,7 +1670,7 @@ func _boss_enter(m: Mob, idx: int, t: float) -> void:
 	var ph: Dictionary = _phase(m)
 	var u := m.unit
 	if ph.has("say"):
-		world.announce_all(ph["say"], BOSS_COLOR)
+		_boss_say(m.unit, ph["say"], BOSS_COLOR)
 	if idx > 0:
 		world.ev_sound_at.rpc("boss_roar", u.pos + Vector3(0, 2, 0), 6.0, 0.8)
 	if Net.cli.has("castlog") or Net.cli.has("bossarena"):
@@ -1715,14 +1730,14 @@ func _boss_tick(m: Mob, t: float) -> void:
 			st["shield"] = sh
 			_send_boss_state(m)
 			if not sh:
-				world.announce_all("%s снова уязвим!" % u.display_name, Color(0.6, 1.0, 0.6))
+				_boss_say(m.unit, "%s снова уязвим!" % u.display_name, Color(0.6, 1.0, 0.6))
 	if ph.has("rotate") and t >= float(st["rot_at"]):
 		var rt: Dictionary = ph["rotate"]
 		st["rot"] = int(st["rot"]) + 1
 		st["rot_at"] = t + float(rt["period"])
 		var says: Array = rt.get("say", [])
 		if not says.is_empty():
-			world.announce_all(says[int(st["rot"]) % says.size()], BOSS_COLOR)
+			_boss_say(m.unit, says[int(st["rot"]) % says.size()], BOSS_COLOR)
 		_send_boss_state(m)
 	if ph.has("pulse") and t >= float(st["pulse_at"]):
 		var pl: Dictionary = ph["pulse"]
@@ -1742,7 +1757,7 @@ func _boss_tick(m: Mob, t: float) -> void:
 	if not bool(st["enraged"]) and bd.has("enrage") and world.mode.mob_players() >= 2 and t - float(st["start"]) > float(bd["enrage"]):
 		st["enraged"] = true
 		u.add_buff("boss_enrage", t + 1e6, {"dmg": 1.5, "haste": 0.5})
-		world.announce_all("%s впадает в ярость!" % u.display_name, Color(1, 0.2, 0.1))
+		_boss_say(m.unit, "%s впадает в ярость!" % u.display_name, Color(1, 0.2, 0.1))
 
 ## Объект (филактерия, портал, гробница): стоит на месте, только способности; гробница держит героя.
 func _object_tick(m: Mob, t: float) -> void:
@@ -1786,7 +1801,7 @@ func _boss_died(m: Mob) -> void:
 		var delay := float(od.get("delay", 2.5))
 		var r := float(od.get("radius", 6.0))
 		ev_telegraph.rpc("circle", u.pos, 0.0, r, 0.0, delay)
-		world.announce_all("%s взрывается! Отойдите!" % u.display_name, BOSS_COLOR)
+		_boss_say(m.unit, "%s взрывается! Отойдите!" % u.display_name, BOSS_COLOR)
 		_transform_pending += 1
 		_delayed.append({"at": t + delay, "pos": m.pos2, "r": r, "fx": [{"type": "damage", "min": 40.0, "max": 50.0}], "school": "fire",
 			"power": u.power, "transform": od["transform"], "say": od.get("say", ""), "route": m.route,
@@ -1796,7 +1811,7 @@ func _boss_died(m: Mob) -> void:
 		world.economy.roll_boss_loot(u.pos, u.level, bd.get("loot", []), bd.get("rank", "lieutenant"))
 	else:
 		world.economy.roll_loot(u.pos, u.level, "boss", 0.0)      # отправленный босс — без вещей, только зелья
-	world.announce_all("%s повержен!" % u.display_name, Color(1, 0.85, 0.3))
+	_boss_say(m.unit, "%s повержен!" % u.display_name, Color(1, 0.85, 0.3))
 
 ## Отложенный удар босса: метка (следует за героем), мина, взрыв машины (и превращение).
 func _explode_boss(d: Dictionary, _t: float) -> void:

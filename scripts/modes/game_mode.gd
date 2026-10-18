@@ -140,6 +140,10 @@ func mob_leash_dist(_m) -> float:
 func leash_range() -> float:
 	return 32.0
 
+## Реплики боссов слышны в этом радиусе (0 — всей карте, как в осаде).
+func boss_voice_radius() -> float:
+	return 0.0
+
 ## Показывать ли полосу босса u игроку (у «Линий» — только своей линии, у Арены — только рядом).
 func show_boss_bar(_me, _u: Unit) -> bool:
 	return true

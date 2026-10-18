@@ -265,6 +265,9 @@ func leash_range() -> float:
 func mob_players() -> int:
 	return team_n
 
+func boss_voice_radius() -> float:
+	return 50.0
+
 func show_boss_bar(me, u: Unit) -> bool:
 	return me != null and me.unit.pos.distance_to(u.pos) < 45.0
 
