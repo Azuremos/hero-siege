@@ -698,6 +698,11 @@ static func zone(world: Node3D, id: int, kind: String, pos: Vector3, yaw: float,
 			particles(n, Color(1.0, 0.45, 0.1), int(size * 18), 0.55, {"shape": "ring", "radius": size * 0.9, "vmin": 1.5, "vmax": 3.5,
 				"spread": 8.0, "smin": 1.0, "smax": 1.8, "size": 0.8, "aabb": size + 2.0})
 			n.stop_particles_at = duration - 0.8
+		"zone_shadow":
+			_ring(n, size, COL_SHADOW, 0.3, true, 1.5, n)
+			particles(n, COL_SHADOW, int(size * 10), 1.2, {"shape": "ring", "radius": size * 0.85, "vmin": 0.8, "vmax": 1.8,
+				"smin": 0.4, "smax": 0.8, "size": 0.45, "aabb": size + 1.0})
+			n.stop_particles_at = duration - 1.0
 		"zone_consecration":
 			_ring(n, size, COL_HOLY, 0.28, true, 1.6, n)
 			particles(n, COL_HOLY, int(size * 8), 1.4, {"shape": "ring", "radius": size * 0.9, "vmin": 0.6, "vmax": 1.4,

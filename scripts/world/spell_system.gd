@@ -926,6 +926,8 @@ func _tick_auras_for(list: Array, t: float) -> void:
 				var src: Unit = world.get_unit(a["source"])
 				if a["kind"] == "dot":
 					deal_damage(src, u, a["per_tick"], a["school"], false, a["key"])
+					if a.has("mana_back") and src and src.resource == "mana":
+						src.mana = minf(src.max_mana, src.mana + src.max_mana * float(a["mana_back"]))
 					if a.get("procs", false) and src and u.alive:
 						_trigger_procs(src, u, "spell_hit", a["key"], a["school"], false, t)
 				elif a["kind"] == "pulse":
@@ -983,10 +985,13 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 	if pvp:
 		var pc := pvp_cfg()
 		crit_k = 1.0 + (float(pc["crit_mult"]) - 1.0) * (1.0 - GameData.PvpData.resil(pc, target.level))
+	var interrupted := false        # каст цели сбит этим заклинанием (для эффектов after_interrupt — немота Безмолвия)
 	for e0: Dictionary in effects:
 		var e := e0
 		if not target.alive:
 			return
+		if e.get("after_interrupt", false) and not interrupted:
+			continue        # немота и т.п. — только если каст действительно сбит
 		if pvp and GameData.PvpData.CC.has(e["type"]):
 			e = _pvp_cc(e, caster, target, t)
 			if e.is_empty():
@@ -1099,6 +1104,8 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					"source": caster.id if caster else 0}
 				if e.get("procs", false):
 					aura["procs"] = true      # тики — попадание заклинания для проков (Огненный шок → Волна лавы)
+				if e.has("mana_back"):
+					aura["mana_back"] = float(e["mana_back"])      # Прикосновение вампира: тик возвращает заклинателю долю маны
 				if e.has("explode"):
 					var ex: Dictionary = e["explode"]
 					aura["explode"] = {"radius": ex["radius"], "min": float(ex["min"]) * pw * boost * pk, "max": float(ex["max"]) * pw * boost * pk}
@@ -1210,10 +1217,13 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					world.mobs.on_steal(caster, vh, g)
 			"interrupt":
 				# сбить каст врага; школа заклинания заблокирована на lock сек.
-				if target.kind == "mob" and world.mobs.interrupt(target, float(e.get("lock", 4.0))) and caster:
-					world.meter.on_interrupt(caster, target)
-					_trigger_procs(caster, target, "interrupt", sid, school, false, t)
+				if target.kind == "mob" and world.mobs.interrupt(target, float(e.get("lock", 4.0))):
+					interrupted = true
+					if caster:
+						world.meter.on_interrupt(caster, target)
+						_trigger_procs(caster, target, "interrupt", sid, school, false, t)
 				elif pvp and _interrupt_hero(target, float(e.get("lock", 4.0)), t):
+					interrupted = true
 					world.meter.on_interrupt(caster, target)
 					_trigger_procs(caster, target, "interrupt", sid, school, false, t)
 			"buff":
@@ -1255,6 +1265,12 @@ func _on_damage_dealt(caster: Unit, target: Unit, amount: float, school: String,
 				low = h.unit
 		if low:
 			heal(caster, low, amount * caster.flag("atonement"), false, "atonement")
+	# Объятия вампира (жрец Тьмы): доля урона тьмой лечит жреца и союзников рядом
+	var ve := caster.mod("vamp_embrace")
+	if ve > 0.0 and school == "shadow":
+		for h in world.ally_heroes(caster):
+			if h.unit.alive and h.unit.hp < h.unit.max_hp and h.unit.pos.distance_to(caster.pos) <= 30.0:
+				heal(caster, h.unit, amount * ve, false, "vampiric_embrace")
 	if caster.flag("smite_mana") > 0.0 and school == "holy":
 		caster.mana = minf(caster.max_mana, caster.mana + caster.max_mana * caster.flag("smite_mana"))
 	if crit and school == "fire" and caster.flag("ignite") > 0.0 and target.alive:
@@ -1711,6 +1727,8 @@ func _interrupt_hero(target: Unit, lock: float, t: float) -> bool:
 	if not st.has("locked"):
 		st["locked"] = {}
 	st["locked"][school] = t + lock * float(pvp_cfg()["cc_mult"])
+	if Net.cli.has("pvplog"):
+		print("PVP INTERRUPT %s: сбито «%s»" % [target.display_name, st["cast"]["sid"]])
 	_interrupt(th)
 	_feedback(th.peer_id, "", "Прервано: школа «%s» заблокирована" % GameData.SCHOOLS[school]["name"])
 	return true

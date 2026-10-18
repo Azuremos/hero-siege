@@ -6,7 +6,7 @@ const SPELL_LEVELS := {
 	"counterspell": 3, "pummel": 3, "rebuke": 3, "silence": 3,    # прерывания — по одному на класс
 	"frostbolt": 1, "fireball": 1, "arcane_missiles": 2, "frost_nova": 3, "arcane_explosion": 4, "blizzard": 5, "blink": 6, "ice_wall": 7, "arcane_barrage": 8, "fire_wall": 9, "flamestrike": 11,
 	"crusader_strike": 1, "holy_light": 1, "judgement": 2, "consecration": 3, "blessing_of_kings": 4, "hammer_of_justice": 5, "avenging_wrath": 6, "holy_wrath": 7, "divine_guardian": 8, "divine_shield": 9, "lay_on_hands": 11,
-	"smite": 1, "flash_heal": 1, "renew": 2, "pw_shield": 3, "pw_fortitude": 4, "holy_fire": 5, "divine_spirit": 6, "circle_of_healing": 7, "prayer_of_healing": 8, "light_barrier": 9, "holy_nova": 11,
+	"smite": 1, "flash_heal": 1, "renew": 2, "pw_shield": 3, "pw_fortitude": 4, "sw_pain": 4, "holy_fire": 5, "divine_spirit": 6, "circle_of_healing": 7, "prayer_of_healing": 8, "light_barrier": 9, "holy_nova": 11,
 	"heroic_strike": 1, "charge": 1, "battle_shout": 2, "thunder_clap": 3, "taunt": 4, "bloodthirst": 5, "whirlwind": 6, "demoralizing_shout": 7, "execute": 8, "shield_wall": 9, "recklessness": 11,
 	"steady_shot": 1, "call_pet": 1, "mend_pet": 2, "silencing_shot": 3, "revive_pet": 4,
 	"lightning_bolt": 1, "healing_wave": 1, "flame_shock": 2, "wind_shear": 3, "searing_totem": 4, "lightning_shield": 6,
@@ -103,6 +103,7 @@ const BUFF_INFO := {
 	"infusion_of_light": {"name": "Прилив Света", "color": Color(1.0, 0.95, 0.6), "icon": "holy_light"},
 	"surge_of_light": {"name": "Волна Света", "color": Color(1.0, 0.95, 0.6), "icon": "flash_heal"},
 	"borrowed_time": {"name": "Взятое взаймы время", "color": Color(0.85, 0.85, 1.0), "icon": "pw_shield"},
+	"shadowy_insight": {"name": "Тёмные мысли", "color": Color(0.6, 0.35, 0.85), "icon": "psychic_scream"},
 	"sudden_death": {"name": "Внезапная смерть", "color": Color(1.0, 0.3, 0.3), "icon": "execute"},
 	"bloodsurge": {"name": "Прилив крови", "color": Color(1.0, 0.3, 0.3), "icon": "heroic_strike"},
 	"revenge": {"name": "Возмездие", "color": Color(0.9, 0.8, 0.6), "icon": "thunder_clap"},
@@ -156,6 +157,8 @@ const PROC_BUFFS := {
 	"infusion_of_light": {"spells": ["holy_light"], "instant": true, "amp": 0.2},
 	"surge_of_light": {"spells": ["flash_heal", "smite"], "instant": true, "free": true},
 	"borrowed_time": {"spells": ["flash_heal", "holy_fire", "smite", "prayer_of_healing"], "instant": true},
+	# Тёмные мысли: следующий Взрыв разума (или вариант ряда) — мгновенно и на 25% сильнее
+	"shadowy_insight": {"spells": ["mind_blast"], "instant": true, "amp": 0.25, "reset_cd": true},
 	"sudden_death": {"spells": ["execute"], "free": true, "allow_execute": true},
 	"bloodsurge": {"spells": ["heroic_strike"], "free": true, "amp": 0.5, "reset_cd": true},
 	"revenge": {"spells": ["thunder_clap"], "free": true, "amp": 0.5, "reset_cd": true},
@@ -197,6 +200,9 @@ const AUTO_SPELLS := {
 	"hymn": {"name": "Гимн наару", "school": "holy", "radius": 12.0, "delay": 0.0, "vfx": "nova_holy", "around_caster": true,
 		"ally_fx": [{"type": "heal", "min": 70.0, "max": 85.0}]},
 	# Шаман (сессия 11)
+	# Жрец Тьмы: талант «Призрачные явления» и сет Шёпота Бездны
+	"shadowy_apparition": {"name": "Призрачное явление", "school": "shadow", "radius": 2.5, "delay": 0.5, "vfx": "hit_shadow",
+		"enemy_fx": [{"type": "damage", "min": 26.0, "max": 32.0}]},
 	"lava_eruption": {"name": "Извержение лавы", "school": "fire", "radius": 6.0, "delay": 0.6, "vfx": "eruption",
 		"enemy_fx": [{"type": "damage", "min": 46.0, "max": 56.0}, {"type": "dot", "total": 16.0, "dur": 4.0, "tick": 1.0, "key": "lava_burn"}]},
 	"overload": {"name": "Перегрузка", "school": "nature", "radius": 2.5, "delay": 0.15, "vfx": "beam_nature",

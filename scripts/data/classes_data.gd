@@ -46,12 +46,12 @@ const CLASSES := {
 	},
 	"priest": {
 		"name": "Жрец", "color": Color(1.0, 1.0, 1.0),
-		"desc": "Маг Света и опора отряда: щиты, исцеление со временем, барьер Света на земле.",
+		"desc": "Опора отряда: Послушание — щиты и урон Светом, который лечит; Свет — исцеление; Тьма — урон тьмой со временем и вампиризм.",
 		"model": "Mage", "show": ["1H_Wand"], "hide": ["Mage_Hat"], "recolor": "priest", "default_offhand": "tome",
 		"resource": "mana", "base_hp": 280.0, "base_mana": 230.0, "armor": 0.0, "dmg_mult": 1.05,
 		"attrs": {"str": 6, "agi": 8, "sta": 14, "int": 22, "spi": 22}, "grow": {"str": 0.5, "agi": 0.5, "sta": 2.4, "int": 2.5, "spi": 2.0},
 		"auto": {"range": 24.0, "min": 11.0, "max": 15.0, "speed": 1.8, "school": "holy", "ranged": true},
-		"spells": ["smite", "flash_heal", "renew", "pw_shield", "pw_fortitude", "holy_fire", "divine_spirit", "circle_of_healing", "prayer_of_healing", "light_barrier", "holy_nova", "silence"],
+		"spells": ["smite", "flash_heal", "renew", "pw_shield", "pw_fortitude", "sw_pain", "holy_fire", "greater_heal", "divine_spirit", "circle_of_healing", "prayer_of_healing", "light_barrier", "silence"],
 	},
 	"warrior": {
 		"name": "Воин", "color": Color(0.78, 0.61, 0.43),

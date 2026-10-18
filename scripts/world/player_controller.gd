@@ -892,6 +892,12 @@ func bot_tick(delta: float) -> void:
 					return
 			"enemy":
 				if tu and _dist_to(tu) <= float(sp["range"]) + tu.radius:
+					var dot := _dot_of(sp)
+					if not dot.is_empty():
+						var dk := "%d:%s" % [tu.id, dot["key"]]
+						if now() < float(_dot_until.get(dk, 0.0)):
+							continue      # уже висит — не обновлять раньше времени
+						_dot_until[dk] = now() + float(dot["dur"]) * 0.85
 					_face(tu.pos)
 					_send_server("request_cast", [sid, tu.id, Vector3.ZERO, 0.0])
 					return
@@ -920,6 +926,15 @@ func bot_tick(delta: float) -> void:
 					_face(p)
 					_send_server("request_cast", [sid, 0, p, _wall_yaw(p)])
 					return
+
+## Периодический урон заклинания (первый dot в эффектах) или {}.
+var _dot_until: Dictionary = {}      # "id цели:ключ" -> до какого времени не обновлять
+
+func _dot_of(sp: Dictionary) -> Dictionary:
+	for e in sp.get("effects", []):
+		if e["type"] == "dot":
+			return e
+	return {}
 
 ## Бот-охотник: призвать или воскресить питомца, подлечить его, режим — агрессивный, вид — по ветке
 ## (Стрельба — волк, Повелитель зверей — медведь, Выживание — кошка; --botpet=wolf|bear|cat). true — действие отправлено.
@@ -1028,6 +1043,8 @@ func _bot_priority() -> Array:
 func _bot_rank(sid: String) -> float:
 	var sp: Dictionary = GameData.SPELLS[sid]
 	var cd := float(sp.get("cd", 0.0))
+	if cd <= 0.0 and _dot_of(sp) != {}:
+		return 1050.0      # свои периодические эффекты (Слово Тьмы: Боль) — держать на цели
 	if cd > 0.0:
 		return 1000.0 + cd
 	if sp["delivery"] == "totem":
