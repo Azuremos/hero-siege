@@ -328,6 +328,17 @@ func start_game() -> void:
 		fill_teams()
 		if int(settings.get("teams_n", 0)) > 0:
 			fill_bots(int(settings["teams_n"]))      # пустые места в командах — боты
+	if str(settings.get("mode", "")) == "pvptest":
+		# --pvptest=<класс>: вражеский герой-бот этого класса (команда 1), свой герой — команда 0
+		for pid in players:
+			players[pid]["team"] = 0
+		if add_bot(1):
+			for pid in players:
+				if is_bot_peer(pid):
+					var pc := str(cli.get("pvptest", "warrior"))
+					players[pid]["class"] = pc if GameData.CLASSES.has(pc) else "warrior"
+					players[pid]["race"] = GameData.ClassData.fix_race(players[pid]["class"], "human")
+					players[pid]["name"] = "Соперник"
 	var ids := players.keys()
 	ids.sort()
 	var hero_id := 1

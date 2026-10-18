@@ -170,7 +170,7 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	u.id = _next_id
 	_next_id += 1
 	u.kind = "mob"
-	u.team = Unit.Team.ENEMIES
+	u.side = int(opts.get("side", Unit.SIDE_MOBS))      # мобы враждебны всем; режим может дать сторону (свои войска)
 	u.type_id = type
 	u.display_name = def["name"]
 	var cw: int = world.campaign_wave(wave)      # «Поход»: сила — от сильнейшего героя и уровня угрозы
@@ -216,16 +216,17 @@ func spawn(type: String, source: int, wave: int, players: int, hp_scale: float =
 	mobs[u.id] = m
 	world.units[u.id] = u
 	_make_visual(m)
-	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave, u.affixes, u.elite, 0, u.sent_by])
+	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, wave, u.affixes, u.elite, 0, u.sent_by, u.side])
 	if GameData.BOSSES.has(type):
 		_boss_init(m, wave, players, hp_scale, t)
 	return u.id
 
 ## Питомец: та же запись Mob, но сторона игроков и свой словарь (не враг, не в волне).
 func _spawn_pet(m: Mob, u: Unit, type: String, opts: Dictionary) -> int:
-	u.team = Unit.Team.PLAYERS
 	u.kind = "pet"
 	u.owner_id = int(opts["pet_owner"])
+	var oh = world.heroes.get(u.owner_id, null)
+	u.side = oh.unit.side if oh else 0         # сторона хозяина
 	u.level = 1
 	m.pos2 = opts["pos"]
 	m.yaw = 0.0
@@ -242,7 +243,7 @@ func _spawn_pet(m: Mob, u: Unit, type: String, opts: Dictionary) -> int:
 		u.hp = 1.0
 		u.max_hp = 1.0
 		_pet_refresh(m, owner_hero)     # здоровье и сила от хозяина — до рассылки
-	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, 1, [], 0, u.owner_id])
+	_pending_spawns.append([u.id, type, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, 1, [], 0, u.owner_id, 0, u.side])
 	return u.id
 
 func kill(u: Unit, killer: Unit) -> void:
@@ -504,7 +505,7 @@ func _think(m: Mob) -> void:
 	var best_d := aggro
 	for h in world.heroes.values():
 		var hu: Unit = h.unit
-		if not hu.alive or world.now() < hu.unseen_until:
+		if not hu.alive or world.now() < hu.unseen_until or not m.unit.is_enemy_of(hu):
 			continue
 		# таланты «агро» (Вызов Света): такого героя враги выбирают охотнее
 		var d := Vector2(hu.pos.x, hu.pos.z).distance_to(m.pos2) / (1.0 + hu.flag("threat"))
@@ -515,7 +516,7 @@ func _think(m: Mob) -> void:
 	for p: Mob in pets.values():
 		var pu: Unit = p.unit
 		var pd := p.pos2.distance_to(m.pos2) / (1.0 + float(p.def.get("threat", 0.0)))
-		if pu.alive and pd < best_d:
+		if pu.alive and pd < best_d and m.unit.is_enemy_of(pu):
 			best_d = pd
 			best = pu
 	if best:
@@ -737,7 +738,7 @@ func _attack(m: Mob, tu: Unit, t: float) -> void:
 		if m.def.has("cleave"):
 			for h in world.heroes.values():
 				var hu: Unit = h.unit
-				if hu != tu and hu.alive and Vector2(hu.pos.x, hu.pos.z).distance_to(Vector2(tu.pos.x, tu.pos.z)) < float(m.def["cleave"]):
+				if hu != tu and hu.alive and m.unit.is_enemy_of(hu) and Vector2(hu.pos.x, hu.pos.z).distance_to(Vector2(tu.pos.x, tu.pos.z)) < float(m.def["cleave"]):
 					world.spells.apply_effects(m.unit, hu, fx, "mob", "physical")
 
 func _attack_wall(m: Mob, w: Dictionary, t: float) -> void:
@@ -829,7 +830,7 @@ func ev_spawn(list: Array) -> void:
 		var u := Unit.new()
 		u.id = e[0]
 		u.kind = "mob"
-		u.team = Unit.Team.ENEMIES
+		u.side = int(e[11]) if e.size() > 11 else Unit.SIDE_MOBS
 		u.type_id = e[1]
 		u.display_name = def["name"]
 		u.max_hp = e[5]
@@ -851,7 +852,6 @@ func ev_spawn(list: Array) -> void:
 		if e.size() > 9 and int(e[9]) != 0:
 			# питомец охотника: союзник, в своём словаре
 			u.kind = "pet"
-			u.team = Unit.Team.PLAYERS
 			u.owner_id = int(e[9])
 			pets[u.id] = m
 		else:
@@ -1118,7 +1118,7 @@ func _try_abilities(m: Mob, t: float) -> void:
 			continue
 		if cond.has("hp_below") and m.unit.hp_frac() >= float(cond["hp_below"]):
 			continue
-		if cond.has("enemy_near") and not _hero_within(m.pos2, float(cond["enemy_near"])):
+		if cond.has("enemy_near") and not _hero_within(m, float(cond["enemy_near"])):
 			continue
 		var pick := _pick_target(m, ab)
 		if pick.is_empty():
@@ -1140,9 +1140,9 @@ func _abilities_of(m: Mob) -> Array:
 		return sets[int(m.boss["rot"]) % sets.size()]
 	return ph.get("abilities", [])
 
-func _hero_within(p: Vector2, r: float) -> bool:
+func _hero_within(m: Mob, r: float) -> bool:
 	for h in world.heroes.values():
-		if h.unit.alive and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(p) <= r + h.unit.radius:
+		if h.unit.alive and m.unit.is_enemy_of(h.unit) and Vector2(h.unit.pos.x, h.unit.pos.z).distance_to(m.pos2) <= r + h.unit.radius:
 			return true
 	return false
 
@@ -1161,7 +1161,7 @@ func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
 				var bd := rng
 				for h in world.heroes.values():
 					var hu: Unit = h.unit
-					if hu.alive and world.now() >= hu.unseen_until and _d(m, hu) <= bd:
+					if hu.alive and world.now() >= hu.unseen_until and _d(m, hu) <= bd and m.unit.is_enemy_of(hu):
 						bd = _d(m, hu)
 						best = hu
 			if best == null:
@@ -1172,7 +1172,7 @@ func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
 		"enemy_random":
 			var pool: Array = []
 			for h in world.heroes.values():
-				if h.unit.alive and world.now() >= h.unit.unseen_until and _d(m, h.unit) <= rng:
+				if h.unit.alive and world.now() >= h.unit.unseen_until and _d(m, h.unit) <= rng and m.unit.is_enemy_of(h.unit):
 					pool.append(h.unit)
 			if pool.is_empty():
 				return {}
@@ -1183,7 +1183,7 @@ func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
 			var bf := 0.7 if ab["target"] == "ally_hurt" else 2.0
 			for o: Unit in query_radius(m.pos2, rng):
 				var om: Mob = mobs.get(o.id, null)
-				if om == null or (ab["target"] == "ally" and om.state != S.CHASE and om.state != S.OBJECTIVE):
+				if om == null or not m.unit.is_ally_of(o) or (ab["target"] == "ally" and om.state != S.CHASE and om.state != S.OBJECTIVE):
 					continue
 				if o.hp_frac() < bf:
 					bf = o.hp_frac()
@@ -1200,7 +1200,7 @@ func _pick_target(m: Mob, ab: Dictionary) -> Dictionary:
 			if m.state == S.WALL and walls.has(m.wall):
 				return {"unit": 0, "point": m.pos2, "wall": m.wall}
 			for h in world.heroes.values():
-				if h.unit.alive and _d(m, h.unit) <= rng:
+				if h.unit.alive and _d(m, h.unit) <= rng and m.unit.is_enemy_of(h.unit):
 					return {"unit": h.unit.id, "point": m.pos2}
 			return {}
 	return {}
@@ -1313,7 +1313,7 @@ func _finish_cast(m: Mob, t: float) -> void:
 				var nd := float(ab.get("jump_range", 9.0))
 				for h in world.heroes.values():
 					var hu: Unit = h.unit
-					if hu.alive and not hit.has(hu) and hu.pos.distance_to(cur.pos) <= nd:
+					if hu.alive and not hit.has(hu) and hu.pos.distance_to(cur.pos) <= nd and m.unit.is_enemy_of(hu):
 						nd = hu.pos.distance_to(cur.pos)
 						nxt = hu
 				cur = nxt
@@ -1331,7 +1331,7 @@ func _finish_cast(m: Mob, t: float) -> void:
 			var inner := float(tg.get("inner", 0.0))
 			for h in world.heroes.values():
 				var hu: Unit = h.unit
-				if not hu.alive:
+				if not hu.alive or not m.unit.is_enemy_of(hu):
 					continue
 				var hp2 := Vector2(hu.pos.x, hu.pos.z)
 				var dc := hp2.distance_to(center)
@@ -1358,7 +1358,8 @@ func _finish_cast(m: Mob, t: float) -> void:
 				world.spells._on_death(m.unit, null)
 		"allies":
 			for o: Unit in query_radius(m.pos2, float(ab.get("radius", 10.0))):
-				world.spells.apply_effects(m.unit, o, fx, sid, school)
+				if m.unit.is_ally_of(o):
+					world.spells.apply_effects(m.unit, o, fx, sid, school)
 			if not ab.get("silent", false):
 				world.spells.fx_at("aura_war", m.unit.pos, m.unit.pos, 0.0, m.unit.id)
 		"summon":
@@ -2130,7 +2131,7 @@ func wave_near(p: Vector2) -> bool:
 	return false
 
 # ---------------------------------------------------------------- питомцы (сессия 06)
-## Союзные существа — в той же системе, что враги: Mob со стороной «игроки» (unit.team = PLAYERS, kind = "pet").
+## Союзные существа — в той же системе, что враги: Mob со стороной хозяина (unit.side, kind = "pet").
 ## Живут в своём словаре pets: волны, счётчик врагов и заклинания по площади (query_radius) их не видят.
 ## Враги выбирают питомца целью наравне с героями (с учётом угрозы — у медведя она выше).
 ## Сервер ведёт состояние питомца каждого охотника: вид, режим, команду; владельцу шлёт ev_pet_state.
@@ -2244,7 +2245,7 @@ func pet_command(hero, cmd: String, target_id: int) -> void:
 	match cmd:
 		"attack":
 			var tu: Unit = world.get_unit(target_id)
-			if tu and tu.alive and tu.team == Unit.Team.ENEMIES:
+			if tu and tu.alive and hero.unit.is_enemy_of(tu):
 				st["cmd"] = "attack"
 				st["target"] = target_id
 		"follow":
@@ -2369,12 +2370,12 @@ func _pet_target(m: Mob, hero, st: Dictionary, owner_p: Vector2) -> Unit:
 	if st["mode"] == "passive":
 		return null
 	var cur: Unit = world.get_unit(m.target)
-	if cur and cur.alive and cur.team == Unit.Team.ENEMIES and Vector2(cur.pos.x, cur.pos.z).distance_to(owner_p) < PET_LEASH:
+	if cur and cur.alive and m.unit.is_enemy_of(cur) and Vector2(cur.pos.x, cur.pos.z).distance_to(owner_p) < PET_LEASH:
 		return cur
 	if st["mode"] == "aggressive":
 		var best: Unit = null
 		var bd := INF
-		for e: Unit in query_radius(owner_p, PET_AGGRO):
+		for e: Unit in world.enemies_near(m.unit, owner_p, PET_AGGRO):
 			var d := Vector2(e.pos.x, e.pos.z).distance_to(m.pos2)
 			if d < bd:
 				best = e
@@ -2382,8 +2383,13 @@ func _pet_target(m: Mob, hero, st: Dictionary, owner_p: Vector2) -> Unit:
 		return best
 	# защитный: то, что бьёт охотник, или то, что бьёт охотника и питомца
 	var at: Unit = world.get_unit(int(world.spells._hstate(hero.hero_id).get("auto_target", 0)))
-	if at and at.alive and at.team == Unit.Team.ENEMIES and Vector2(at.pos.x, at.pos.z).distance_to(owner_p) < PET_AGGRO + 10.0:
+	if at and at.alive and m.unit.is_enemy_of(at) and Vector2(at.pos.x, at.pos.z).distance_to(owner_p) < PET_AGGRO + 10.0:
 		return at
+	# в PvP: вражеский герой, который бьёт охотника или питомца
+	for la: int in [hero.unit.last_attacker, m.unit.last_attacker]:
+		var lu: Unit = world.get_unit(la)
+		if lu and lu.alive and lu.kind == "hero" and m.unit.is_enemy_of(lu) and Vector2(lu.pos.x, lu.pos.z).distance_to(owner_p) < PET_AGGRO:
+			return lu
 	for e: Unit in query_radius(owner_p, PET_AGGRO):
 		var em: Mob = mobs.get(e.id, null)
 		if em and em.state == S.CHASE and (em.target == hero.hero_id or em.target == m.unit.id):
@@ -2412,13 +2418,13 @@ func _pet_ability(m: Mob, tu: Unit, t: float) -> void:
 			"howl":
 				if dist > 12.0:
 					continue
-				for h in world.heroes.values():
+				for h in world.ally_heroes(m.unit):
 					if h.unit.alive and h.unit.pos.distance_to(m.unit.pos) <= float(ab["radius"]):
 						world.spells.apply_effects(m.unit, h.unit, [{"type": "buff", "key": ab["buff"], "dur": ab["dur"], "mods": ab["mods"]}], "wolf_howl", "nature")
 				world.spells.fx_at("taunt_aoe", m.unit.pos, m.unit.pos, float(ab["radius"]) * 0.3, m.unit.id)
 				world.spells.ev_sound.rpc("pet_howl", m.unit.pos)
 			"growl":
-				var near: Array = query_radius(m.pos2, float(ab["radius"]))
+				var near: Array = query_radius(m.pos2, float(ab["radius"])).filter(func(e): return m.unit.is_enemy_of(e))
 				if near.is_empty():
 					continue
 				for e: Unit in near:
@@ -2446,7 +2452,7 @@ func send_full(peer: int) -> void:
 	var batch: Array = []
 	for m: Mob in mobs.values() + pets.values():
 		var u := m.unit
-		batch.append([u.id, u.type_id, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, u.level, u.affixes, u.elite, u.owner_id, u.sent_by])
+		batch.append([u.id, u.type_id, m.pos2.x, m.pos2.y, m.yaw, u.max_hp, u.level, u.affixes, u.elite, u.owner_id, u.sent_by, u.side])
 		if batch.size() >= 60:
 			bytes += var_to_bytes(batch).size()
 			parts += 1
@@ -2464,6 +2470,8 @@ func send_full(peer: int) -> void:
 		var b: Vector2 = w["b"]
 		var c := (a + b) * 0.5
 		world.spells.ev_zone.rpc_id(peer, id, "wall_ice", Vector3(c.x, 0, c.y), -(b - a).angle(), a.distance_to(b), maxf(0.5, float(w["until"]) - world.now()))
+		if Unit.pvp:
+			world.spells.ev_wall_block.rpc_id(peer, id, Vector3(a.x, 0, a.y), Vector3(b.x, 0, b.y), int(w.get("side", 0)), maxf(0.5, float(w["until"]) - world.now()))
 
 # ---------------------------------------------------------------- C++ (GDExtension, сессия 08)
 ## Горячие циклы серверной симуляции — в C++ (native/, класс MobSimNative из bin/herosiege_native.dll):

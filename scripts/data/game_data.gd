@@ -43,6 +43,7 @@ const BossData := preload("res://scripts/data/boss_data.gd")
 const Formulas := preload("res://scripts/data/formulas.gd")
 const LinesData := preload("res://scripts/data/lines_data.gd")
 const SendData := preload("res://scripts/data/sends.gd")
+const PvpData := preload("res://scripts/data/pvp_data.gd")
 const SPELL_FILES := [
 	preload("res://scripts/data/spells/mage.gd"),
 	preload("res://scripts/data/spells/paladin.gd"),

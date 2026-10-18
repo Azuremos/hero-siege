@@ -29,7 +29,8 @@ var local_hero: CharacterBody3D = null
 
 ## Режимы игры. Выбор режима — Net.settings["mode"]: осада и предпросмотр интерфейса из главного меню.
 const MODES := {"siege": preload("res://scripts/modes/siege_mode.gd"), "preview": preload("res://scripts/modes/preview_mode.gd"),
-	"arena": preload("res://scripts/modes/arena_mode.gd"), "lines": preload("res://scripts/modes/lines_mode.gd")}
+	"arena": preload("res://scripts/modes/arena_mode.gd"), "lines": preload("res://scripts/modes/lines_mode.gd"),
+	"pvptest": preload("res://scripts/modes/pvptest_mode.gd")}
 
 ## Сервер: герой-бот («Добавить бота в команду»), от чьего имени сейчас идёт запрос (spells, economy, режим).
 var acting_hero = null
@@ -147,6 +148,43 @@ func hero_count_alive() -> int:
 func get_unit(id: int) -> Unit:
 	return units.get(id, null)
 
+# ---------------------------------------------------------------- стороны (сессия 13)
+
+## Враги юнита u в радиусе r от точки p (заклинания по площади, зоны, ловушки, тотемы, взрывы): мобы из сетки,
+## а если режим разрешил бой героев (Unit.pvp) — ещё вражеские герои и питомцы. u == null — все мобы (как раньше).
+func enemies_near(u: Unit, p: Vector2, r: float) -> Array:
+	var out: Array = []
+	for m: Unit in mobs.query_radius(p, r):
+		if u == null or u.is_enemy_of(m):
+			out.append(m)
+	if Unit.pvp and u != null:
+		for h in heroes.values():
+			var hu: Unit = h.unit
+			if hu.alive and u.is_enemy_of(hu) and Vector2(hu.pos.x - p.x, hu.pos.z - p.y).length() <= r + hu.radius:
+				out.append(hu)
+		for pu: Unit in mobs.pet_units():
+			if pu.alive and u.is_enemy_of(pu) and Vector2(pu.pos.x - p.x, pu.pos.z - p.y).length() <= r + pu.radius:
+				out.append(pu)
+	return out
+
+## Герои-союзники u (та же сторона, сам u тоже) — лечение и баффы по площади. Живость проверяет вызывающий.
+func ally_heroes(u: Unit) -> Array:
+	var out: Array = []
+	for h in heroes.values():
+		if u == null or u.is_ally_of(h.unit):
+			out.append(h)
+	return out
+
+## Вражеские герои u (только если режим разрешил бой героев) — цели ботов, Tab, подсказки.
+func enemy_heroes(u: Unit) -> Array:
+	var out: Array = []
+	if not Unit.pvp or u == null:
+		return out
+	for h in heroes.values():
+		if u.is_enemy_of(h.unit):
+			out.append(h)
+	return out
+
 # ---------------------------------------------------------------- серверный цикл
 
 func _physics_process(delta: float) -> void:
@@ -195,6 +233,8 @@ func _build_hero_snapshot(t: float) -> Array:
 			buffs.append(["feared", u.fear_until - t])
 		if t < u.silence_until:
 			buffs.append(["silenced", u.silence_until - t])
+		if t < u.root_until:
+			buffs.append(["rooted", u.root_until - t])
 		for b in u.buffs:
 			buffs.append([b["key"], maxf(0.0, b["until"] - t)])
 		out.append([hid, u.hp, u.max_hp, u.mana, u.max_mana, u.level, h.xp, h.xp_next, h.gold,
@@ -1162,6 +1202,8 @@ func campaign_finish(victory: bool) -> void:
 
 # ---------------------------------------------------------------- итоги партии (сессия 07)
 var kills: Dictionary = {}          # сервер: hero_id -> убито врагов (с питомцем)
+var hero_kills: Dictionary = {}     # сервер: hero_id -> убито вражеских героев (бой героев, сессия 13)
+var hero_deaths: Dictionary = {}    # сервер: hero_id -> сколько раз погиб
 var items_got: Dictionary = {}      # сервер: hero_id -> получено вещей
 var summary: Array = []             # у всех: строки окна итогов
 

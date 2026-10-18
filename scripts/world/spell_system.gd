@@ -99,6 +99,8 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 		return _feedback(peer, sid, "Сейчас нельзя")
 	if t < u.silence_until or t < u.fear_until:
 		return _feedback(peer, sid, "Сейчас нельзя: вы под контролем")
+	if t < float(st.get("locked", {}).get(sp["school"], 0.0)):
+		return _feedback(peer, sid, "Школа «%s» заблокирована: %d сек." % [GameData.SCHOOLS[sp["school"]]["name"], int(ceil(float(st["locked"][sp["school"]]) - t))])
 	# во льду Ледяной гробницы можно бить только саму гробницу (иначе одиночке не выбраться)
 	if u.has_buff("ice_tomb"):
 		var tomb: Unit = world.get_unit(target_id)
@@ -124,7 +126,7 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 	match sp["target"]:
 		"enemy":
 			var tu: Unit = world.get_unit(target_id)
-			if tu == null or not tu.alive or tu.team == u.team:
+			if tu == null or not tu.alive or not u.is_enemy_of(tu):
 				return _feedback(peer, sid, "Неверная цель")
 			if _dist(u, tu) > max_range + tu.radius + 1.5:
 				return _feedback(peer, sid, "Цель слишком далеко")
@@ -134,15 +136,16 @@ func request_cast(sid: String, target_id: int, ground: Vector3, yaw: float, leng
 				return _feedback(peer, sid, "Казнь — только по врагам с запасом здоровья ниже 25%")
 		"ally":
 			var tu: Unit = world.get_unit(target_id)
-			if tu != null and not tu.alive and tu.team == u.team and (tu.kind == "hero" or tu.kind == "pet"):
+			if tu != null and not tu.alive and u.is_ally_of(tu) and (tu.kind == "hero" or tu.kind == "pet"):
 				return _feedback(peer, sid, "Цель мертва")      # выбран погибший союзник — не лечить себя молча
-			if tu == null or not tu.alive or tu.team != u.team or not (tu.kind == "hero" or tu.kind == "pet"):
+			if tu == null or not tu.alive or not u.is_ally_of(tu) or not (tu.kind == "hero" or tu.kind == "pet"):
 				target_id = u.id
 			elif _dist(u, tu) > max_range + 2.0:
 				return _feedback(peer, sid, "Цель слишком далеко")
 		"any":
 			var tu: Unit = world.get_unit(target_id)
-			if tu == null or not tu.alive or (tu.team == u.team and tu.kind != "hero"):
+			# по врагу — урон, по союзнику-герою — лечение; иначе (свой питомец, чужой не враг) — на себя
+			if tu == null or not tu.alive or (u.is_ally_of(tu) and tu.kind != "hero") or not (u.is_ally_of(tu) or u.is_enemy_of(tu)):
 				target_id = u.id
 			elif _dist(u, tu) > max_range + tu.radius + 1.5:
 				return _feedback(peer, sid, "Цель слишком далеко")
@@ -196,7 +199,7 @@ func request_auto(target_id: int) -> void:
 		return
 	var hero = _sender_hero()
 	var tu: Unit = world.get_unit(target_id)
-	if hero and tu and tu.team == Unit.Team.ENEMIES:
+	if hero and tu and hero.unit.is_enemy_of(tu):
 		_hstate(hero.hero_id)["auto_target"] = target_id
 
 func _feedback(peer: int, sid: String, err: String, cd: float = 0.0, gcd: float = 0.0) -> void:
@@ -319,6 +322,8 @@ func server_tick(delta: float, t: float) -> void:
 			u.hp = minf(u.max_hp, u.hp + (u.max_hp * 0.0025 + u.spirit * 0.05) * rest)
 			if u.flag("spirit_bond") > 0.0:       # Духовная связь: доля здоровья каждые 2 сек.
 				u.hp = minf(u.max_hp, u.hp + u.max_hp * u.flag("spirit_bond") * 0.25)
+			if Unit.pvp:
+				_pvp_dampen(hero, t)
 	_update_bursts(t)
 	_send_watched_effects(delta, t)
 
@@ -457,8 +462,8 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			# прок с extra_targets (Ледяные пальцы): снаряд летит ещё в ближайших врагов рядом с целью
 			var extra := int(proc["data"].get("extra_targets", 0)) if not proc.is_empty() else 0
 			extra += int(u.flag("extra:" + sid))      # легендарки: Посох Пепельного Шторма, Лук Северного Ветра
-			if extra > 0 and tu.kind == "mob":
-				for m: Unit in world.mobs.query_radius(Vector2(tu.pos.x, tu.pos.z), 10.0):
+			if extra > 0:
+				for m: Unit in world.enemies_near(u, Vector2(tu.pos.x, tu.pos.z), 10.0):
 					if extra <= 0:
 						break
 					if m != tu:
@@ -470,12 +475,12 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var ifx: Array = sp.get("effects", [])
 			if sp["target"] == "any":
 				# Шок небес, Покаяние: по врагу — урон, по союзнику — лечение
-				ifx = sp["enemy_fx"] if tu.team != u.team else sp["ally_fx"]
+				ifx = sp["enemy_fx"] if u.is_enemy_of(tu) else sp["ally_fx"]
 			apply_effects(u, tu, ifx, sid, school)
 			fx_at(sp["vfx"], tu.pos, u.pos, _buff_duration(sp), tu.id)
 		"ally_aoe":
 			var cands: Array = []
-			for h in world.heroes.values():
+			for h in world.ally_heroes(u):
 				if h.unit.alive and _dist(h.unit, tu) <= radius:
 					cands.append(h.unit)
 			cands.sort_custom(func(a, b): return a.hp_frac() < b.hp_frac())
@@ -485,10 +490,10 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 				fx_at("heal_small", cands[i].pos, u.pos, 0.0, cands[i].id)
 			fx_at(sp["vfx"], tu.pos, u.pos, radius, tu.id)
 		"self_aoe":
-			for m in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), radius):
+			for m in world.enemies_near(u, Vector2(u.pos.x, u.pos.z), radius):
 				apply_effects(u, m, sp.get("enemy_fx", []), sid, school)
 			if sp.has("ally_fx"):
-				for h in world.heroes.values():
+				for h in world.ally_heroes(u):
 					if h.unit.alive and _dist(h.unit, u) <= radius:
 						apply_effects(u, h.unit, sp["ally_fx"], sid, school)
 			fx_at(sp["vfx"], u.pos, u.pos, radius, u.id)
@@ -498,7 +503,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 					var tz: Dictionary = zones[zid]
 					if tz.has("totem") and tz["caster"] == u.id:
 						var tc: Vector3 = tz["pos"]
-						for m in world.mobs.query_radius(Vector2(tc.x, tc.z), radius):
+						for m in world.enemies_near(u, Vector2(tc.x, tc.z), radius):
 							apply_effects(u, m, sp.get("enemy_fx", []), sid, school)
 						fx_at(sp["vfx"], tc, tc, radius, 0)
 		"charge":
@@ -513,7 +518,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 				hero.ev_dash.rpc_id(hero.peer_id, dest)
 		"party":
 			# все союзники рядом с заклинателем
-			for h in world.heroes.values():
+			for h in world.ally_heroes(u):
 				if h.unit.alive and _dist(h.unit, u) <= radius:
 					apply_effects(u, h.unit, sp["effects"], sid, school)
 					fx_at("heal_small" if sp["vfx"] == "heal_circle" else sp["vfx"], h.unit.pos, u.pos, _buff_duration(sp), h.unit.id)
@@ -521,9 +526,9 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 				fx_at("heal_circle", u.pos, u.pos, radius * 0.5, u.id)
 		"ground_burst":
 			var c := Vector3(ground.x, 0, ground.z)
-			for m in world.mobs.query_radius(Vector2(c.x, c.z), radius):
+			for m in world.enemies_near(u, Vector2(c.x, c.z), radius):
 				apply_effects(u, m, sp.get("enemy_fx", []), sid, school)
-			for h in world.heroes.values():
+			for h in world.ally_heroes(u):
 				if h.unit.alive and Vector2(h.unit.pos.x - c.x, h.unit.pos.z - c.z).length() <= radius:
 					apply_effects(u, h.unit, sp.get("ally_fx", []), sid, school)
 			fx_at(sp["vfx"], c, c, radius, 0)
@@ -532,7 +537,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var center := u.pos if sp["target"] == "self" else ground
 			center.y = 0.0
 			if sp.has("impact_fx"):
-				for m in world.mobs.query_radius(Vector2(center.x, center.z), radius):
+				for m in world.enemies_near(u, Vector2(center.x, center.z), radius):
 					apply_effects(u, m, sp["impact_fx"], sid, school)
 			_add_zone({"sid": sid, "kind": "circle", "pos": center, "radius": radius, "reach": radius, "caster": u.id,
 				"until": t + duration, "tick": float(sp["tick"]), "next": t + 0.05,
@@ -541,7 +546,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var dist := float(sp["distance"])
 			if sp.has("start_fx"):
 				# Смещение: малое Кольцо льда на месте старта
-				for m in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), float(sp.get("start_radius", 5.0))):
+				for m in world.enemies_near(u, Vector2(u.pos.x, u.pos.z), float(sp.get("start_radius", 5.0))):
 					apply_effects(u, m, sp["start_fx"], sid, school)
 			if sp.has("trail"):
 				# Огненный рывок: полоса огня по всему пути, как Стена огня
@@ -566,12 +571,12 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var facing: float = hero.rotation.y
 			var fwd2 := Vector2(-sin(facing), -cos(facing))
 			var half := deg_to_rad(float(sp.get("angle", 90.0))) * 0.5
-			for m in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), radius):
+			for m in world.enemies_near(u, Vector2(u.pos.x, u.pos.z), radius):
 				var to := Vector2(m.pos.x - u.pos.x, m.pos.z - u.pos.z)
 				if to.length() < 1.0 or absf(fwd2.angle_to(to.normalized())) <= half:
 					apply_effects(u, m, sp.get("enemy_fx", []), sid, school)
 			if sp.has("ally_fx"):
-				for h in world.heroes.values():
+				for h in world.ally_heroes(u):
 					var to2 := Vector2(h.unit.pos.x - u.pos.x, h.unit.pos.z - u.pos.z)
 					if h.unit.alive and to2.length() <= radius and (to2.length() < 1.0 or absf(fwd2.angle_to(to2.normalized())) <= half):
 						apply_effects(u, h.unit, sp["ally_fx"], sid, school)
@@ -583,11 +588,11 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var a2 := Vector2(u.pos.x, u.pos.z)
 			var b2 := a2 + Vector2(dir3.x, dir3.z) * float(sp.get("length", 30.0))
 			var w := float(sp.get("width", 3.0)) * 0.5
-			for m in world.mobs.query_radius((a2 + b2) * 0.5, a2.distance_to(b2) * 0.5 + w + 1.0):
+			for m in world.enemies_near(u, (a2 + b2) * 0.5, a2.distance_to(b2) * 0.5 + w + 1.0):
 				if Geometry2D.get_closest_point_to_segment(Vector2(m.pos.x, m.pos.z), a2, b2).distance_to(Vector2(m.pos.x, m.pos.z)) <= w + m.radius:
 					apply_effects(u, m, sp.get("enemy_fx", []), sid, school)
 			if sp.has("ally_fx"):
-				for h in world.heroes.values():
+				for h in world.ally_heroes(u):
 					var hp2 := Vector2(h.unit.pos.x, h.unit.pos.z)
 					if h.unit.alive and Geometry2D.get_closest_point_to_segment(hp2, a2, b2).distance_to(hp2) <= w + 1.0:
 						apply_effects(u, h.unit, sp["ally_fx"], sid, school)
@@ -598,7 +603,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var n := 0
 			var max_n := int(sp.get("max_targets", 99)) + int(u.mod("targets_add", sid, school))   # таланты «больше целей»
 			apply_effects(u, tu, sp["effects"], sid, school)
-			for m in world.mobs.query_radius(Vector2(tu.pos.x, tu.pos.z), radius):
+			for m in world.enemies_near(u, Vector2(tu.pos.x, tu.pos.z), radius):
 				if m != tu and n < max_n - 1:
 					n += 1
 					apply_effects(u, m, sp["effects"], sid, school)
@@ -611,7 +616,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 				hero.ev_dash(dest)
 			else:
 				hero.ev_dash.rpc_id(hero.peer_id, dest)
-			for m in world.mobs.query_radius(Vector2(dest.x, dest.z), radius):
+			for m in world.enemies_near(u, Vector2(dest.x, dest.z), radius):
 				apply_effects(u, m, sp.get("enemy_fx", []), sid, school)
 			fx_at(sp["vfx"], dest, u.pos, radius, 0)
 		"auto_spell":
@@ -652,7 +657,10 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 			var b := ground + right * half
 			var hp := float(sp["wall_hp"]) * u.power * (1.0 + u.mod("wall_hp", sid, school))
 			var wid: int = world.mobs.add_wall(Vector2(a.x, a.z), Vector2(b.x, b.z), hp, t + duration)
+			world.mobs.walls[wid]["side"] = u.side
 			ev_zone.rpc(wid, sp["vfx"], ground, yaw, length, duration)
+			if Unit.pvp:
+				ev_wall_block.rpc(wid, a, b, u.side, duration)      # в бою героев стена держит и вражеских героев
 		"trap":
 			_place_trap(u, sid, sp, Vector3(ground.x, 0, ground.z), t)
 		"totem":
@@ -716,12 +724,13 @@ func _update_traps(t: float) -> void:
 			continue
 		var sp: Dictionary = GameData.SPELLS[tr["sid"]]
 		var p: Vector3 = tr["pos"]
-		if world.mobs.query_radius(Vector2(p.x, p.z), float(sp["trap"]["trigger"])).is_empty():
-			continue
 		var caster: Unit = world.get_unit(int(tr["caster"]))
-		_remove_trap(tr)
 		if caster == null:
+			_remove_trap(tr)
 			continue
+		if world.enemies_near(caster, Vector2(p.x, p.z), float(sp["trap"]["trigger"])).is_empty():
+			continue
+		_remove_trap(tr)
 		_trigger_trap(caster, tr["sid"], sp, p, t)
 
 func _trigger_trap(u: Unit, sid: String, sp: Dictionary, p: Vector3, t: float) -> void:
@@ -740,11 +749,11 @@ func _trigger_trap(u: Unit, sid: String, sp: Dictionary, p: Vector3, t: float) -
 		_add_zone({"sid": sid, "kind": "circle", "pos": p, "radius": r, "reach": r, "caster": u.id,
 			"until": t + float(z["dur"]) * power, "tick": float(z["tick"]), "next": t + 0.05, "ally_dr": 0.0}, z["vfx"], 0.0, r, float(z["dur"]) * power)
 	else:
-		for m in world.mobs.query_radius(Vector2(p.x, p.z), r):
+		for m in world.enemies_near(u, Vector2(p.x, p.z), r):
 			apply_effects(u, m, fx, sid, sp["school"])
 		fx_at(sp["vfx"], p, p, r, 0)
 	if u.flag("entrapment") > 0.0:
-		for m in world.mobs.query_radius(Vector2(p.x, p.z), r):
+		for m in world.enemies_near(u, Vector2(p.x, p.z), r):
 			apply_effects(u, m, [{"type": "root", "dur": u.flag("entrapment")}], sid, sp["school"])
 	ev_sound.rpc("trap", p)
 
@@ -788,7 +797,7 @@ func _totem_tick(z: Dictionary, caster: Unit, sp: Dictionary, t: float) -> void:
 	var tsp: Dictionary = _amplified(sp, power) if power > 1.0 else sp
 	var shoot := int(sp["totem"].get("shoot", 0))
 	if tsp.has("enemy_fx"):
-		var near: Array = world.mobs.query_radius(Vector2(center.x, center.z), float(z["radius"]))
+		var near: Array = world.enemies_near(caster, Vector2(center.x, center.z), float(z["radius"]))
 		if shoot > 0:
 			near.sort_custom(func(a, b): return a.pos.distance_squared_to(center) < b.pos.distance_squared_to(center))
 			near = near.slice(0, shoot)
@@ -797,7 +806,7 @@ func _totem_tick(z: Dictionary, caster: Unit, sp: Dictionary, t: float) -> void:
 			if shoot > 0:
 				fx_at("chain_" + school, m.pos, center + Vector3(0, 0.6, 0), 0.0, m.id)
 	if tsp.has("ally_fx"):
-		for h in world.heroes.values():
+		for h in world.ally_heroes(caster):
 			if not h.unit.alive or not _in_zone(z, h.unit):
 				continue
 			for e: Dictionary in tsp["ally_fx"]:
@@ -858,7 +867,7 @@ func _update_zones(t: float) -> void:
 			continue
 		var caster: Unit = world.get_unit(z["caster"])
 		if z["ally_dr"] > 0.0:
-			for h in world.heroes.values():
+			for h in (world.ally_heroes(caster) if caster else world.heroes.values()):
 				if h.unit.alive and _in_zone(z, h.unit):
 					h.unit.damage_taken_mult = minf(h.unit.damage_taken_mult, 1.0 - z["ally_dr"])
 		if t < z["next"] or caster == null:
@@ -869,12 +878,12 @@ func _update_zones(t: float) -> void:
 			_totem_tick(z, caster, sp, t)
 			continue
 		var center: Vector3 = z["pos"]
-		for m in world.mobs.query_radius(Vector2(center.x, center.z), float(z["reach"]) + 1.5):
+		for m in world.enemies_near(caster, Vector2(center.x, center.z), float(z["reach"]) + 1.5):
 			if _in_zone(z, m):
 				apply_effects(caster, m, sp.get("enemy_fx", []), z["sid"], sp["school"])
 		if sp.has("ally_fx"):
 			# зона лечения (Святое слово: Святилище)
-			for h in world.heroes.values():
+			for h in world.ally_heroes(caster):
 				if h.unit.alive and _in_zone(z, h.unit):
 					apply_effects(caster, h.unit, sp["ally_fx"], z["sid"], sp["school"])
 	for id in dead:
@@ -916,7 +925,7 @@ func _tick_auras_for(list: Array, t: float) -> void:
 						_trigger_procs(src, u, "spell_hit", a["key"], a["school"], false, t)
 				elif a["kind"] == "pulse":
 					if src:
-						for m in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), float(a["radius"])):
+						for m in world.enemies_near(src, Vector2(u.pos.x, u.pos.z), float(a["radius"])):
 							apply_effects(src, m, a["effects"], a["sid"], a["school"])
 						fx_at(str(a.get("vfx", "whirl")), u.pos, u.pos, float(a["radius"]), u.id)
 				else:
@@ -934,7 +943,7 @@ func _tick_auras_for(list: Array, t: float) -> void:
 func _explode(a: Dictionary, u: Unit) -> void:
 	var src: Unit = world.get_unit(a["source"])
 	var ex: Dictionary = a["explode"]
-	for m: Unit in world.mobs.query_radius(Vector2(u.pos.x, u.pos.z), float(ex["radius"])):
+	for m: Unit in world.enemies_near(src, Vector2(u.pos.x, u.pos.z), float(ex["radius"])):
 		deal_damage(src, m, randf_range(ex["min"], ex["max"]), "fire", false, "living_bomb")
 	fx_at("explosion_fire", u.pos, u.pos, float(ex["radius"]), 0)
 
@@ -962,10 +971,22 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 	join_combat(caster, target, t)
 	if caster and target.is_rooted(t):
 		crit_chance += caster.flag("shatter")
-	for e: Dictionary in effects:
+	# бой героев (сессия 13): коэффициент урона заклинания и крит по героям, контроль с убыванием
+	var pvp := is_pvp_pair(caster, target)
+	var pk := pvp_spell_k(caster, sid) if pvp else 1.0
+	var crit_k := 1.5
+	if pvp:
+		var pc := pvp_cfg()
+		crit_k = 1.0 + (float(pc["crit_mult"]) - 1.0) * (1.0 - GameData.PvpData.resil(pc, target.level))
+	for e0: Dictionary in effects:
+		var e := e0
 		if not target.alive:
 			return
-		if (target.affixes.has("unstoppable") or target.has_buff("berserker")) and CONTROL_TYPES.has(e["type"]) and not (caster and caster.team == target.team):
+		if pvp and GameData.PvpData.CC.has(e["type"]):
+			e = _pvp_cc(e, caster, target, t)
+			if e.is_empty():
+				continue
+		if (target.affixes.has("unstoppable") or target.has_buff("berserker")) and CONTROL_TYPES.has(e["type"]) and not (caster and caster.is_ally_of(target)):
 			world.fx_number(target.id, 0.0, "immune", school, caster.id if caster else 0, false)
 			continue
 		match e["type"]:
@@ -973,7 +994,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				var mult := 1.0 + amp + _m(caster, "dmg")
 				if sid == "auto":
 					mult += _m(caster, "auto")
-				var amount := randf_range(e["min"], e["max"]) * pw * maxf(0.1, mult)
+				var amount := randf_range(e["min"], e["max"]) * pw * maxf(0.1, mult) * pk
 				if e.has("frozen_bonus") and target.is_rooted(t):
 					amount *= 1.0 + float(e["frozen_bonus"])
 				var cc := crit_chance + (caster.mod("fire_crit") if caster and school == "fire" else 0.0)       # Возгорание
@@ -981,12 +1002,12 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				if e.has("crit_if") and target.auras.any(func(a): return a["key"] == e["crit_if"]):
 					crit = true      # Выброс лавы по цели с Огненным шоком
 				if crit:
-					amount *= 1.5
+					amount *= crit_k
 				deal_damage(caster, target, amount, school, crit, sid)
 				# Рассекающий удар: удары воина задевают ещё двух врагов рядом
 				if caster and caster.kind == "hero" and caster.has_buff("sweeping") and school == "physical" and not sid.begins_with("sweep"):
 					var extra := 0
-					for m in world.mobs.query_radius(Vector2(target.pos.x, target.pos.z), 5.0):
+					for m in world.enemies_near(caster, Vector2(target.pos.x, target.pos.z), 5.0):
 						if m != target and extra < 2:
 							extra += 1
 							deal_damage(caster, m, amount * 0.6, school, false, "sweep:" + sid)
@@ -1021,6 +1042,9 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 			"root":
 				target.root_until = maxf(target.root_until, t + float(e["dur"]))
 				_mark_src(target, "rooted", caster)
+				var rh = world.heroes.get(target.id, null) if target.kind == "hero" else null
+				if rh:
+					rh.ev_control.rpc("root", target.root_until - t, Vector3.ZERO)      # свой клиент героя стоит на месте
 				fx_at("rooted", target.pos, target.pos, float(e["dur"]), target.id)
 			"freeze":
 				_mark_src(target, "frozen", caster)
@@ -1054,6 +1078,8 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				var ticks := float(e["dur"]) / float(e["tick"])
 				var boost := 1.0 + amp + (_m(caster, "dmg") if e["type"] == "dot" else _m(caster, "heal"))
 				var per := float(e["total"]) * pw * boost / ticks
+				if e["type"] == "dot":
+					per *= pk
 				if e["type"] == "hot" and caster:
 					per *= caster.heal_mult
 				var key: String = e["key"]
@@ -1068,7 +1094,7 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					aura["procs"] = true      # тики — попадание заклинания для проков (Огненный шок → Волна лавы)
 				if e.has("explode"):
 					var ex: Dictionary = e["explode"]
-					aura["explode"] = {"radius": ex["radius"], "min": float(ex["min"]) * pw * boost, "max": float(ex["max"]) * pw * boost}
+					aura["explode"] = {"radius": ex["radius"], "min": float(ex["min"]) * pw * boost * pk, "max": float(ex["max"]) * pw * boost * pk}
 					fx_at("bomb_mark", target.pos, target.pos, float(e["dur"]), target.id)
 				target.auras.append(aura)
 			"absorb":
@@ -1099,7 +1125,12 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				_knockback(caster, target, float(e["dist"]), t)
 			"incapacitate":
 				# превращение, ослепление: враг выключен, но урон снимает эффект (боссы — вдвое короче)
-				if target.kind == "mob":
+				if pvp:
+					target.stun_until = maxf(target.stun_until, t + float(e["dur"]))
+					target.incap = true
+					_mark_src(target, "stunned", caster)
+					fx_at("stunned", target.pos, target.pos, float(e["dur"]), target.id)
+				elif target.kind == "mob":
 					var idur := float(e["dur"]) * (0.5 if _is_boss(target) else 1.0)
 					target.stun_until = maxf(target.stun_until, t + idur)
 					target.incap = true
@@ -1159,8 +1190,11 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 					target.stun_until = maxf(target.stun_until, t + float(e["dur"]))
 			"silence":
 				target.silence_until = maxf(target.silence_until, t + float(e["dur"]))
+				_mark_src(target, "silenced", caster)
 				if target.kind == "mob":
 					world.mobs.stop_cast(target)
+				elif pvp and world.heroes.has(target.id):
+					_interrupt(world.heroes[target.id])
 			"steal_gold":
 				var vh = world.heroes.get(target.id, null)
 				if vh and caster and caster.kind == "mob":
@@ -1170,6 +1204,9 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 			"interrupt":
 				# сбить каст врага; школа заклинания заблокирована на lock сек.
 				if target.kind == "mob" and world.mobs.interrupt(target, float(e.get("lock", 4.0))) and caster:
+					world.meter.on_interrupt(caster, target)
+					_trigger_procs(caster, target, "interrupt", sid, school, false, t)
+				elif pvp and _interrupt_hero(target, float(e.get("lock", 4.0)), t):
 					world.meter.on_interrupt(caster, target)
 					_trigger_procs(caster, target, "interrupt", sid, school, false, t)
 			"buff":
@@ -1190,12 +1227,14 @@ func apply_effects(caster: Unit, target: Unit, effects: Array, sid: String, scho
 				var from := Vector2(target.pos.x, target.pos.z)
 				var hits := 0
 				var count := int(e["count"]) + int(_m(caster, "chain_add", sid, school))
-				for m: Unit in world.mobs.query_radius(from, float(e["radius"])):
+				for m: Unit in world.enemies_near(caster, from, float(e["radius"])):
 					if m == target or hits >= count:
 						continue
 					hits += 1
 					var dmg_fx: Dictionary = effects[0]
 					var amount := randf_range(dmg_fx["min"], dmg_fx["max"]) * pw * float(e["mult"]) * maxf(0.1, 1.0 + amp + _m(caster, "dmg"))
+					if is_pvp_pair(caster, m):
+						amount *= pvp_spell_k(caster, sid)
 					deal_damage(caster, m, amount, school, false, sid)
 					fx_at("chain_" + school, m.pos, target.pos, 0.0, m.id)
 
@@ -1204,7 +1243,7 @@ func _on_damage_dealt(caster: Unit, target: Unit, amount: float, school: String,
 	# Искупление: часть урона Кары и Священного огня лечит раненого союзника; Пламя веры — мана
 	if caster.flag("atonement") > 0.0 and school == "holy":
 		var low: Unit = null
-		for h in world.heroes.values():
+		for h in world.ally_heroes(caster):
 			if h.unit.alive and h.unit.hp_frac() < 0.95 and (low == null or h.unit.hp_frac() < low.hp_frac()):
 				low = h.unit
 		if low:
@@ -1325,7 +1364,7 @@ func apply_item_effect(u: Unit, p: Dictionary, target: Unit, t: float) -> void:
 		var who: Array = [u]
 		if p.has("party"):
 			who = []
-			for h in world.heroes.values():
+			for h in world.ally_heroes(u):
 				if h.unit.alive and _dist(u, h.unit) <= float(p["party"]):
 					who.append(h.unit)
 		for w: Unit in who:
@@ -1374,10 +1413,10 @@ func _update_bursts(t: float) -> void:
 			continue
 		var a: Dictionary = GameData.AUTO_SPELLS[b["aid"]]
 		var c: Vector3 = b["pos"]
-		for m in world.mobs.query_radius(Vector2(c.x, c.z), float(a["radius"])):
+		for m in world.enemies_near(caster, Vector2(c.x, c.z), float(a["radius"])):
 			apply_effects(caster, m, a.get("enemy_fx", []), b["aid"], a["school"])
 		if a.has("ally_fx"):
-			for h in world.heroes.values():
+			for h in world.ally_heroes(caster):
 				if h.unit.alive and Vector2(h.unit.pos.x - c.x, h.unit.pos.z - c.z).length() <= float(a["radius"]):
 					apply_effects(caster, h.unit, a["ally_fx"], b["aid"], a["school"])
 
@@ -1404,7 +1443,7 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		world.fx_number(dst.id, 0.0, "immune", school, src_id, false)
 		return
 	# книга заклинаний: отражение заклинаний, перенаправление, физическая уязвимость, хрупкий лёд
-	if dst.has_buff("spell_reflect") and school != "physical" and src and src.kind == "mob" and sid != "reflect":
+	if dst.has_buff("spell_reflect") and school != "physical" and src and src.is_enemy_of(dst) and src.kind != "castle" and sid != "reflect":
 		dst.remove_buff("spell_reflect")
 		world.fx_number(dst.id, 0.0, "immune", school, src.id, false)
 		deal_damage(dst, src, amount, school, false, "spell_reflection")
@@ -1415,7 +1454,7 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		amount *= maxf(0.0, 1.0 + dst.mod("magic_taken"))   # эликсир защиты от магии
 	if src and src.kind == "hero" and src.flag("brittle") > 0.0 and dst.is_frozen(t):
 		amount *= 1.0 + src.flag("brittle")
-	if dst.kind == "hero" and src and src.kind == "mob":
+	if dst.kind == "hero" and src and src.is_enemy_of(dst) and src.kind != "castle":
 		for b in dst.buffs:
 			if b["key"] == "sacrifice" and b.has("from"):
 				var guard: Unit = world.get_unit(int(b["from"]))
@@ -1434,12 +1473,17 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 			src.auras.append({"key": "ignite", "kind": "dot", "per_tick": 6.0 * dst.power, "tick": 1.0, "next": t + 1.0, "until": t + 3.0, "school": "fire", "source": dst.id})
 		# Аура воздаяния паладина рядом отражает часть урона ближнего боя
 		if school == "physical" and not src.def_ranged:
-			for ph in world.heroes.values():
+			for ph in world.ally_heroes(dst):
 				if ph.unit.alive and ph.unit.flag("ret_aura") > 0.0 and ph.unit.pos.distance_to(dst.pos) <= 15.0:
 					deal_damage(ph.unit, src, amount * ph.unit.flag("ret_aura"), "holy", false, "retribution_aura")
 					break
 	amount *= dst.damage_taken_mult
 	amount *= maxf(0.1, 1.0 + dst.mod("dmg_taken"))
+	# бой героев: встроенная устойчивость цели по уровню; схватка героев продолжается (утомление боем)
+	if is_pvp_pair(src, dst):
+		amount *= 1.0 - GameData.PvpData.resil(pvp_cfg(), dst.level)
+		_pvp_touch(src, t)
+		_pvp_touch(dst, t)
 	# блок щитом: физический удар с шансом теряет половину урона
 	if school == "physical" and dst.kind == "hero" and src and dst.mod("block") > 0.0 and randf() < dst.mod("block"):
 		var blocked: float = amount * GameData.ItemData.BLOCK_REDUCE
@@ -1499,7 +1543,7 @@ func deal_damage(src: Unit, dst: Unit, amount: float, school: String, crit: bool
 		_on_death(dst, src)
 		# Секира Раскола: Казнь, убившая врага, обрушивается на соседа (с запасом здоровья выше 25% — вполсилы)
 		if sid == "execute" and src and src.kind == "hero" and src.flag("execute_chain") > 0.0:
-			for m in world.mobs.query_radius(Vector2(dst.pos.x, dst.pos.z), 6.0):
+			for m in world.enemies_near(src, Vector2(dst.pos.x, dst.pos.z), 6.0):
 				if m != dst and m.alive:
 					var ex: Dictionary = GameData.SPELLS["execute"]
 					apply_effects(src, m, ex["effects"] if m.hp_frac() < 0.25 else _amplified(ex, 0.5)["effects"], "execute", "physical")
@@ -1570,12 +1614,124 @@ func _on_death(dst: Unit, src: Unit) -> void:
 			if h:
 				h.respawn_at = world.now() + GameData.RESPAWN_BASE + dst.level * 0.6
 				_interrupt(h)
-				world.announce_all("%s погибает!" % h.player_name, Color(1, 0.5, 0.4))
+				# убил вражеский герой (или его питомец) — засчитывается ему и его команде
+				var kid := 0
+				if src and (src.kind == "hero" or src.kind == "pet") and src.is_enemy_of(dst):
+					kid = src.owner_id if src.kind == "pet" else src.id
+				dst.killer_id = kid
+				var kh = world.heroes.get(kid, null)
+				if kh:
+					world.announce_all("%s убивает %s!" % [kh.player_name, h.player_name], GameData.CLASSES[kh.class_id]["color"])
+					world.hero_kills[kid] = int(world.hero_kills.get(kid, 0)) + 1
+					world.mode.on_hero_killed(h, kh)
+				else:
+					world.announce_all("%s погибает!" % h.player_name, Color(1, 0.5, 0.4))
+				world.hero_deaths[dst.id] = int(world.hero_deaths.get(dst.id, 0)) + 1
 				world.mode.on_hero_died(h)
 		"pet":
 			world.mobs.pet_died(dst)
 		_:
 			world.mode.on_unit_destroyed(dst)
+
+# ---------------------------------------------------------------- бой героев (сессия 13)
+## Действует только между враждующими героями и их питомцами, когда режим разрешил бой героев (Unit.pvp).
+## Урон и контроль мобов, осада и «Линии» не меняются. Числа — pvp_data.gd (режим может переопределить).
+
+var _pvp_cfg: Dictionary = {}
+
+func pvp_cfg() -> Dictionary:
+	if _pvp_cfg.is_empty():
+		_pvp_cfg = GameData.PvpData.DEFAULT.duplicate()
+		_pvp_cfg.merge(world.mode.pvp_config(), true)
+	return _pvp_cfg
+
+## a бьёт b в бою героев: оба — герои или питомцы разных враждующих сторон.
+func is_pvp_pair(a: Unit, b: Unit) -> bool:
+	return Unit.pvp and a != null and b != null and (a.kind == "hero" or a.kind == "pet") and (b.kind == "hero" or b.kind == "pet") \
+		and a.is_enemy_of(b)
+
+## PvP-коэффициент урона заклинания (общий, класса и самого заклинания); питомец — от класса хозяина.
+func pvp_spell_k(caster: Unit, sid: String) -> float:
+	var cls: String = caster.type_id
+	if caster.kind == "pet":
+		var oh = world.heroes.get(caster.owner_id, null)
+		cls = oh.class_id if oh else "hunter"
+	var sp: Dictionary = GameData.SPELLS.get(sid, GameData.AUTO_SPELLS.get(sid, {}))
+	return GameData.PvpData.spell_k(pvp_cfg(), sid, cls, sp)
+
+## Контроль по герою: тип на герое (заморозка → обездвиживание…), короче (cc_mult и устойчивость), не дольше
+## потолка категории и с убыванием 100% → 50% → 25% → неуязвимость (dr_reset сек. после последнего).
+## {} — эффект не действует (неуязвим или не для героев).
+func _pvp_cc(e: Dictionary, caster: Unit, target: Unit, t: float) -> Dictionary:
+	var pc := pvp_cfg()
+	var map: Array = GameData.PvpData.CC[e["type"]]
+	var htype: String = e.get("pvp_as", map[0])
+	if htype == "":
+		return {}
+	var cat: String = map[1] if not e.has("pvp_as") else GameData.PvpData.CC.get(htype, map)[1]
+	var dur := float(e.get("dur", 0.0)) * float(pc["cc_mult"]) * (1.0 - GameData.PvpData.resil(pc, target.level) * float(pc["cc_resil"]))
+	dur = minf(dur, float(pc["cc_cap"].get(cat, 99.0)))
+	var st: Array = target.dr.get(cat, [0, 0.0])
+	if t >= float(st[1]):
+		st = [0, 0.0]
+	var steps: Array = pc["dr"]
+	var f := float(steps[mini(int(st[0]), steps.size() - 1)])
+	if f <= 0.0:
+		world.fx_number(target.id, 0.0, "immune", "physical", caster.id if caster else 0, false)
+		return {}
+	dur *= f
+	target.dr[cat] = [int(st[0]) + 1, t + float(pc["dr_reset"]) + dur]
+	var out := e.duplicate()
+	out["type"] = htype
+	out["dur"] = dur
+	if Net.cli.has("pvplog"):
+		print("PVP CC %s -> %s %s %.1f с (раз %d)" % [e["type"], target.display_name, cat, dur, int(st[0]) + 1])
+	return out
+
+## Прерывание героя: сбить произнесение и заблокировать школу на lock сек. true — было что сбивать.
+func _interrupt_hero(target: Unit, lock: float, t: float) -> bool:
+	var th = world.heroes.get(target.id, null)
+	if th == null:
+		return false
+	var st := _hstate(target.id)
+	if st["cast"].is_empty():
+		return false
+	var school: String = GameData.SPELLS[st["cast"]["sid"]]["school"]
+	if not st.has("locked"):
+		st["locked"] = {}
+	st["locked"][school] = t + lock * float(pvp_cfg()["cc_mult"]) * 1.5
+	_interrupt(th)
+	_feedback(th.peer_id, "", "Прервано: школа «%s» заблокирована" % GameData.SCHOOLS[school]["name"])
+	return true
+
+## Удар между героями: схватка героя продолжается (после pvp_combat_reset сек. без ударов — новая).
+func _pvp_touch(u: Unit, t: float) -> void:
+	var hu: Unit = u
+	if u.kind == "pet":
+		var oh = world.heroes.get(u.owner_id, null)
+		if oh == null:
+			return
+		hu = oh.unit
+	if t - hu.pvp_last > float(pvp_cfg()["pvp_combat_reset"]):
+		hu.pvp_since = t
+	hu.pvp_last = t
+
+## Утомление боем: в дуэли — с её начала, в схватке героев — после dampen_after сек.; получаемое лечение
+## −dampen_step каждые dampen_every сек. Видно бафом «Утомление боем» на рамках (мод heal_taken).
+func _pvp_dampen(hero, t: float) -> void:
+	var u: Unit = hero.unit
+	var pc := pvp_cfg()
+	var k := 0.0
+	var duel: float = world.mode.dampen_since(hero)
+	if duel >= 0.0:
+		k = floorf((t - duel) / float(pc["dampen_every"])) * float(pc["dampen_step"])
+	elif t - u.pvp_last < float(pc["pvp_combat_reset"]) and t - u.pvp_since >= float(pc["dampen_after"]):
+		k = (floorf((t - u.pvp_since - float(pc["dampen_after"])) / float(pc["dampen_every"])) + 1.0) * float(pc["dampen_step"])
+	k = minf(k, float(pc["dampen_max"]))
+	if k > 0.0:
+		u.add_buff("dampening", t + 1.5, {"heal_taken": -k})
+	elif u.has_buff("dampening"):
+		u.remove_buff("dampening")
 
 # ---------------------------------------------------------------- таланты
 
@@ -1649,6 +1805,41 @@ func ev_zone(id: int, kind: String, pos: Vector3, yaw: float, size: float, durat
 @rpc("authority", "call_local", "reliable")
 func ev_zone_end(id: int) -> void:
 	Vfx.end_zone(world, id)
+	var wb: Node = _wall_bodies.get(id, null)
+	_wall_bodies.erase(id)
+	if wb and is_instance_valid(wb):
+		wb.queue_free()
+
+## Бой героев: ледяная стена — препятствие для героев враждебной стороны. Коллайдер на слое стороны заклинателя
+## (WALL_LAYER_BASE + сторона); маска героя включает слои враждебных сторон (hero.gd) — свои проходят, враги нет.
+## Движение героя считает его клиент (и хост — для ботов), поэтому коллайдер ставится у всех.
+const WALL_LAYER_BASE := 5
+var _wall_bodies: Dictionary = {}
+
+static func wall_layer(side: int) -> int:
+	return 1 << (WALL_LAYER_BASE - 1 + clampi(side, 0, 7))
+
+@rpc("authority", "call_local", "reliable")
+func ev_wall_block(id: int, a: Vector3, b: Vector3, side: int, duration: float) -> void:
+	if _wall_bodies.has(id):
+		return
+	var body := StaticBody3D.new()
+	body.collision_layer = wall_layer(side)
+	body.collision_mask = 0
+	var len := maxf(0.5, Vector2(b.x - a.x, b.z - a.z).length())
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(len, 3.0, 1.2)
+	cs.shape = sh
+	body.add_child(cs)
+	world.add_child(body)
+	body.global_position = Vector3((a.x + b.x) * 0.5, 1.5, (a.z + b.z) * 0.5)
+	body.rotation.y = -atan2(b.z - a.z, b.x - a.x)
+	_wall_bodies[id] = body
+	get_tree().create_timer(maxf(0.1, duration)).timeout.connect(func():
+		if is_instance_valid(body):
+			body.queue_free()
+		_wall_bodies.erase(id))
 
 # ---------------------------------------------------------------- эффекты на цели (для рамки цели)
 ## Клиент сообщает, кто у него в цели (request_watch). Сервер шлёт список эффектов на этом враге
@@ -1711,7 +1902,7 @@ func _send_watched_effects(delta: float, t: float) -> void:
 			continue
 		var uid: int = _watch[peer]
 		var u: Unit = world.get_unit(uid)
-		var list: Array = unit_effects(u, t) if u and u.alive and u.kind == "mob" else []
+		var list: Array = unit_effects(u, t) if u and u.alive and (u.kind == "mob" or u.kind == "hero" or u.kind == "pet") else []
 		# подпись без «тиканья» времени: меняется при наложении, снятии, обновлении и стаках
 		var sig := str(uid)
 		for e in list:

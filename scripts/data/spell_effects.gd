@@ -31,6 +31,9 @@ const BUFF_INFO := {
 	"chill": {"name": "Холод", "color": Color(0.45, 0.8, 1.0), "icon": "blizzard", "debuff": true, "desc": "Копится от ледяных заклинаний: на третьем заряде цель замерзает."},
 	"frozen": {"name": "Заморожен", "color": Color(0.6, 0.9, 1.0), "icon": "deep_freeze", "debuff": true, "desc": "Не двигается и не атакует."},
 	"stunned": {"name": "Оглушение", "color": Color(1.0, 0.9, 0.5), "icon": "hammer_of_justice", "debuff": true, "desc": "Не двигается и не атакует."},
+	# PvP (сессия 13): утомление боем — получаемое лечение падает в долгой схватке героев и в дуэли
+	"dampening": {"name": "Утомление боем", "color": Color(0.85, 0.35, 0.3), "icon": "mortal_strike", "debuff": true,
+		"desc": "Долгая схватка героев: получаемое лечение снижается на 5% каждые 10 сек."},
 	"rooted": {"name": "Обездвиживание", "color": Color(0.45, 0.8, 1.0), "icon": "frost_nova", "debuff": true, "desc": "Не может сойти с места."},
 	"taunted": {"name": "Провокация", "color": Color(1.0, 0.35, 0.25), "icon": "taunt", "debuff": true, "desc": "Атакует того, кто его спровоцировал."},
 	"demoralized": {"name": "Деморализация", "color": Color(0.8, 0.5, 0.4), "icon": "demoralizing_shout", "debuff": true, "desc": "Наносит на 20% меньше урона."},

@@ -1569,7 +1569,7 @@ func _process(delta: float) -> void:
 		var title := tu.display_name
 		if tu.elite > 0:
 			title = ("★ Чемпион: " if tu.elite == 2 else "★ ") + title
-		if tu.kind == "mob":
+		if tu.kind == "mob" or lh.unit.is_enemy_of(tu):
 			title += "  •  ур. %d" % tu.level
 			if tu.sent_by != 0 and world.heroes.has(tu.sent_by):
 				title += "  •  от игрока %s" % world.heroes[tu.sent_by].player_name      # «Линии»: отправленный враг
@@ -1595,12 +1595,12 @@ func _process(delta: float) -> void:
 		_target_ring.global_position = p + Vector3(0, 0.05, 0)
 		var r := (tu.radius * 1.8 + 0.6) * (1.0 + 0.06 * sin(t * 6.0))
 		_target_ring.scale = Vector3(r, 1, r)
-		_target_ring.material_override = _ring_mat(tu.team == Unit.Team.ENEMIES)
+		_target_ring.material_override = _ring_mat(world.local_hero != null and world.local_hero.unit.is_enemy_of(tu))
 		_target_arrow.visible = tu.alive
 		var head := 2.9 * (tu.radius / 0.6 if tu.kind == "mob" else 1.15)
 		_target_arrow.global_position = p + Vector3(0, head + 0.25 * sin(t * 4.0), 0)
 		_target_arrow.rotation.y = t * 2.0
-		_target_arrow.material_override = _arrow_mat(tu.team == Unit.Team.ENEMIES)
+		_target_arrow.material_override = _arrow_mat(world.local_hero != null and world.local_hero.unit.is_enemy_of(tu))
 	else:
 		_target_ring.visible = false
 		_target_arrow.visible = false
@@ -1933,14 +1933,18 @@ func set_target_effects(uid: int, list: Array) -> void:
 		print("FX ", uid, " ", list)
 	_tfx = {"uid": uid, "list": list, "t": world.now()}
 
+## Эффекты цели с сервера (с тем, кто наложил): враги — мобы и вражеские герои; союзники — из снимка героев.
+func _watch_kind(lh, tu: Unit) -> bool:
+	return tu.kind == "mob" or ((tu.kind == "hero" or tu.kind == "pet") and lh.unit.is_enemy_of(tu))
+
 func _update_target_effects(lh, c, tu: Unit, t: float) -> void:
 	var tid: int = tu.id if tu else 0
 	if tid != _watched_id:
 		_watched_id = tid
 		_tfx = {"uid": 0, "list": [], "t": t}
-		world.spells.send_to_server("request_watch", [tid if tu and tu.kind == "mob" else 0])
+		world.spells.send_to_server("request_watch", [tid if tu and _watch_kind(lh, tu) else 0])
 	var list: Array = []
-	if tu and tu.kind == "mob" and int(_tfx["uid"]) == tid:
+	if tu and _watch_kind(lh, tu) and int(_tfx["uid"]) == tid:
 		var dt: float = t - float(_tfx["t"])
 		for e in _tfx["list"]:
 			if float(e[1]) - dt > 0.0:

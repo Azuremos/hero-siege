@@ -540,6 +540,8 @@ func _apply_local_info() -> void:
 		"mode": MODE_CHOICES[_mode_option.selected][0]}
 	if Net.settings["mode"] == "lines":
 		Net.settings["teams_n"] = _teams_option.selected + 1      # пустые места в командах займут боты
+	if _cli.has("pvptest"):
+		Net.settings["mode"] = "pvptest"       # проверка боя героев: соперник-бот рядом
 	Net.pending_siege = {}
 	_save_settings()
 

@@ -93,7 +93,8 @@ func request_ping(pos: Vector3, uid: int) -> void:
 			who = h.player_name
 			col = GameData.CLASSES[h.class_id]["color"]
 	var u: Unit = world.get_unit(uid)
-	if u and (not u.alive or u.team != Unit.Team.ENEMIES):
+	var pinger: Unit = world.get_unit(Net.hero_id_of_peer(peer))
+	if u and (not u.alive or pinger == null or not pinger.is_enemy_of(u)):
 		uid = 0
 	ev_ping.rpc(pos, uid, who, col)
 

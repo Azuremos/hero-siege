@@ -51,7 +51,7 @@ func read_map(map: Node3D) -> void:
 	castle = Unit.new()
 	castle.id = CASTLE_ID
 	castle.kind = "castle"
-	castle.team = Unit.Team.PLAYERS
+	castle.side = 0
 	castle.display_name = "Замок"
 	castle.max_hp = GameData.CASTLE_HP
 	castle.hp = castle.max_hp

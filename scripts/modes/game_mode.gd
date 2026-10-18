@@ -14,6 +14,30 @@ var state := "prep"          # prep | running | victory | defeat
 
 func setup(w: Node3D) -> void:
 	world = w
+	Unit.pvp = hero_pvp()
+
+# ---------------------------------------------------------------- стороны и PvP (сессия 13)
+## Сторона юнита — Unit.side: герои — номер команды, мобы — Unit.SIDE_MOBS. Враждебность — одна функция
+## Unit.is_enemy_of; режим настраивает её здесь: бьют ли друг друга герои разных сторон.
+
+func hero_pvp() -> bool:
+	return false
+
+## Числа боя героев (устойчивость, убывание контроля, утомление, коэффициенты) — pvp_data.gd; режим может поменять поля.
+func pvp_config() -> Dictionary:
+	return GameData.PvpData.DEFAULT
+
+## Утомление боем: с какого момента у героя идёт дуэль (тогда утомление растёт с её начала). -1 — дуэли нет.
+func dampen_since(_hero) -> float:
+	return -1.0
+
+## Сервер: героя убил вражеский герой killer (для счёта, объявлений и наград режима).
+func on_hero_killed(_victim, _killer) -> void:
+	pass
+
+## Враги ли a и b (для кода режима и интерфейса; бой зовёт Unit.is_enemy_of напрямую — то же правило).
+func are_enemies(a: Unit, b: Unit) -> bool:
+	return a != null and a.is_enemy_of(b)
 
 ## Прочитать из карты то, что нужно режиму (маршруты, точки, цели).
 func read_map(_map: Node3D) -> void:

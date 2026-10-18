@@ -65,7 +65,7 @@ func read_map(map: Node3D) -> void:
 		var b := Unit.new()
 		b.id = BASE_ID + team
 		b.kind = "castle"
-		b.team = Unit.Team.PLAYERS
+		b.side = team
 		b.display_name = L.TEAMS[team]["full"]
 		b.max_hp = float(Net.cli.get("basehp", L.BASE_HP))      # --basehp=: тест — быстрая победа
 		b.hp = b.max_hp
@@ -602,7 +602,7 @@ func _bot_post_calc(hero) -> Vector3:
 	var best: Unit = null
 	var best_d := 1e9
 	for u: Unit in world.units.values():
-		if u.kind != "mob" or not u.alive or u.team != Unit.Team.ENEMIES or not on_my_lane(hero, u.pos):
+		if u.kind != "mob" or not u.alive or not hero.unit.is_enemy_of(u) or not on_my_lane(hero, u.pos):
 			continue
 		var up := Vector2(u.pos.x, u.pos.z)
 		# враги ближе к базе — опаснее

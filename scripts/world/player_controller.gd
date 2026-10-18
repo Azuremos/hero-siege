@@ -171,7 +171,7 @@ func _click(pos: Vector2, is_left: bool) -> void:
 	if is_left and Input.is_key_pressed(KEY_ALT):
 		var pid := pick_unit(pos)
 		var pu: Unit = world.get_unit(pid)
-		if pu and pu.alive and pu.team == Unit.Team.ENEMIES:
+		if pu and pu.alive and hero.unit.is_enemy_of(pu):
 			world.marks.send("request_ping", [pu.pos, pid])
 		else:
 			var gp = ground_point(pos)
@@ -195,10 +195,10 @@ func _click(pos: Vector2, is_left: bool) -> void:
 		return
 	target_id = id
 	var u: Unit = world.get_unit(id)
-	if not is_left and u and u.kind == "hero" and id != hero.hero_id:
+	if not is_left and u and u.kind == "hero" and id != hero.hero_id and not hero.unit.is_enemy_of(u):
 		world.hud.hero_menu(id, pos)      # ПКМ по союзнику: «Обмен»
 		return
-	if not is_left and u and u.team == Unit.Team.ENEMIES:
+	if not is_left and u and hero.unit.is_enemy_of(u):
 		_send_server("request_auto", [id])
 
 func _key(k: InputEventKey) -> void:
@@ -320,7 +320,7 @@ func target_next_enemy() -> void:
 	var fwd := -hero.global_transform.basis.z
 	var cands: Array = []
 	for u: Unit in world.units.values():
-		if u.team != Unit.Team.ENEMIES or not u.alive:
+		if not hero.unit.is_enemy_of(u) or not u.alive:
 			continue
 		var to := u.pos - hero.global_position
 		var dist := to.length()
@@ -501,10 +501,10 @@ func try_cast(sid: String) -> void:
 	match sp["target"]:
 		"enemy":
 			var t: Unit = world.get_unit(target_id)
-			if t == null or not t.alive or t.team != Unit.Team.ENEMIES:
+			if t == null or not t.alive or not hero.unit.is_enemy_of(t):
 				target_next_enemy()
 				t = world.get_unit(target_id)
-				if t == null or t.team != Unit.Team.ENEMIES:
+				if t == null or not hero.unit.is_enemy_of(t):
 					hud.error("Нет цели")
 					return
 			if _dist_to(t) > max_range + t.radius:
@@ -540,7 +540,7 @@ func _ally_target() -> Unit:
 
 ## Союзник для лечения и щитов: герой или питомец охотника (сервер принимает обоих).
 func _is_ally(u: Unit) -> bool:
-	return u != null and u.alive and u.team == Unit.Team.PLAYERS and (u.kind == "hero" or u.kind == "pet")
+	return u != null and u.alive and hero.unit.is_ally_of(u) and (u.kind == "hero" or u.kind == "pet")
 
 func _cast_move_buff() -> bool:
 	for b in hero.net_buffs:
@@ -747,6 +747,16 @@ func bot_tick(delta: float) -> void:
 		move_forward = 1.0
 	if world.mobs.wave_near(hp2):
 		_jump_queued = true
+	# бой героев: мало здоровья — выпить зелье, а без зелья и лечения — отойти от врага-героя
+	var foe_h = _bot_enemy_hero(30.0)
+	if foe_h and hero.unit.alive and hero.unit.hp_frac() < 0.35:
+		if not _bot_potion() and hero.unit.hp_frac() < 0.25 and not _bot_can_heal():
+			var away: Vector3 = hero.global_position - foe_h.unit.pos
+			away.y = 0.0
+			if away.length() > 0.1 and away.length() < 14.0:
+				hero.rotation.y = atan2(-away.x, -away.z)
+				cam_yaw = hero.rotation.y
+				move_forward = 1.0
 	if lines_post != null and _shop_phase > 0:
 		return      # «Линии»: идёт за покупками — не колдует, иначе лекарь не дойдёт до базы
 	_bot_t -= delta
@@ -764,28 +774,33 @@ func bot_tick(delta: float) -> void:
 	# объекты боссов (гробница, филактерии, порталы) — первая цель
 	var first: Unit = null
 	for u: Unit in world.units.values():
-		if u.alive and u.team == Unit.Team.ENEMIES and GameData.MOBS.get(u.type_id, {}).get("kill_first", false) and _dist_to(u) < 32.0 				and (first == null or _dist_to(u) < _dist_to(first)):
+		if u.alive and hero.unit.is_enemy_of(u) and GameData.MOBS.get(u.type_id, {}).get("kill_first", false) and _dist_to(u) < 32.0 				and (first == null or _dist_to(u) < _dist_to(first)):
 			first = u
 	if first and (tu == null or not GameData.MOBS.get(tu.type_id, {}).get("kill_first", false)):
 		target_id = first.id
 		tu = first
-	if tu == null or not tu.alive or tu.team != Unit.Team.ENEMIES or _dist_to(tu) > 32.0 or not _target_ok(tu):
+	# бой героев: вражеский герой в 25 м — главная цель (мобы подождут)
+	var eh = _bot_enemy_hero(25.0)
+	if eh and first == null and (tu == null or tu.kind != "hero" or not tu.alive):
+		target_id = eh.hero_id
+		tu = eh.unit
+	if tu == null or not tu.alive or not hero.unit.is_enemy_of(tu) or _dist_to(tu) > 32.0 or not _target_ok(tu):
 		target_id = 0
 		var best := 1e9
 		for u: Unit in world.units.values():
-			if u.team == Unit.Team.ENEMIES and u.alive and _dist_to(u) < minf(best, 32.0) and _target_ok(u):
+			if hero.unit.is_enemy_of(u) and u.alive and _dist_to(u) < minf(best, 32.0) and _target_ok(u):
 				best = _dist_to(u)
 				target_id = u.id
 		tu = world.get_unit(target_id)
 	# самый раненый союзник
 	var weakest: Unit = null
 	for h in world.heroes.values():
-		if h.unit.alive and h.team == hero.team and (weakest == null or h.unit.hp_frac() < weakest.hp_frac()):
+		if h.unit.alive and hero.unit.is_ally_of(h.unit) and (weakest == null or h.unit.hp_frac() < weakest.hp_frac()):
 			weakest = h.unit
 	var near_enemies := 0
 	for u: Unit in world.units.values():
-		if u.team == Unit.Team.ENEMIES and u.alive and _dist_to(u) < 8.0:
-			near_enemies += 1
+		if hero.unit.is_enemy_of(u) and u.alive and _dist_to(u) < 8.0:
+			near_enemies += 2 if u.kind == "hero" else 1      # вражеский герой опаснее моба — защитные заклинания раньше
 	# используемые аксессуары — в бою, как только готовы (лечащие — когда ранен)
 	if tu and tu.alive and _dist_to(tu) < 30.0:
 		for ts in GameData.ItemData.TRINKET_SLOTS:
@@ -798,7 +813,7 @@ func bot_tick(delta: float) -> void:
 			_eco("request_use_slot", [ts])
 	# питомцы охотников тоже союзники: лекарь подлечивает раненого зверя
 	for pu: Unit in world.mobs.pet_units():
-		if pu.alive and _dist_to(pu) < 30.0 and pu.hp_frac() < 0.6 and (weakest == null or pu.hp_frac() < weakest.hp_frac()):
+		if pu.alive and hero.unit.is_ally_of(pu) and _dist_to(pu) < 30.0 and pu.hp_frac() < 0.6 and (weakest == null or pu.hp_frac() < weakest.hp_frac()):
 			weakest = pu
 	if hero.class_id == "hunter" and not ai and _bot_hunter_pet():
 		return
@@ -1009,7 +1024,42 @@ func _bot_try_interrupt() -> bool:
 				_face(cu.pos)
 				_send_server("request_cast", [isid, cid, Vector3.ZERO, 0.0])
 				return true
+		# бой героев: сбить произнесение вражеского героя
+		for eh in world.enemy_heroes(hero.unit):
+			if eh.casting and eh.unit.alive and _dist_to(eh.unit) <= float(isp["range"]) + eh.unit.radius:
+				_face(eh.unit.pos)
+				_send_server("request_cast", [isid, eh.hero_id, Vector3.ZERO, 0.0])
+				return true
 		return false
+	return false
+
+## Ближайший живой вражеский герой не дальше r (только в режимах с боем героев).
+func _bot_enemy_hero(r: float):
+	var best = null
+	var bd := r
+	for eh in world.enemy_heroes(hero.unit):
+		if eh.unit.alive and not eh.offline and _dist_to(eh.unit) < bd:
+			bd = _dist_to(eh.unit)
+			best = eh
+	return best
+
+## Выпить зелье лечения из сумки (лучшее, что есть), если зелья готовы. true — выпил.
+func _bot_potion() -> bool:
+	if now() < potion_until:
+		return false
+	for pid in ["potion_heal_4", "potion_heal_3", "potion_heal_2", "potion_heal_1"]:
+		if hero.bag_count(pid) > 0:
+			potion_until = now() + 2.0      # до ответа сервера не слать повторно
+			_eco("request_use_id", [pid])
+			return true
+	return false
+
+## Есть ли у героя заклинание лечения союзника (лекарь сам себя вылечит, а не убегает).
+func _bot_can_heal() -> bool:
+	for sid in spell_ids():
+		var sp: Dictionary = GameData.SPELLS[sid]
+		if sp["target"] == "ally" and sp.get("effects", []).any(func(e): return e["type"] == "heal") and now() >= float(cd_until.get(sid, 0.0)):
+			return true
 	return false
 
 ## Книга заклинаний: выбранное заклинание встаёт в ячейку снятого.

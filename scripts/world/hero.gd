@@ -85,7 +85,8 @@ func setup(w: Node3D, hid: int, pid: int, info: Dictionary) -> void:
 	unit = Unit.new()
 	unit.id = hid
 	unit.kind = "hero"
-	unit.team = Unit.Team.PLAYERS
+	unit.side = team           # сторона героя — его команда (в осаде все 0); враждебность решает режим
+	unit.def_ranged = bool(GameData.CLASSES[class_id]["auto"]["ranged"])     # шипы и ответные удары — только по ближнему бою
 	unit.type_id = class_id
 	unit.display_name = player_name
 	unit.radius = 0.7
@@ -258,6 +259,11 @@ func talent_points_free() -> int:
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1
+	if Unit.pvp:
+		# бой героев: ледяные стены враждебных сторон не пропускают (spell_system.ev_wall_block)
+		for sd in 8:
+			if sd != team:
+				collision_mask |= world.spells.wall_layer(sd)
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.5
