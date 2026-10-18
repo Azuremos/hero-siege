@@ -413,7 +413,7 @@ func _process(delta: float) -> void:
 		_log_t = 0.0
 		var lh = local_hero
 		if lh:
-			print("   talents=%s  bar=%s" % [str(lh.talents), str(lh.controller.bar)])
+			print("   talents=%s  bar=%s  bar2=%s" % [str(lh.talents), str(lh.controller.bar), str(lh.controller.bars[1])])
 		if mode.has_method("log_line") and (is_server() or not mode.is_over()):
 			print(mode.log_line())
 		print("[t=%d] fps=%d proc=%.1fms phys=%.1fms wave=%d mobs=%d castle=%d hero_lvl=%d xp=%d hp=%d/%d mana=%d gold=%d" % [

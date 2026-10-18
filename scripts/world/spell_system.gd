@@ -596,7 +596,7 @@ func _complete_cast(hero, sid: String, target_id: int, ground: Vector3, yaw: flo
 		"target_aoe":
 			# цель и враги рядом с ней (Молот праведника, Замедление)
 			var n := 0
-			var max_n := int(sp.get("max_targets", 99))
+			var max_n := int(sp.get("max_targets", 99)) + int(u.mod("targets_add", sid, school))   # таланты «больше целей»
 			apply_effects(u, tu, sp["effects"], sid, school)
 			for m in world.mobs.query_radius(Vector2(tu.pos.x, tu.pos.z), radius):
 				if m != tu and n < max_n - 1:
@@ -1301,10 +1301,16 @@ func _trigger_procs(u: Unit, target: Unit, on: String, sid: String, school: Stri
 		if p.has("reset"):
 			# Щит и меч: сбросить перезарядку способности
 			var rst := _hstate(u.id)
-			rst["cds"][p["reset"]] = 0.0
 			var rh = world.heroes.get(u.id, null)
+			var rsid := str(p["reset"])
+			if rsid.begins_with("row:") and rh:
+				# «заклинание ряда N книги» — тот вариант, что выбран сейчас (Шквал стрел охотника)
+				rsid = GameData.book_choice(rh.class_id, int(rsid.trim_prefix("row:")), rh.choices)
+			if rsid == "":
+				continue
+			rst["cds"][rsid] = 0.0
 			if rh:
-				_feedback(rh.peer_id, p["reset"], "", -1.0, 0.0)
+				_feedback(rh.peer_id, rsid, "", -1.0, 0.0)
 			fx_at("proc", u.pos, u.pos, 0.0, u.id)
 			continue
 		apply_item_effect(u, p, target, t)

@@ -375,6 +375,11 @@ const TREES := {
 				"desc": "Шанс крита +{v}%.", "mods": [["global", "crit", 0.02]]},
 			{"id": "resourcefulness", "name": "Находчивость", "row": 2, "col": 2, "max": 3, "v": 5, "icon": "resourcefulness",
 				"desc": "Выстрелы и ловушки тратят на {v}% меньше концентрации.", "mods": [["global", "mana", -0.05]]},
+			# АоЕ охотника (просьба пользователя): прок со сбросом перезарядки, как Огненная глыба мага
+			{"id": "volley_rush_t", "name": "Шквал стрел", "row": 2, "col": 3, "max": 3, "v": [5, 10], "icon": "spell:multi_shot",
+				"proc": {"on": ["auto", "spell_hit"], "school": "physical", "chance": 0.05, "icd": 3.0, "reset": "row:2"},
+				"mods": [["row:2", "targets_add", 1.0], ["row:2", "amount", 0.1]],
+				"desc": "Ваше заклинание ряда «Площадь» (Залп стрел, Град стрел, Разрывная ловушка) наносит на {v2}% больше урона, Залп стрел бьёт ещё 1 врага за ранг. ПРОК: выстрелы с вероятностью {v}% сразу восстанавливают его."},
 			{"id": "expose_weakness", "name": "Уязвимое место", "row": 3, "col": 1, "max": 3, "v": 3, "icon": "expose_weakness",
 				"desc": "Весь урон +{v}%.", "mods": [["global", "dmg", 0.03]]},
 			{"id": "explosive_shot_t", "name": "Разрывной выстрел", "row": 4, "col": 1, "max": 1, "v": 1, "icon": "spell:explosive_shot",
