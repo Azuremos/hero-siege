@@ -632,3 +632,18 @@ static func is_two_handed(id: String) -> bool:
 static func _legend_field(d: Dictionary, key: String, fallback: String) -> String:
 	var ld: Dictionary = SetData.LEGENDARIES.get(str(d.get("unique_id", "")), {})
 	return str(ld.get(key, fallback))
+
+## Какие роли вещей полезны классу (лавка показывает только подходящее герою): воину и охотнику — физ.,
+## магу и жрецу — заклинателя, паладину и шаману — обе (Свет / Стихии и ближний бой).
+const CLASS_GEAR_ROLES := {"warrior": ["phys"], "hunter": ["phys"], "mage": ["caster"], "priest": ["caster"],
+	"paladin": ["phys", "caster"], "shaman": ["phys", "caster"]}
+
+## Вещь подходит классу: её можно надеть (classes) и её роль полезна классу (role «any» — всем).
+static func fits_class(it: Dictionary, class_id: String) -> bool:
+	if it.get("kind", "") != "gear":
+		return true
+	var classes: Array = it.get("classes", [])
+	if not classes.is_empty() and not classes.has(class_id):
+		return false
+	var role: String = tpl(str(it.get("base", ""))).get("role", "any")
+	return role == "any" or CLASS_GEAR_ROLES.get(class_id, ["phys", "caster"]).has(role)

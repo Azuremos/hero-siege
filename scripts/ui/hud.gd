@@ -1265,7 +1265,7 @@ func open_shop(vid: String) -> void:
 	_shop.open(vid)
 	_shop.reset_size()
 	var vp := get_viewport().get_visible_rect().size
-	_shop.position = Vector2(40, (vp.y - _shop.size.y) * 0.5 - 40)
+	_shop.position = Vector2(12, (vp.y - _shop.size.y) * 0.5 - 40)   # левее: рядом открыто окно персонажа
 	Sfx.play("ui_open")
 	if _char_window == null or not _char_window.visible:
 		toggle_character()

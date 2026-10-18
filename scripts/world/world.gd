@@ -472,6 +472,9 @@ func _process(delta: float) -> void:
 			if mode.vendor_allowed(local_hero, vid):
 				hud.open_shop(vid)
 				print("SHOP opened ", vid)
+		if Net.cli.has("shopid"):      # --shopid=smith — какую лавку оставить открытой для снимка
+			local_hero.global_position = economy.vendor_pos[str(Net.cli["shopid"])] + Vector3(0, 0.5, 3.0)
+			hud.open_shop(str(Net.cli["shopid"]))
 	if Net.cli.has("sellconfirm") and Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) + 0.5 and _test_t - delta < float(Net.cli["charwin"]) + 0.5:
 		hud.open_shop("smith")
 		for bi in local_hero.bag.size():

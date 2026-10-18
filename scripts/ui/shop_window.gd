@@ -9,6 +9,9 @@ var vendor := ""
 var _title: Label
 var _list: VBoxContainer
 var _only_mine: CheckBox
+var _sort: OptionButton
+## Сортировка товаров кузнеца: по ячейке (с заголовками), уровню, цене, качеству.
+const SORTS := [["slot", "По ячейке"], ["level", "По уровню"], ["price", "По цене"], ["quality", "По качеству"]]
 var _gold: Label
 
 func setup(w: Node3D) -> void:
@@ -38,10 +41,17 @@ func setup(w: Node3D) -> void:
 	var opts := HBoxContainer.new()
 	v.add_child(opts)
 	_only_mine = CheckBox.new()
-	_only_mine.text = "Только для моего класса"
+	_only_mine.text = "Только подходящее моему герою"
+	_only_mine.tooltip_text = "Вещи, которые ваш класс может надеть и которые ему полезны\n(воину не показываются мантии и кольца на интеллект, магу — кирасы и кольца на силу)."
 	_only_mine.button_pressed = true
 	_only_mine.toggled.connect(func(_on): refresh())
 	opts.add_child(_only_mine)
+	_sort = OptionButton.new()
+	for s in SORTS:
+		_sort.add_item(s[1])
+	_sort.tooltip_text = "Сортировка товаров"
+	_sort.item_selected.connect(func(_i): refresh())
+	opts.add_child(_sort)
 	_gold = Label.new()
 	_gold.add_theme_color_override("font_color", GOLD)
 	_gold.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -56,8 +66,10 @@ func setup(w: Node3D) -> void:
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_list)
 	var hint := Label.new()
-	hint.text = "Продать: ПКМ по предмету в сумке (окно персонажа).  Торговец выкупает за 25% цены."
+	hint.text = "Продать: ПКМ по предмету в сумке (окно персонажа).  Торговец выкупает за 20% цены (ПКМ — с подтверждением, Shift + ПКМ — сразу)."
 	hint.add_theme_font_size_override("font_size", 12)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(560, 0)
 	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	v.add_child(hint)
 
@@ -66,6 +78,7 @@ func open(vid: String) -> void:
 	var v: Dictionary = world.economy.VENDORS[world.economy.vkind(vid)]   # в «Войне линий» id вида smith#a
 	_title.text = "%s — %s" % [v["name"], v["desc"]]
 	_only_mine.visible = v["kind"] == "gear"
+	_sort.visible = v["kind"] == "gear"
 	visible = true
 	refresh()
 
@@ -77,10 +90,22 @@ func refresh() -> void:
 	_gold.text = "Золото: %d" % hero.gold
 	for c in _list.get_children():
 		c.queue_free()
-	for id in world.economy.vendor_items(vendor, hero.unit.level):
+	var ids: Array = world.economy.vendor_items(vendor, hero.unit.level).filter(func(id):
+		return not (_only_mine.visible and _only_mine.button_pressed) or GameData.ItemData.fits_class(GameData.item(id), hero.class_id))
+	var mode: String = SORTS[_sort.selected][0] if _sort.visible else ""
+	if mode != "":
+		ids.sort_custom(func(a, b): return _sort_key(GameData.item(a), mode) < _sort_key(GameData.item(b), mode))
+	var last_slot := ""
+	for id in ids:
 		var it := GameData.item(id)
-		if _only_mine.visible and _only_mine.button_pressed and not it["classes"].is_empty() and not it["classes"].has(hero.class_id):
-			continue
+		if mode == "slot" and it["slot"] != last_slot:
+			# заголовок ячейки: «Оружие», «Голова»…
+			last_slot = it["slot"]
+			var hl := Label.new()
+			hl.text = GameData.ItemData.SLOTS.get(last_slot, last_slot)
+			hl.add_theme_color_override("font_color", GOLD)
+			hl.add_theme_font_size_override("font_size", 15)
+			_list.add_child(hl)
 		var row := HBoxContainer.new()
 		RichTip.attach(row)
 		row.add_theme_constant_override("separation", 8)
@@ -140,3 +165,18 @@ func _short(it: Dictionary) -> String:
 	if it["stats"].has("armor"):
 		parts.append("+%.1f%% брони" % (it["stats"]["armor"] * 100.0))
 	return "  ".join(parts)
+
+## Ключ сортировки: по ячейке — порядок ячеек снаряжения, внутри — уровень и цена.
+func _sort_key(it: Dictionary, mode: String) -> Array:
+	var slot_i: int = GameData.ItemData.SLOT_ORDER.find(it["slot"])
+	if slot_i < 0:
+		slot_i = 99      # аксессуары и прочее — в конце
+	match mode:
+		"slot":
+			return [slot_i, int(it["level"]), int(it["price"])]
+		"level":
+			return [-int(it["level"]), slot_i, int(it["price"])]
+		"price":
+			return [int(it["price"]), slot_i]
+		_:
+			return [-int(it["q"]), slot_i, int(it["level"])]
