@@ -63,7 +63,7 @@ func setup(w: Node3D) -> void:
 
 func open(vid: String) -> void:
 	vendor = vid
-	var v: Dictionary = world.economy.VENDORS[vid]
+	var v: Dictionary = world.economy.VENDORS[world.economy.vkind(vid)]   # в «Войне линий» id вида smith#a
 	_title.text = "%s — %s" % [v["name"], v["desc"]]
 	_only_mine.visible = v["kind"] == "gear"
 	visible = true

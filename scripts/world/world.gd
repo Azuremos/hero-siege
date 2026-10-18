@@ -466,6 +466,12 @@ func _process(delta: float) -> void:
 	if Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) and _test_t - delta < float(Net.cli["charwin"]):
 		hud.toggle_character()   # --charwin=T: открыть окно персонажа (снимок)
 	# --sellconfirm: вместе с --charwin открыть лавку и окно подтверждения продажи первой вещи сумки (снимок)
+	# --openshops=T: открыть по очереди все лавки своей стороны (в «Войне линий» у команд свои торговцы)
+	if Net.cli.has("openshops") and _test_t >= float(Net.cli["openshops"]) and _test_t - delta < float(Net.cli["openshops"]):
+		for vid in economy.vendor_pos:
+			if mode.vendor_allowed(local_hero, vid):
+				hud.open_shop(vid)
+				print("SHOP opened ", vid)
 	if Net.cli.has("sellconfirm") and Net.cli.has("charwin") and _test_t >= float(Net.cli["charwin"]) + 0.5 and _test_t - delta < float(Net.cli["charwin"]) + 0.5:
 		hud.open_shop("smith")
 		for bi in local_hero.bag.size():
