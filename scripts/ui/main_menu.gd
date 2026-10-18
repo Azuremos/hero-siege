@@ -20,6 +20,8 @@ var _class_buttons: Dictionary = {}
 var _class_desc: Label
 var _spell_row: HBoxContainer
 var _race_option: OptionButton
+var _build_option: OptionButton     # заготовка талантов выбранного класса (изучается в игре сама)
+var _build_class := ""
 var _race_desc: Label
 var _waves_option: OptionButton
 var _lanes_option: OptionButton
@@ -239,6 +241,13 @@ func _build_ui() -> void:
 	h.add_child(_race_option)
 	_race_desc = _label("", 14, Color(0.9, 0.9, 0.85))
 	h.add_child(_race_desc)
+	h.add_child(_label("Заготовка талантов", 14, GOLD))
+	_build_option = OptionButton.new()
+	_build_option.tooltip_text = "Таланты и выбор в книге из «Талантов класса» — в игре изучаются сами по мере роста уровня.\nСоздать: «Таланты класса» → вкачать → «Сохранить»."
+	_build_option.item_selected.connect(func(i):
+		if _cli.is_empty():      # тестовые запуски с флагами выбор не сохраняют
+			Settings.select_build(_selected_class(), "" if i == 0 else _build_option.get_item_text(i)))
+	h.add_child(_build_option)
 	h.add_child(HSeparator.new())
 	# настройки партии (одиночная игра и хост)
 	var opts := GridContainer.new()
@@ -458,6 +467,7 @@ func _fit_race_to_class(cid: String) -> void:
 
 func _update_preview() -> void:
 	var cid := _selected_class()
+	_fill_builds(cid)
 	_fit_race_to_class(cid)
 	var rid := _selected_race()
 	_class_desc.text = GameData.CLASSES[cid]["desc"]
@@ -760,6 +770,8 @@ func _run_cli() -> void:
 	if _cli.has("menuscreen"):
 		if _cli["menuscreen"] == "hero":
 			_open_hero("solo")
+		elif _cli["menuscreen"] == "talents":       # --menuscreen=talents --class=mage — «Таланты класса» (снимок)
+			_open_talents(str(_cli.get("class", "mage")))
 		elif _cli["menuscreen"] == "collection":
 			_show_collection(str(_cli.get("class", "mage")))
 			if _cli.has("tryon"):
@@ -1152,3 +1164,16 @@ func _try_on_set(sid: String) -> void:
 	var col: Color = sd["look"]
 	Vfx.particles(_preview, Color(col.r, col.g, col.b, 0.8), 18, 1.6, {"shape": "ring", "radius": 0.9, "vmin": 0.2, "vmax": 0.5,
 		"spread": 10.0, "smin": 0.4, "smax": 0.8, "size": 0.25, "gravity": Vector3(0, 0.6, 0), "local": true, "aabb": 3.0})
+
+## Список заготовок класса: «нет» + сохранённые; выбрана та, что запомнена для класса.
+func _fill_builds(cid: String) -> void:
+	if _build_option == null:
+		return
+	_build_class = cid
+	_build_option.clear()
+	_build_option.add_item("нет — таланты вручную")
+	var sel := Settings.selected_build(cid)
+	for n in Settings.builds(cid):
+		_build_option.add_item(n)
+		if n == sel:
+			_build_option.select(_build_option.item_count - 1)

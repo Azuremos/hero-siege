@@ -37,6 +37,7 @@ func _learn(tid: String) -> void:
 	if _preview:
 		if GameData.can_learn(_class_id, _plan, GameData.MAX_LEVEL, tid) == "":
 			_plan[tid] = int(_plan.get(tid, 0)) + 1
+			_plan_order.append(tid)      # порядок вкачки — для заготовки
 			Sfx.play("ui_learn")
 		refresh()
 	else:
@@ -45,6 +46,7 @@ func _learn(tid: String) -> void:
 func _reset() -> void:
 	if _preview:
 		_plan.clear()
+		_plan_order.clear()
 		refresh()
 	else:
 		world.spells.send_to_server("request_reset_talents", [])
@@ -93,6 +95,8 @@ func setup(w: Node3D) -> void:
 		v.add_child(_label("Книга заклинаний — выберите вариант в каждом ряду (ЛКМ):", 15, GOLD))
 		v.add_child(_book_box)
 		_build_book()
+	if _preview:
+		_build_builds_row(v)
 
 func _label(text: String, size: int, col: Color) -> Label:
 	var l := Label.new()
@@ -319,3 +323,82 @@ func _refresh_book() -> void:
 		var on: bool = chosen == c[1]
 		(c[3] as StyleBoxFlat).border_color = GOLD if on else Color(0.25, 0.25, 0.25)
 		(c[2] as Control).modulate = Color.WHITE if on else Color(0.55, 0.55, 0.55)
+
+# ---------------------------------------------------------------- заготовки (просмотр из главного меню)
+
+var _plan_order: Array = []          # таланты в порядке вкачки (id повторяется по рангам)
+var _build_name: LineEdit
+var _build_list: OptionButton
+
+## Ряд «Заготовка»: сохранить план (таланты в порядке вкачки + выбор в книге) под именем, загрузить, удалить.
+## Выбранная на экране героя заготовка в игре изучается сама.
+func _build_builds_row(v: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	row.add_child(_label("Заготовка:", 15, GOLD))
+	_build_name = LineEdit.new()
+	_build_name.placeholder_text = "Название, например «Огонь»"
+	_build_name.custom_minimum_size = Vector2(220, 0)
+	row.add_child(_build_name)
+	var save := Button.new()
+	save.text = "Сохранить"
+	save.tooltip_text = "Сохранить таланты (в порядке, в котором вы их вкачали) и выбор в книге.\nНа экране выбора героя выберите заготовку — в игре она изучится сама."
+	save.pressed.connect(_save_build)
+	row.add_child(save)
+	row.add_child(VSeparator.new())
+	_build_list = OptionButton.new()
+	_build_list.custom_minimum_size = Vector2(200, 0)
+	row.add_child(_build_list)
+	var load_b := Button.new()
+	load_b.text = "Загрузить"
+	load_b.pressed.connect(_load_build)
+	row.add_child(load_b)
+	var del := Button.new()
+	del.text = "Удалить"
+	del.pressed.connect(func():
+		if _build_list.item_count > 0:
+			Settings.delete_build(_class_id, _build_list.get_item_text(_build_list.selected))
+			_fill_builds())
+	row.add_child(del)
+	_fill_builds()
+
+func _fill_builds() -> void:
+	_build_list.clear()
+	for n in Settings.builds(_class_id):
+		_build_list.add_item(n)
+
+func _save_build() -> void:
+	var n := _build_name.text.strip_edges()
+	if n == "" or _plan_order.is_empty():
+		Sfx.play("ui_error")
+		_title.text = "Заготовка: вкачайте таланты и введите название"
+		return
+	var ch := {}
+	for k in _plan_choices:
+		ch[int(k)] = str(_plan_choices[k])
+	Settings.save_build(_class_id, n, {"order": _plan_order.duplicate(), "choices": ch})
+	Settings.select_build(_class_id, n)
+	Sfx.play("ui_learn")
+	_fill_builds()
+	for i in _build_list.item_count:
+		if _build_list.get_item_text(i) == n:
+			_build_list.select(i)
+	refresh()
+
+func _load_build() -> void:
+	if _build_list.item_count == 0:
+		return
+	var n := _build_list.get_item_text(_build_list.selected)
+	var b: Dictionary = Settings.builds(_class_id).get(n, {})
+	_plan.clear()
+	_plan_order.clear()
+	for tid in b.get("order", []):
+		if GameData.can_learn(_class_id, _plan, GameData.MAX_LEVEL, tid) == "":
+			_plan[tid] = int(_plan.get(tid, 0)) + 1
+			_plan_order.append(tid)
+	_plan_choices = {}
+	for k in b.get("choices", {}):
+		_plan_choices[int(k)] = str(b["choices"][k])
+	_build_name.text = n
+	refresh()

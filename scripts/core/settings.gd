@@ -3,6 +3,7 @@ extends Node
 
 const PATH := "user://settings.cfg"
 const UI_PATH := "user://ui_layout.cfg"
+const BUILDS_PATH := "user://builds.cfg"   # заготовки талантов: [класс] имя = {order, choices}
 
 var master := 0.8
 var music := 0.55
@@ -138,3 +139,37 @@ func apply_lighting(map: Node) -> void:
 			env.ambient_light_energy *= COMPAT_AMBIENT
 			env.tonemap_exposure *= COMPAT_EXPOSURE
 			(we as WorldEnvironment).environment = env
+
+# ---------------------------------------------------------------- заготовки талантов
+## Заготовка — план героя из «Талантов класса» главного меню: order — таланты в порядке изучения
+## (id повторяется по рангам), choices — выбор в рядах книги {ряд: id}. В игре изучаются сами.
+## Тестовые запуски с флагами заготовки читают, но не меняют выбранную.
+
+func builds(class_id: String) -> Dictionary:
+	var cfg := ConfigFile.new()
+	cfg.load(BUILDS_PATH)
+	var out := {}
+	if cfg.has_section(class_id):
+		for k in cfg.get_section_keys(class_id):
+			out[k] = cfg.get_value(class_id, k, {})
+	return out
+
+func save_build(class_id: String, build_name: String, data: Dictionary) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(BUILDS_PATH)
+	cfg.set_value(class_id, build_name, data)
+	cfg.save(BUILDS_PATH)
+
+func delete_build(class_id: String, build_name: String) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(BUILDS_PATH)
+	if cfg.has_section_key(class_id, build_name):
+		cfg.erase_section_key(class_id, build_name)
+	cfg.save(BUILDS_PATH)
+
+## Выбранная для класса заготовка (пустая строка — нет).
+func selected_build(class_id: String) -> String:
+	return str(get_ui_opt("build_" + class_id, ""))
+
+func select_build(class_id: String, build_name: String) -> void:
+	set_ui_opt("build_" + class_id, build_name)

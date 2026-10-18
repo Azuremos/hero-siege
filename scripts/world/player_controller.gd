@@ -250,6 +250,7 @@ func _process(delta: float) -> void:
 	if ai:
 		_ai_process(delta)
 		return
+	_build_tick(delta)
 	var typing: bool = world.hud.is_typing()
 	var w := Input.is_action_pressed("move_forward") and not typing
 	var s := Input.is_action_pressed("move_back") and not typing
@@ -926,6 +927,9 @@ func _bot_main_tree() -> int:
 	return int(Net.cli["bottree"]) if Net.cli.has("bottree") and not ai else BOT_TREE.get(hero.class_id, 0)
 
 func _bot_learn_talents() -> void:
+	if not _build().is_empty():      # бот с заготовкой (--buildspec) учит её, а не свою ветку
+		_build_tick(0.25)
+		return
 	if now() < _bot_learn_wait:
 		return
 	var main: int = _bot_main_tree()
@@ -1195,3 +1199,60 @@ func _detour(target: Vector3) -> Vector3:
 		side = -side
 	var p := c + side * 13.0
 	return Vector3(p.x, 0, p.y)
+
+# ---------------------------------------------------------------- заготовка талантов
+## Заготовка из «Талантов класса» (Settings.builds): таланты учатся сами в порядке плана, как только есть
+## свободные очки; выбор в книге ставится, когда открывается ряд (вне боя — сервер в бою откажет, повторим).
+## Ряд, который игрок потом сменил сам, заготовка больше не трогает. Тест: --buildspec="tid,tid,…|ряд:id,…".
+var _build_cache = null
+var _build_wait := 0.0
+var _build_rows_done: Dictionary = {}
+
+func _build() -> Dictionary:
+	if _build_cache == null:
+		_build_cache = {}
+		var cid: String = hero.class_id
+		if Net.cli.has("buildspec"):
+			var parts: PackedStringArray = str(Net.cli["buildspec"]).split("|")
+			var ch := {}
+			if parts.size() > 1:
+				for kv in parts[1].split(",", false):
+					ch[int(kv.get_slice(":", 0))] = kv.get_slice(":", 1)
+			_build_cache = {"order": Array(parts[0].split(",", false)), "choices": ch}
+		elif Settings.selected_build(cid) != "":
+			_build_cache = Settings.builds(cid).get(Settings.selected_build(cid), {})
+	return _build_cache
+
+func _build_tick(delta: float) -> void:
+	var b := _build()
+	if b.is_empty() or not hero.unit.alive:
+		return
+	_build_wait -= delta
+	if _build_wait > 0.0:
+		return
+	_build_wait = 0.4
+	# книга: ряд открылся — поставить вариант заготовки (один раз на ряд)
+	if GameData.BOOKS.has(hero.class_id):
+		var rows: Array = GameData.BOOKS[hero.class_id]["rows"]
+		for k in b.get("choices", {}):
+			var row := int(k)
+			if row < 0 or row >= rows.size() or _build_rows_done.has(row) or hero.unit.level < int(rows[row]["level"]):
+				continue
+			var want := str(b["choices"][k])
+			if GameData.book_choice(hero.class_id, row, hero.choices) == want:
+				_build_rows_done[row] = true
+				continue
+			_build_wait = 3.0           # в бою сервер откажет — попробуем позже
+			_send_server("request_choose", [row, want])
+			return
+	# таланты: первый ранг плана, которого ещё нет
+	if hero.talent_points_free() <= 0:
+		return
+	var seen := {}
+	for tid in b.get("order", []):
+		seen[tid] = int(seen.get(tid, 0)) + 1
+		if int(hero.talents.get(tid, 0)) >= int(seen[tid]):
+			continue
+		if GameData.can_learn(hero.class_id, hero.talents, hero.unit.level, tid) == "":
+			_send_server("request_learn", [tid])
+		return       # порядок плана: следующий талант — только после этого
