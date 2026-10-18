@@ -37,7 +37,8 @@ var _started := false
 var _next_duel_at := 0.0
 var _duel_at := 0.0                  # warn: когда начнётся; fight: когда началась
 var _duel_saved: Dictionary = {}     # hero_id -> {pos, hp, mana, alive}
-var _duel_turn: Array = [0, 0]
+var _duel_queue: Array = [[], []]   # очередь команды на дуэли: перемешивается заново на каждом круге
+var _last_pair: Array = []
 var _dct_done := false       # по очереди: номер героя команды для следующей дуэли
 var _tower_at: Array = [0.0, 0.0]
 var _tick_acc := 0.0
@@ -392,15 +393,20 @@ func hero_spawn_yaw_for(info: Dictionary) -> float:
 
 # ---------------------------------------------------------------- дуэли
 
-## Кто идёт на дуэль от команды: по очереди среди героев в игре (живых — первыми).
-func _pick_duelist(team: int):
-	var list: Array = world.heroes.values().filter(func(h): return h.team == team and not h.offline)
-	if list.is_empty():
+## Кто идёт на дуэль от команды: каждый герой (человек или бот) — раз за круг, порядок круга случайный,
+## поэтому соперник тоже случайный: человек может выйти и против бота. Зашедший посреди круга ждёт следующего. avoid — не брать этого героя, если есть другой.
+func _pick_duelist(team: int, avoid: int = 0):
+	var ids: Array = world.heroes.values().filter(func(h): return h.team == team and not h.offline).map(func(h): return h.hero_id)
+	if ids.is_empty():
 		return null
-	list.sort_custom(func(a, b): return a.hero_id < b.hero_id)
-	var h = list[_duel_turn[team] % list.size()]
-	_duel_turn[team] += 1
-	return h
+	var q: Array = _duel_queue[team].filter(func(id): return ids.has(id))      # кто ещё не выходил в этом круге
+	if q.is_empty():
+		q = ids.duplicate()
+		q.shuffle()
+	var k := 1 if q.size() > 1 and int(q[0]) == avoid else 0
+	var hid: int = q.pop_at(k)
+	_duel_queue[team] = q
+	return world.heroes.get(hid, null)
 
 func _duel_tick(t: float) -> void:
 	match duel_state:
@@ -408,11 +414,14 @@ func _duel_tick(t: float) -> void:
 			if t < _next_duel_at:
 				return
 			var a = _pick_duelist(0)
-			var b = _pick_duelist(1)
+			var b = _pick_duelist(1, int(_last_pair[1]) if _last_pair.size() == 2 and a and a.hero_id == _last_pair[0] else 0)
 			if a == null or b == null:
 				_next_duel_at = t + 20.0
 				return
 			duel_ids = [a.hero_id, b.hero_id]
+			_last_pair = duel_ids.duplicate()
+			if Net.cli.has("duellog"):
+				print("DUEL pick %s (%s) vs %s (%s)" % [a.player_name, "бот" if Net.is_bot_peer(a.peer_id) else "игрок", b.player_name, "бот" if Net.is_bot_peer(b.peer_id) else "игрок"])
 			duel_state = "warn"
 			_duel_at = t + A.DUEL_WARN
 			world.announce_all("Дуэль через %d сек.: %s против %s!" % [int(A.DUEL_WARN), a.player_name, b.player_name], Color(1, 0.85, 0.3))
@@ -497,7 +506,7 @@ func _restore(h) -> void:
 ## Конец дуэли: победителю — золото и очко команде; оба — на свои места с прежним здоровьем. win_id -1 — без победителя.
 func _finish_duel(win_id: int, t: float) -> void:
 	duel_state = "none"
-	_next_duel_at = t + A.DUEL_EVERY
+	_next_duel_at = t + float(Net.cli.get("duelevery", A.DUEL_EVERY))      # --duelevery=N: дуэли чаще (тест)
 	var win = world.heroes.get(win_id, null)
 	if win:
 		var team: int = clampi(win.team, 0, 1)
