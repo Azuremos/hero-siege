@@ -570,6 +570,9 @@ func _process(delta: float) -> void:
 		for m in mobs.mobs.values():
 			per[m.route] = per.get(m.route, 0) + 1
 		print("LANES active=", siege.active_lanes, " mobs_per_lane=", per)
+	# --crafttest: каждому герою — компоненты каждого рецепта и сборка (сервер проверяет и собирает, итог — в лог)
+	if Net.cli.has("crafttest") and is_server() and _test_t >= 2.0 and _test_t - delta < 2.0:
+		_craft_test()
 	if Net.cli.has("gold") and is_server() and _test_t >= 1.0 and _test_t - delta < 1.0:
 		for h in heroes.values():
 			h.gold = int(Net.cli["gold"])
@@ -696,6 +699,21 @@ func _process(delta: float) -> void:
 			var rvid := "recruiter#%d" % local_hero.team
 			local_hero.global_position = economy.vendor_pos[rvid] + Vector3(2, 0, 2)
 			hud.open_shop(rvid)
+		elif Net.cli["open"] == "craft":
+			# окно «Мастер сборки» (снимок): компоненты в сумке для нескольких рецептов
+			var cvid := ""
+			for v in economy.vendor_pos:
+				if economy.VENDORS[economy.vkind(v)]["kind"] == "craft" and mode.vendor_allowed(local_hero, v):
+					cvid = v
+			if is_server():
+				for b in [["ring_agile", 2], ["ring_agile", 2], ["sword", 2], ["shield", 2], ["helm", 1], ["boots", 0]]:
+					local_hero.bag_add(GameData.make_gear(b[0], maxi(local_hero.unit.level, 12), b[1]))
+				local_hero.bag_add(GameData.Recipes.SCROLL, 2)
+				local_hero.gold = maxi(local_hero.gold, 3000)
+				economy._sync(local_hero)
+			if cvid != "":
+				local_hero.global_position = economy.vendor_pos[cvid] + Vector3(2, 0, 2)
+				get_tree().create_timer(0.3).timeout.connect(func(): hud.open_shop(cvid))
 		elif Net.cli["open"] == "edit":
 			hud.set_edit_mode(true)
 		elif Net.cli["open"] == "keys":
@@ -839,6 +857,43 @@ func _process(delta: float) -> void:
 		if Net.cli.has("balancelog") and siege and not Net.cli.has("bal-done"):
 			print(siege.balance_summary())
 		Sfx.quit_game()
+
+## --crafttest: для каждого рецепта — сумка с компонентами и сборка через request_craft (как у игрока).
+func _craft_test() -> void:
+	var R = GameData.Recipes
+	for h in heroes.values():
+		h.gold = 100000
+		for rid in R.ORDER:
+			var r: Dictionary = R.RECIPES[rid]
+			h.bag.fill(null)
+			var lvl := 15
+			match r["kind"]:
+				"merge":
+					for i in int(r["n"]):
+						h.bag_add(GameData.make_gear("ring_agile", lvl, 2))
+				"scroll":
+					h.bag_add(GameData.make_gear("sword", lvl, 1))
+					h.bag_add(R.SCROLL, 1)
+				_:
+					for part in r["parts"]:
+						h.bag_add(GameData.make_gear(part["base"], lvl, int(part["q_min"])))
+			var idxs: Array = R.auto_fill(rid, range(h.bag.size()).filter(func(i): return h.bag[i] != null).map(func(i): return [i, GameData.item(h.bag[i]["id"])]))
+			acting_hero = h
+			economy.request_craft(rid, idxs)
+			acting_hero = null
+			var got: Array = h.bag.filter(func(sl): return sl != null and GameData.item(sl["id"]).get("kind", "") == "gear")
+			print("CRAFTTEST %s %s: в сумке %s" % [h.class_id, rid, str(got.map(func(sl): return "%s [%s, ур. %d]" % [GameData.item(sl["id"])["name"],
+				GameData.ItemData.QUALITY_NAMES[int(GameData.item(sl["id"])["q"])], int(GameData.item(sl["id"])["ilvl"])]))])
+		# отказ: компонентов нет / легендарка не годится
+		h.bag.fill(null)
+		h.bag_add(GameData.make_legendary(GameData.SetData.LEGENDARIES.keys()[0], 15))
+		h.bag_add(GameData.make_gear("sword", 15, 3))
+		acting_hero = h
+		economy.request_craft("merge", [0, 1])
+		acting_hero = null
+		print("CRAFTTEST отказ (легендарка + фиолетовый меч): сумка %d вещей" % h.bag.filter(func(sl): return sl != null).size())
+		h.bag.fill(null)
+		economy._sync(h)
 
 func _save_shot(path: String) -> void:
 	var img := get_viewport().get_texture().get_image()

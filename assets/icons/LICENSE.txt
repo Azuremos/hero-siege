@@ -95,3 +95,6 @@
   items/totem_shield.svg — delapouite/tribal-shield
   items/mail_caster.svg — lorc/scale-mail
   items/spirit_hat.svg — lorc/horned-helm
+
+  Нарисованы для проекта (CC0, сессия 13):
+  items/scroll.svg — свиток улучшения (простая форма, своя работа)

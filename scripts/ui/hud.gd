@@ -1258,6 +1258,9 @@ func open_shop(vid: String) -> void:
 	if not world.mode.vendor_allowed(world.local_hero, vid):
 		error("Это лавка чужой команды")
 		return
+	if world.economy.VENDORS[world.economy.vkind(vid)]["kind"] == "craft":
+		open_craft(vid)
+		return
 	if _shop == null:
 		_shop = preload("res://scripts/ui/shop_window.gd").new()
 		_shop.setup(world)
@@ -1272,6 +1275,27 @@ func open_shop(vid: String) -> void:
 
 func shop_open() -> bool:
 	return _shop != null and _shop.visible
+
+## Окно «Мастер сборки» (сессия 13): сборка и улучшение вещей.
+var _craft: Control
+
+func open_craft(vid: String) -> void:
+	if _craft == null:
+		_craft = preload("res://scripts/ui/craft_window.gd").new()
+		_craft.setup(world)
+		_root.add_child(_craft)
+	if _shop:
+		_shop.visible = false
+	_craft.open(vid)
+	_craft.reset_size()
+	var vp := get_viewport().get_visible_rect().size
+	_craft.position = ((vp - _craft.size) * 0.5).floor()
+	Sfx.play("ui_open")
+	if _char_window and _char_window.visible:
+		_char_window.visible = false       # сумка — в самом окне сборки
+
+func craft_open() -> bool:
+	return _craft != null and _craft.visible
 
 ## Окно Вербовщика («Война линий»): отправка врагов сопернику.
 func open_sends(vid: String) -> void:
@@ -1358,6 +1382,8 @@ func on_inventory_changed() -> void:
 		_char_window.refresh()
 	if _shop and _shop.visible:
 		_shop.refresh()
+	if _craft and _craft.visible:
+		_craft.refresh()
 
 func talents_open() -> bool:
 	return _talent_window != null and _talent_window.visible
@@ -1368,7 +1394,7 @@ func close_windows() -> bool:
 	if _edit_layer:
 		set_edit_mode(false)
 		closed = true
-	for w in [_talent_window, _spellbook, _keybinds, _char_window, _shop, _sends, _settings_win, _menu, _help]:
+	for w in [_talent_window, _spellbook, _keybinds, _char_window, _shop, _sends, _craft, _settings_win, _menu, _help]:
 		if w and w.visible:
 			w.visible = false
 			closed = true
@@ -1623,11 +1649,14 @@ func _process(delta: float) -> void:
 		_hover_ring.scale = Vector3(hr, 1, hr)
 	# подсказка у торговца
 	var near_v: String = world.economy.nearest_vendor(lh.global_position)
-	_vendor_hint.visible = near_v != "" and not shop_open() and not (_sends != null and _sends.visible)
-	if _shop and _shop.visible and near_v != _shop.vendor:
+	_vendor_hint.visible = near_v != "" and not shop_open() and not (_sends != null and _sends.visible) and not (_craft != null and _craft.visible)
+	# окно лавки закрывается, если отошли от её торговца (рядом могут стоять двое: кузнец и Мастер сборки)
+	if _shop and _shop.visible and not world.economy.vendor_near(_shop.vendor, lh.global_position):
 		_shop.visible = false
-	if _sends and _sends.visible and near_v != _sends.vendor:
+	if _sends and _sends.visible and not world.economy.vendor_near(_sends.vendor, lh.global_position):
 		_sends.visible = false
+	if _craft and _craft.visible and not world.economy.vendor_near(_craft.vendor, lh.global_position):
+		_craft.visible = false
 
 	# группа
 	for hid in _party_frames:

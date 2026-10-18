@@ -565,6 +565,9 @@ const CONSUMABLES := {
 		"use": {"buff": "elixir_crit", "dur": 180.0, "mods": {"crit": 0.05}}, "desc": "+5% к шансу критического удара на 3 минуты."},
 	"elixir_warding": {"name": "Эликсир защиты от магии", "level": 10, "price": 90, "q": 1, "icon": "elixir_warding", "elixir": true,
 		"use": {"buff": "elixir_warding", "dur": 180.0, "mods": {"magic_taken": -0.2}}, "desc": "−20% урона от магии (огонь, лёд, тьма, Скверна…) на 3 минуты."},
+	# сборка предметов (сессия 13): продаёт Мастер сборки, тратится в рецепте «Улучшение свитком»
+	"scroll_upgrade": {"name": "Свиток улучшения", "level": 1, "price": 120, "q": 2, "icon": "scroll", "vendor": "craft", "craft": true,
+		"use": {}, "desc": "Мастер сборки поднимает качество вещи на ступень (до фиолетового)."},
 	"elixir_swift": {"name": "Эликсир стремительности", "level": 3, "price": 50, "q": 1, "icon": "elixir_swift", "elixir": true,
 		"use": {"buff": "elixir_swift", "dur": 180.0, "mods": {"speed": 0.15}}, "desc": "+15% к скорости бега на 3 минуты."},
 }

@@ -13,6 +13,12 @@ const VENDORS := {
 	# «Война линий»: продаёт врагов на линию соперника (окно отправок). На осадной карте его нет (нет точки).
 	"recruiter": {"marker": "Recruiter", "name": "Вербовщик Борислав", "desc": "Отправка врагов сопернику", "model": "Knight",
 		"show": ["1H_Sword"], "kind": "sends", "optional": true},
+	# сборка предметов (сессия 13) — во всех режимах. Нет своей точки на карте — встаёт рядом с кузнецом (near).
+	"crafter": {"marker": "Crafter", "name": "Мастер сборки Гедеон", "desc": "Сборка и улучшение вещей", "model": "Mage",
+		"show": ["Spellbook"], "hide": ["Mage_Hat"], "kind": "craft", "near": "smith", "near_off": Vector3(-4.2, 0, 1.2)},
+	# Арена: томики характеристик (только на карте Арены)
+	"bookseller": {"marker": "Bookseller", "name": "Книжник Феофан", "desc": "Томики характеристик", "model": "Rogue_Hooded",
+		"show": ["Spellbook"], "kind": "tomes", "optional": true},
 }
 
 ## Вид торговца по id: у режимов с командами торговцы у каждой базы — «smith#0», «recruiter#1».
@@ -52,6 +58,12 @@ func spawn_vendors() -> void:
 			var mt: Node3D = shops.get_node_or_null("%s_%d" % [v["marker"], team]) if shops else null
 			if mt:
 				spots.append(["%s#%d" % [kind, team], kind, mt])
+		if v.has("near") and spots.filter(func(s): return s[1] == kind).is_empty():
+			# своей точки нет — рядом с каждым «соседом» (Мастер сборки — у каждого кузнеца, и у команд в «Линиях»)
+			for sp0 in spots.duplicate():
+				if sp0[1] == v["near"]:
+					spots.append([str(sp0[0]).replace(str(v["near"]), kind), kind, sp0[2], v["near_off"]])
+			continue
 		if m == null and spots.filter(func(s): return s[1] == kind).is_empty() and not v.get("optional", false):
 			spots.append([kind, kind, null])
 	for sp in spots:
@@ -59,6 +71,10 @@ func spawn_vendors() -> void:
 		var v: Dictionary = VENDORS[sp[1]]
 		var m: Node3D = sp[2]
 		var pos: Vector3 = m.position if m else Vector3.ZERO
+		if sp.size() > 3 and m:
+			# место рядом с соседом: смещение в его осях (вправо, вперёд)
+			var ny: float = float(m.get_meta("yaw")) if m.has_meta("yaw") else atan2(m.position.x, m.position.z) + PI
+			pos += Basis(Vector3.UP, ny) * (sp[3] as Vector3)
 		vendor_pos[vid] = pos
 		var holder := Node3D.new()
 		var inst := (load("res://assets/heroes/%s.glb" % v["model"]) as PackedScene).instantiate() as Node3D
@@ -86,7 +102,7 @@ func spawn_vendors() -> void:
 		world.add_child(holder)
 		holder.position = pos
 		# лицом к центру замка (или куда задано точкой карты)
-		holder.rotation.y = float(m.get_meta("yaw")) if m and m.has_meta("yaw") else atan2(pos.x, pos.z) + PI
+		holder.rotation.y = float(m.get_meta("yaw")) if m and m.has_meta("yaw") else atan2(m.position.x if m else pos.x, m.position.z if m else pos.z) + PI
 		var tag := Label3D.new()
 		tag.text = "%s\n<%s>" % [v["name"], v["desc"]]
 		tag.modulate = Color(1.0, 0.85, 0.4)
@@ -117,10 +133,18 @@ func pick_vendor(cam: Camera3D, screen_pos: Vector2) -> String:
 	return ""
 
 func nearest_vendor(pos: Vector3) -> String:
+	var best := ""
+	var bd := VENDOR_RANGE
 	for vid in vendor_pos:
-		if Vector2(pos.x - vendor_pos[vid].x, pos.z - vendor_pos[vid].z).length() <= VENDOR_RANGE:
-			return vid
-	return ""
+		var d := Vector2(pos.x - vendor_pos[vid].x, pos.z - vendor_pos[vid].z).length()
+		if d <= bd:
+			bd = d
+			best = vid
+	return best
+
+## Торговец vid в досягаемости (окна лавок закрываются, если отойти).
+func vendor_near(vid: String, pos: Vector3) -> bool:
+	return vendor_pos.has(vid) and Vector2(pos.x - vendor_pos[vid].x, pos.z - vendor_pos[vid].z).length() <= VENDOR_RANGE + 1.0
 
 ## Что продаёт торговец герою уровня level (ассортимент кузнеца меняется каждые 3 волны).
 func vendor_items(vid: String, level: int) -> Array:
@@ -220,6 +244,8 @@ func request_use(idx: int) -> void:
 	if it["kind"] == "gear":
 		_equip(hero, idx)
 		return
+	if it.get("craft", false):
+		return _say(hero, "Свиток тратит Мастер сборки — откройте его окно (ПКМ по Мастеру)")
 	var t: float = world.now()
 	# эликсиры не делят перезарядку с зельями: бафф на 3 минуты, повторный глоток лишь обновляет его
 	var elixir: bool = it.get("elixir", false)
@@ -418,6 +444,71 @@ func ev_inventory(hero_id: int, bag: Array, equip: Dictionary) -> void:
 func _sound(hero, snd: String) -> void:
 	if hero.peer_id == multiplayer.get_unique_id():
 		Sfx.play(snd)
+
+# ---------------------------------------------------------------- сборка предметов (сессия 13)
+
+## Цена сборки: доля gold_k цены результата (у «Слияния» и «Улучшения свитком» — та же вещь на ступень выше).
+static func craft_price(rid: String, items: Array) -> int:
+	var res: Dictionary = GameData.Recipes.result(rid, items)
+	if res.is_empty():
+		return 0
+	var probe := GameData.ItemData.encode({"base": res["base"], "ilvl": res["ilvl"], "q": res["q"], "affixes": [], "proc": "", "seed": 0})
+	return maxi(10, int(float(GameData.ItemData.describe(probe).get("price", 0)) * float(GameData.Recipes.RECIPES[rid]["gold_k"])))
+
+## Мастер сборки рядом (своей команды) — его id или "".
+func near_crafter(hero) -> String:
+	for vid in vendor_pos:
+		if VENDORS[vkind(vid)]["kind"] == "craft" and world.mode.vendor_allowed(hero, vid) \
+				and Vector2(hero.unit.pos.x - vendor_pos[vid].x, hero.unit.pos.z - vendor_pos[vid].z).length() <= VENDOR_RANGE + 2.0:
+			return vid
+	return ""
+
+var crafted: Dictionary = {}       # сервер: hero_id -> собрано вещей (итоги)
+
+## Собрать по рецепту rid из вещей сумки idxs (по слотам рецепта). Сервер проверяет всё: Мастер рядом, вещи в сумке
+## и не в обмене, рецепт, свиток, золото. Результат — новый экземпляр (ItemData.roll), уровень — как у лучшего компонента.
+@rpc("any_peer", "reliable")
+func request_craft(rid: String, idxs: Array) -> void:
+	if not Net.is_server():
+		return
+	var hero = _sender_hero()
+	if hero == null or not GameData.Recipes.RECIPES.has(rid):
+		return
+	if near_crafter(hero) == "" and not Net.cli.has("crafttest"):
+		return _say(hero, "Подойдите к Мастеру сборки")
+	var items: Array = []
+	var seen := {}
+	for v in idxs:
+		var i := int(v)
+		if i < 0 or i >= hero.bag.size() or hero.bag[i] == null or seen.has(i) or world.trade.is_offered(hero, i):
+			return _say(hero, "Компоненты должны лежать в сумке")
+		seen[i] = true
+		items.append(GameData.item(hero.bag[i]["id"]))
+	var err: String = GameData.Recipes.check(rid, items, hero.bag_count(GameData.Recipes.SCROLL))
+	if err != "":
+		return _say(hero, err)
+	var price := craft_price(rid, items)
+	if hero.gold < price:
+		return _say(hero, "Недостаточно золота: нужно %d" % price)
+	var res: Dictionary = GameData.Recipes.result(rid, items)
+	for v in idxs:
+		hero.bag[int(v)] = null
+	if GameData.Recipes.RECIPES[rid]["kind"] == "scroll":
+		var si: int = hero.bag_find(GameData.Recipes.SCROLL)
+		hero.bag[si]["n"] = int(hero.bag[si]["n"]) - 1
+		if int(hero.bag[si]["n"]) <= 0:
+			hero.bag[si] = null
+	var id: String = GameData.make_gear(res["base"], int(res["ilvl"]), int(res["q"]))
+	hero.bag_add(id)
+	hero.gold -= price
+	hero.gold_out += price
+	crafted[hero.hero_id] = int(crafted.get(hero.hero_id, 0)) + 1
+	_sync(hero)
+	_sound(hero, "coins")
+	_say_loot(hero, id)
+	if Net.cli.has("crafttest") or Net.cli.has("craftlog"):
+		print("CRAFT %s %s: %s -> %s (%s), цена %d" % [hero.player_name, rid, str(items.map(func(it): return it["name"])), GameData.item(id)["name"],
+			GameData.ItemData.QUALITY_NAMES[int(res["q"])], price])
 
 # ---------------------------------------------------------------- добыча с врагов
 

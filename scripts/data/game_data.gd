@@ -44,6 +44,7 @@ const Formulas := preload("res://scripts/data/formulas.gd")
 const LinesData := preload("res://scripts/data/lines_data.gd")
 const SendData := preload("res://scripts/data/sends.gd")
 const PvpData := preload("res://scripts/data/pvp_data.gd")
+const Recipes := preload("res://scripts/data/recipes.gd")
 const SPELL_FILES := [
 	preload("res://scripts/data/spells/mage.gd"),
 	preload("res://scripts/data/spells/paladin.gd"),
@@ -425,8 +426,10 @@ func make_gear(base: String, ilvl: int, q: int, seed: int = -1) -> String:
 ## blue — правило синих вещей режима: {chance, min, extra}; {} — как в осаде (60% ротаций, 1–2 вещи).
 func vendor_stock(kind: String, level: int, rotation: int, blue: Dictionary = {}) -> Array:
 	var out: Array = []
-	if kind == "consumable":
-		var ids: Array = ItemData.CONSUMABLES.keys()
+	if kind == "consumable" or kind == "craft":
+		# алхимик — зелья и эликсиры, Мастер сборки — свитки (поле vendor расходника)
+		var want := "" if kind == "consumable" else kind
+		var ids: Array = ItemData.CONSUMABLES.keys().filter(func(c): return str(ItemData.CONSUMABLES[c].get("vendor", "")) == want)
 		ids.sort_custom(func(a, b): return [ItemData.CONSUMABLES[a]["level"], a] < [ItemData.CONSUMABLES[b]["level"], b])
 		return ids
 	var rng := RandomNumberGenerator.new()
