@@ -103,7 +103,7 @@ const BUFF_INFO := {
 	"infusion_of_light": {"name": "Прилив Света", "color": Color(1.0, 0.95, 0.6), "icon": "holy_light"},
 	"surge_of_light": {"name": "Волна Света", "color": Color(1.0, 0.95, 0.6), "icon": "flash_heal"},
 	"borrowed_time": {"name": "Взятое взаймы время", "color": Color(0.85, 0.85, 1.0), "icon": "pw_shield"},
-	"shadowy_insight": {"name": "Тёмные мысли", "color": Color(0.6, 0.35, 0.85), "icon": "psychic_scream"},
+	"shadowy_insight": {"name": "Тёмные мысли", "color": Color(0.6, 0.35, 0.85), "icon": "mind_blast"},
 	"sudden_death": {"name": "Внезапная смерть", "color": Color(1.0, 0.3, 0.3), "icon": "execute"},
 	"bloodsurge": {"name": "Прилив крови", "color": Color(1.0, 0.3, 0.3), "icon": "heroic_strike"},
 	"revenge": {"name": "Возмездие", "color": Color(0.9, 0.8, 0.6), "icon": "thunder_clap"},

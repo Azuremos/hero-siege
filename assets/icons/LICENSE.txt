@@ -98,3 +98,21 @@
 
   Нарисованы для проекта (CC0, сессия 13):
   items/scroll.svg — свиток улучшения (простая форма, своя работа)
+
+Жрец Тьмы (game-icons.net, CC BY 3.0; авторы: Lorc, Delapouite). Файл — источник:
+  spells/mind_blast.svg — lorc/psychic-waves
+  spells/fade.svg — lorc/two-shadows
+  spells/mind_sear.svg — lorc/death-zone
+  spells/vampiric_embrace.svg — delapouite/vampire-cape
+  spells/vampiric_touch.svg — lorc/evil-hand
+  spells/shadow_crash.svg — lorc/evil-comet
+  spells/shadowform.svg — lorc/spectre
+  spells/sw_death.svg — lorc/grim-reaper
+  spells/mind_flay.svg — delapouite/brain-tentacle
+  spells/dispersion.svg — lorc/ghost
+  talents/darkness.svg — lorc/evil-moon
+  talents/shadow_focus.svg — lorc/third-eye
+  talents/insight_t.svg — lorc/burning-eye
+  talents/shadow_power.svg — lorc/cursed-star
+  talents/apparitions_t.svg — delapouite/floating-ghost
+  talents/shadow_veil.svg — lorc/shadow-grasp
