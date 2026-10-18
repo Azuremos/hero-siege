@@ -65,6 +65,77 @@ func profile_set(key: String, value: Variant) -> void:
 	cfg.set_value("player", key, value)
 	cfg.save(PROFILE_PATH)
 
+# ---------------------------------------------------------------- сетевой журнал (диагностика подключения)
+## net_log.txt — рядом с HeroSiege.exe (из исходников — в папке пользователя Godot). Пишется всегда:
+## создание игры, подключение, состояние соединения раз в секунду, вход и отказы, отключения, проба UDP.
+## Проба: хост слушает обычный UDP на порту игры +1 (7778) и отвечает на «стук» клиента — так видно,
+## доходят ли пакеты до компьютера хоста вообще (если проба проходит, а соединение нет — дело в самой игре).
+const NET_LOG := "net_log.txt"
+var _log_path := ""
+
+func net_log_path() -> String:
+	if _log_path == "":
+		_log_path = OS.get_executable_path().get_base_dir().path_join(NET_LOG) if OS.has_feature("template") \
+			else ProjectSettings.globalize_path("user://" + NET_LOG)
+	return _log_path
+
+func netlog(msg: String) -> void:
+	var f := FileAccess.open(net_log_path(), FileAccess.READ_WRITE if FileAccess.file_exists(net_log_path()) else FileAccess.WRITE)
+	if f == null:
+		return
+	f.seek_end()
+	f.store_line("[%s] %s" % [Time.get_datetime_string_from_system(false, true), msg])
+	f.close()
+	if cli.has("netlog"):
+		print("NETLOG ", msg)
+
+## Шапка журнала: версия, отпечаток сетевого кода, адреса этого компьютера по сетевым картам.
+func _netlog_header(what: String) -> void:
+	netlog("==== %s | Hero Siege %s | %s | порт %d" % [what, game_version(), OS.get_name(), port()])
+	for itf in IP.get_local_interfaces():
+		var addrs: Array = itf.get("addresses", []).filter(func(a): return str(a).count(".") == 3)
+		if not addrs.is_empty():
+			netlog("  сеть «%s»: %s" % [itf.get("friendly", itf.get("name", "?")), ", ".join(addrs)])
+
+var _probe: PacketPeerUDP = null          # хост: эхо на порту +1; клиент: стук хосту
+var _probe_host := ""
+var _probe_left := 0
+var _probe_t := 0.0
+var _status_t := 0.0
+var _last_status := -1
+var _connect_t0 := 0.0
+
+func _process(delta: float) -> void:
+	if _probe != null:
+		if is_server():
+			while _probe.get_available_packet_count() > 0:
+				var pkt := _probe.get_packet().get_string_from_utf8()
+				var from := "%s:%d" % [_probe.get_packet_ip(), _probe.get_packet_port()]
+				netlog("ПРОБА: пришёл UDP-стук от %s («%s») — пакеты до этого компьютера доходят" % [from, pkt])
+				_probe.set_dest_address(_probe.get_packet_ip(), _probe.get_packet_port())
+				_probe.put_packet(("HSPONG " + game_version()).to_utf8_buffer())
+		else:
+			while _probe.get_available_packet_count() > 0:
+				netlog("ПРОБА: хост ответил на UDP-стук («%s») — пакеты до хоста и обратно доходят" % _probe.get_packet().get_string_from_utf8())
+				_probe_left = 0
+			_probe_t -= delta
+			if _probe_left > 0 and _probe_t <= 0.0:
+				_probe_t = 1.0
+				_probe_left -= 1
+				_probe.put_packet(("HSPING " + game_version()).to_utf8_buffer())
+				if _probe_left == 0:
+					netlog("ПРОБА: хост не ответил на UDP-стук (порт %d) — пакеты не доходят до хоста или его ответ не доходит обратно" % (port() + 1))
+	# клиент: состояние соединения раз в секунду, пока подключается
+	if not is_server() and multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer is ENetMultiplayerPeer:
+		var st := multiplayer.multiplayer_peer.get_connection_status()
+		_status_t -= delta
+		if st != _last_status or (st == MultiplayerPeer.CONNECTION_CONNECTING and _status_t <= 0.0):
+			_status_t = 5.0
+			var names := {MultiplayerPeer.CONNECTION_DISCONNECTED: "нет соединения", MultiplayerPeer.CONNECTION_CONNECTING: "подключаюсь",
+				MultiplayerPeer.CONNECTION_CONNECTED: "соединение есть"}
+			netlog("клиент: %s (%.0f сек. с начала)" % [names.get(st, str(st)), (Time.get_ticks_msec() * 0.001) - _connect_t0])
+			_last_status = st
+
 func _ready() -> void:
 	_load_profile()
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -85,6 +156,7 @@ func _ready() -> void:
 var joining_mid := false
 
 func _on_peer_authenticating(id: int) -> void:
+	netlog(("хост: соединение от игрока %d (адрес %s) — проверка входа" % [id, _peer_addr(id)]) if is_server() else "клиент: соединение с хостом есть, отправляю данные игрока")
 	if not is_server() and id == 1:
 		var info := local_info.duplicate()
 		info["version"] = game_version()
@@ -99,6 +171,7 @@ func _auth_received(id: int, data: PackedByteArray) -> void:
 		return
 	var sm := multiplayer as SceneMultiplayer
 	var t := str(msg.get("t", ""))
+	netlog("%s: сообщение входа «%s» от %d" % ["хост" if is_server() else "клиент", t, id])
 	if is_server():
 		match t:
 			"hello":
@@ -207,8 +280,17 @@ func host_game(is_solo: bool = false) -> Error:
 	if is_solo:
 		peer.set_bind_ip("127.0.0.1")
 	var err := peer.create_server(0 if is_solo else port(), 1 if is_solo else MAX_PLAYERS)
+	if not is_solo:
+		_netlog_header("ХОСТ")
+		netlog("создание игры на порту %d: %s" % [port(), error_string(err)])
 	if err != OK:
 		return err
+	if not is_solo:
+		_probe = PacketPeerUDP.new()
+		var perr := _probe.bind(port() + 1)
+		netlog("проба UDP на порту %d: %s" % [port() + 1, error_string(perr)])
+		if perr != OK:
+			_probe = null
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
 	multiplayer.multiplayer_peer = peer
 	solo = is_solo
@@ -226,14 +308,26 @@ func join_game(address: String) -> Error:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(address.strip_edges(), port())
 	profile_set("last_host", address.strip_edges())
+	_netlog_header("КЛИЕНТ")
+	netlog("подключение к %s:%d: %s" % [address.strip_edges(), port(), error_string(err)])
+	_connect_t0 = Time.get_ticks_msec() * 0.001
+	_last_status = -1
 	if err != OK:
 		return err
+	# проба: 6 UDP-стуков на порт игры +1 — отвечает ли компьютер хоста вообще
+	_probe = PacketPeerUDP.new()
+	_probe.set_dest_address(address.strip_edges(), port() + 1)
+	_probe_left = 6
+	_probe_t = 0.0
 	peer.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
 	multiplayer.multiplayer_peer = peer
 	solo = false
 	return OK
 
 func leave() -> void:
+	if _probe != null:
+		_probe.close()
+		_probe = null
 	if multiplayer.has_multiplayer_peer():
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -242,10 +336,19 @@ func leave() -> void:
 
 # ---------------------------------------------------------------- лобби
 
-func _on_peer_connected(_id: int) -> void:
-	pass  # клиент сам пришлёт register_player
+func _on_peer_connected(id: int) -> void:
+	netlog("%s: игрок %d подключён" % ["хост" if is_server() else "клиент", id])     # клиент сам пришлёт register_player
+
+## Адрес игрока для журнала (хост).
+func _peer_addr(id: int) -> String:
+	var mp := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if mp == null or not is_server():
+		return "?"
+	var pp := mp.get_peer(id)
+	return "%s:%d" % [pp.get_remote_address(), pp.get_remote_port()] if pp else "?"
 
 func _on_peer_disconnected(id: int) -> void:
+	netlog("%s: игрок %d отключился" % ["хост" if is_server() else "клиент", id])
 	if in_game:
 		return      # в партии запись игрока остаётся: его герой ждёт возвращения (world._on_peer_left)
 	if players.has(id):
@@ -255,6 +358,7 @@ func _on_peer_disconnected(id: int) -> void:
 			_sync_players.rpc(players)
 
 func _on_connected_ok() -> void:
+	netlog("клиент: подключён к хосту, вход в лобби")
 	if joining_mid:
 		return      # вошёл посреди партии: данные уже переданы при аутентификации
 	var info := local_info.duplicate()
@@ -262,10 +366,12 @@ func _on_connected_ok() -> void:
 	_register_player.rpc_id(1, info)
 
 func _on_connected_fail() -> void:
+	netlog("клиент: НЕ УДАЛОСЬ подключиться за %.0f сек. — хост не ответил на установку соединения ENet" % ((Time.get_ticks_msec() * 0.001) - _connect_t0))
 	leave()
 	connection_failed.emit("Не удалось подключиться. Проверьте IP и что хост запустил игру.")
 
 func _on_server_disconnected() -> void:
+	netlog("клиент: хост закрыл соединение")
 	leave()
 	disconnected.emit("Хост закрыл игру.")
 
@@ -281,6 +387,7 @@ func _register_player(info: Dictionary) -> void:
 		var theirs := version if version != "" else "старая (до 0.5)"
 		lobby_notice = "%s пытался подключиться с версией %s — нужна %s." % [pname, theirs, game_version()]
 		print("VERSION REJECT: ", lobby_notice)
+		netlog("хост: " + lobby_notice)
 		players_changed.emit()
 		_version_mismatch.rpc_id(id, game_version())
 		_kick_later(id)
@@ -297,6 +404,7 @@ func _register_player(info: Dictionary) -> void:
 	if str(settings.get("mode", "siege")) in ["lines", "arena"]:
 		rec["team"] = 0 if team_size(0) <= team_size(1) else 1      # «Линии», Арена: новичок — в меньшую команду
 	players[id] = rec
+	netlog("хост: %s (%s) в лобби, версия совпала" % [rec["name"], _peer_addr(id)])
 	players_changed.emit()
 	_sync_players.rpc(players)
 

@@ -606,7 +606,9 @@ func _on_join() -> void:
 
 func _on_fail(reason: String) -> void:
 	_open_hero("net")
-	_status.text = reason
+	Net.netlog("ошибка для игрока: " + reason.replace(char(10), " "))
+	_status.text = reason + "
+Журнал подключения: " + Net.net_log_path()
 	if not Net.cli.is_empty():
 		print("NET FAIL: ", reason.replace("
 ", " "))
