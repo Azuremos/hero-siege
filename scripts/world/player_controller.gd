@@ -518,6 +518,22 @@ func try_cast(sid: String) -> void:
 				hud.error("Цель слишком далеко")
 				return
 			_send_server("request_cast", [sid, t.id, Vector3.ZERO, 0.0])
+		"any":
+			# Покаяние, Шок небес: союзник под курсором в рамке группы или выбранный союзник — лечение,
+			# враг в цели — урон, иначе — лечение себя
+			var hov: Unit = world.get_unit(world.hud.hover_unit_id)
+			var cur: Unit = world.get_unit(target_id)
+			var t: Unit = hero.unit
+			if _is_ally(hov):
+				t = hov
+			elif cur and cur.alive and (hero.unit.is_enemy_of(cur) or _is_ally(cur)):
+				t = cur
+			if _dist_to(t) > max_range + t.radius:
+				hud.error("Цель слишком далеко")
+				return
+			if hero.unit.is_enemy_of(t):
+				_face(t.pos)
+			_send_server("request_cast", [sid, t.id, Vector3.ZERO, 0.0])
 		"self":
 			_send_server("request_cast", [sid, hero.hero_id, Vector3.ZERO, 0.0])
 		"ground", "wall":
@@ -874,6 +890,15 @@ func bot_tick(delta: float) -> void:
 					_send_server("request_cast", [sid, hero.hero_id, Vector3.ZERO, 0.0])
 					return
 			"enemy":
+				if tu and _dist_to(tu) <= float(sp["range"]) + tu.radius:
+					_face(tu.pos)
+					_send_server("request_cast", [sid, tu.id, Vector3.ZERO, 0.0])
+					return
+			"any":
+				# лечение раненому союзнику важнее, иначе — урон по цели
+				if weakest and weakest.hp_frac() < 0.7 and _dist_to(weakest) <= float(sp["range"]):
+					_send_server("request_cast", [sid, weakest.id, Vector3.ZERO, 0.0])
+					return
 				if tu and _dist_to(tu) <= float(sp["range"]) + tu.radius:
 					_face(tu.pos)
 					_send_server("request_cast", [sid, tu.id, Vector3.ZERO, 0.0])

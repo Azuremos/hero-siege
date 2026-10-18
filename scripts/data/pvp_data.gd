@@ -17,9 +17,9 @@ const DEFAULT := {
 	"dr": [1.0, 0.5, 0.25, 0.0],
 	"dr_reset": 15.0,
 	# утомление боем: PvP-схватка дольше dampen_after сек. (или дуэль) — получаемое лечение −dampen_step каждые dampen_every
-	"dampen_after": 30.0,
+	"dampen_after": 20.0,
 	"dampen_every": 10.0,
-	"dampen_step": 0.05,
+	"dampen_step": 0.08,
 	"dampen_max": 0.9,
 	"pvp_combat_reset": 8.0,     # столько сек. без урона между героями — схватка закончилась
 	# общий множитель урона героя по героям (дуэль на 20–60 сек., а не на 2)
@@ -60,7 +60,8 @@ const SPELL_MULT := {
 }
 
 ## Множитель урона класса по героям (подгонка таблицы «класс × класс»).
-const CLASS_MULT := {"mage": 1.0, "paladin": 1.0, "priest": 1.0, "warrior": 1.0, "hunter": 1.0, "shaman": 1.0}
+## Подбор по таблице 13-й сессии: воин в зеркале и против паладина упирался в 2 минуты.
+const CLASS_MULT := {"mage": 1.0, "paladin": 1.0, "priest": 1.0, "warrior": 1.25, "hunter": 1.0, "shaman": 1.0}
 
 ## Устойчивость героя уровня level по настройкам режима cfg.
 static func resil(cfg: Dictionary, level: int) -> float:
